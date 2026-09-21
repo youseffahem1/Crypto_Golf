@@ -8438,7 +8438,7 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     dashPage?.classList.toggle('vw-active',page==='dashboard');
     walletPage?.classList.toggle('vw-active',page==='wallet');
     msgPage?.classList.toggle('vw-active',page==='messages');
-    adminPage?.classList.toggle('vw-active',page==='admin');
+    document.getElementById('vantaAdminPage')?.classList.toggle('vw-active',page==='admin');
     if(mainEl) mainEl.style.display = page==='trading' ? '' : 'none';
     document.querySelectorAll('.side-item,.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
     window.scrollTo({top:0,behavior:'instant'});

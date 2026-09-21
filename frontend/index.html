@@ -2131,6 +2131,14 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
         </svg>
         Messages
     </button>
+
+    <button class="side-item" data-page="admin" data-admin>
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path d="M12 3l7 3v5c0 4.5-2.9 8.2-7 10-4.1-1.8-7-5.5-7-10V6z"/>
+            <path d="M9.5 12l1.7 1.7 3.3-3.4"/>
+        </svg>
+        Admin
+    </button>
 </nav>
     </aside>
 
@@ -2555,6 +2563,16 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
             </svg>
         </div>
         <div class="nav-label">Messages</div>
+    </button>
+
+    <button class="nav-item" data-page="admin" data-admin>
+        <div class="nav-icon">
+            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path d="M12 3l7 3v5c0 4.5-2.9 8.2-7 10-4.1-1.8-7-5.5-7-10V6z"/>
+                <path d="M9.5 12l1.7 1.7 3.3-3.4"/>
+            </svg>
+        </div>
+        <div class="nav-label">Admin</div>
     </button>
 </nav>
 
@@ -8413,19 +8431,21 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
   };
 
   /* ---------------- PAGE ROUTER ---------------- */
-  const PAGES=['dashboard','trading','wallet','messages'];
-  const dashPage=$('vantaDashPage'), walletPage=$('vantaWalletPage'), msgPage=$('vantaMessagesPage');
+  const PAGES=['dashboard','trading','wallet','messages','admin'];
+  const dashPage=$('vantaDashPage'), walletPage=$('vantaWalletPage'), msgPage=$('vantaMessagesPage'), adminPage=$('vantaAdminPage');
   const mainEl=document.querySelector('.main');
   function setPage(page){
     dashPage?.classList.toggle('vw-active',page==='dashboard');
     walletPage?.classList.toggle('vw-active',page==='wallet');
     msgPage?.classList.toggle('vw-active',page==='messages');
+    adminPage?.classList.toggle('vw-active',page==='admin');
     if(mainEl) mainEl.style.display = page==='trading' ? '' : 'none';
     document.querySelectorAll('.side-item,.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
     window.scrollTo({top:0,behavior:'instant'});
     if(page==='wallet'){ if(window.vantaRefreshWalletSplit) window.vantaRefreshWalletSplit(); refreshCoinPricesInWallet(); }
     if(page==='dashboard'){ if(typeof refreshBalance==='function') refreshBalance(); renderDashboardTransfers(); refreshGolfCard(); }
     if(page==='messages'){ if(window.vantaRefreshMessages) window.vantaRefreshMessages(false); }
+    if(page==='admin'){ if(window.vantaAdminRefresh) window.vantaAdminRefresh(); }
   }
   function refreshCoinPricesInWallet(){
     try{
@@ -8903,12 +8923,15 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
   -webkit-backdrop-filter:blur(3px);
   backdrop-filter:blur(3px);
   opacity:0;
+  visibility:hidden;
   pointer-events:none;
-  transition:opacity .24s ease;
+  transition:opacity .24s ease,visibility 0s linear .24s;
+  -webkit-tap-highlight-color:transparent;
 }
-.vanta-nav-overlay.open{opacity:1;pointer-events:auto}
+.vanta-nav-overlay.open{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .24s ease}
+.vanta-nav-overlay:active{cursor:pointer}
 
-body.vanta-nav-lock{overflow:hidden}
+html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none}
 
 /* =========================================================
    MOBILE / TABLET LAYOUT
@@ -8922,20 +8945,25 @@ body.vanta-nav-lock{overflow:hidden}
     position:fixed!important;
     top:0!important;left:0!important;bottom:0!important;
     width:min(300px,86vw)!important;
-    padding:max(16px,env(safe-area-inset-top)) 15px max(20px,env(safe-area-inset-bottom))!important;
+    padding:max(16px,env(safe-area-inset-top)) 15px max(22px,env(safe-area-inset-bottom))!important;
     z-index:560;
     transform:translateX(-104%);
     transition:transform .26s cubic-bezier(.2,.8,.25,1);
     box-shadow:26px 0 64px rgba(0,0,0,.45);
     overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    -webkit-tap-highlight-color:transparent;
   }
   .desktop-sidebar.vanta-nav-open{transform:translateX(0)}
   .vanta-sidebar-close{display:flex}
 
-  .side-balance{margin-bottom:14px}
-  .side-item{height:52px;font-size:13px;border-radius:13px}
-  .side-item svg{width:20px}
-  .brand{padding-right:44px}
+  .side-balance{margin-bottom:12px}
+  .side-item{height:48px;font-size:13px;border-radius:13px}
+  .side-item svg{width:20px;flex:0 0 20px}
+  .side-item.active{background:linear-gradient(135deg,rgba(37,99,235,.16),rgba(37,99,235,.07))}
+  .brand{padding:0 12px 16px;font-size:16px}
+  .side-menu{gap:6px;margin-top:2px}
 
   /* Bottom nav: one full row of 4, comfy tap targets */
   .bottom-nav{
@@ -8948,8 +8976,8 @@ body.vanta-nav-lock{overflow:hidden}
     justify-self:stretch!important;
     width:100%!important;
   }
-  .nav-icon{width:38px;height:30px;border-radius:11px}
-  .nav-label{font-size:8px}
+  .nav-icon{width:38px;height:30px;border-radius:11px;flex:0 0 auto}
+  .nav-label{font-size:9px;font-weight:800;letter-spacing:0;line-height:1.2;white-space:nowrap}
 
   /* Page shells must sit below the compact header */
   .vanta-wallet-page,.vanta-dash-page,.vanta-msg-page{top:66px!important}
@@ -8989,6 +9017,31 @@ body.vanta-nav-lock{overflow:hidden}
   .header .profile{width:36px;height:36px}
   .balance{font-size:14px}
 }
+
+/* Very small phones — slim the drawer down so nothing overflows */
+@media (max-width:360px){
+  .desktop-sidebar{width:min(272px,88vw)!important;padding-left:12px!important;padding-right:12px!important}
+  .side-item{height:46px;font-size:12.5px;border-radius:12px}
+  .side-item svg{width:18px;flex-basis:18px}
+  .side-balance{margin-bottom:10px}
+  .side-balance-value{font-size:18px}
+  .brand{font-size:15px}
+  .nav-label{font-size:8.5px}
+}
+
+/* Short screens (landscape phones / small height): let the menu scroll
+   instead of clipping the last item on iOS/Android chrome */
+@media (max-height:560px) and (max-width:899px){
+  .desktop-sidebar{padding-top:max(12px,env(safe-area-inset-top))!important}
+  .side-balance{padding:11px 13px;margin-bottom:10px}
+  .side-item{height:44px}
+  .brand{padding-bottom:12px}
+}
+
+/* Overscroll glue: never let the page shift while the drawer is open */
+@media (min-width:900px){
+  html.vanta-nav-lock,body.vanta-nav-lock{overflow:auto}
+}
 </style>
 
 <script id="vanta-mobile-nav-js">
@@ -8999,23 +9052,30 @@ body.vanta-nav-lock{overflow:hidden}
   const closeBtn=document.getElementById('vantaSidebarClose');
   if(!sidebar)return;
 
+  function setLock(on){
+    document.body.classList.toggle('vanta-nav-lock',on);
+    document.documentElement.classList.toggle('vanta-nav-lock',on);
+  }
   const isOpen=()=>sidebar.classList.contains('vanta-nav-open');
   function openNav(){
     sidebar.classList.add('vanta-nav-open');
     if(overlay) overlay.classList.add('open');
-    document.body.classList.add('vanta-nav-lock');
+    setLock(true);
     if(toggle) toggle.setAttribute('aria-expanded','true');
   }
   function closeNav(){
     sidebar.classList.remove('vanta-nav-open');
     if(overlay) overlay.classList.remove('open');
-    document.body.classList.remove('vanta-nav-lock');
+    setLock(false);
     if(toggle) toggle.setAttribute('aria-expanded','false');
   }
 
   if(toggle) toggle.addEventListener('click',()=> isOpen()?closeNav():openNav());
   if(closeBtn) closeBtn.addEventListener('click',closeNav);
   if(overlay) overlay.addEventListener('click',closeNav);
+
+  /* Landscape → desktop: never leave a half-open drawer or a locked page */
+  window.addEventListener('resize',()=>{ if(window.innerWidth>=900 && isOpen()) closeNav(); });
 
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeNav(); });
 
@@ -9025,6 +9085,283 @@ body.vanta-nav-lock{overflow:hidden}
       if(window.innerWidth<900) closeNav();
     });
   });
+})();
+</script>
+
+<!-- =========================================================
+     ADMIN PANEL — page + credit modal (admin-only, responsive)
+========================================================== -->
+<section class="vanta-admin-page" id="vantaAdminPage" aria-label="Admin panel">
+    <div class="vadm-wrap">
+        <div class="vd-head">
+            <div>
+                <h1 class="vd-title">Admin Panel</h1>
+                <p class="vd-sub">Monitor every registered account &amp; credit real balances</p>
+            </div>
+            <span class="vd-live"><i></i> Administrator</span>
+        </div>
+
+        <div class="vadm-stats" id="vadmStats">
+            <div class="vadm-stat"><label>Accounts</label><b id="vadmCountUsers">–</b></div>
+            <div class="vadm-stat"><label>Admins</label><b id="vadmCountAdmins">–</b></div>
+            <div class="vadm-stat"><label>USDT held</label><b id="vadmUsdtTotal">–</b></div>
+            <div class="vadm-stat"><label>GOLF held</label><b id="vadmGolfTotal">–</b></div>
+            <div class="vadm-stat"><label>Trades</label><b id="vadmTradeCount">–</b></div>
+        </div>
+
+        <div class="vadm-card">
+            <div class="vadm-card-head">
+                <strong>Registered accounts</strong>
+                <input id="vadmSearch" class="vadm-search" type="search" placeholder="Search email…" autocomplete="off">
+            </div>
+            <div class="vadm-users" id="vadmUsers"></div>
+            <div class="vadm-empty" id="vadmUsersEmpty" style="display:none">No accounts match</div>
+        </div>
+    </div>
+</section>
+
+<div class="vadm-modal" id="vadmModal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="vadm-modal-box">
+        <div class="vadm-modal-head">
+            <h3>Add balance</h3>
+            <button type="button" class="vadm-x" id="vadmClose" aria-label="Close">×</button>
+        </div>
+        <p class="vadm-target" id="vadmTarget">—</p>
+        <label class="vadm-label" for="vadmCoin">Coin</label>
+        <select id="vadmCoin" class="vadm-select"></select>
+        <label class="vadm-label" for="vadmAmount">Amount</label>
+        <div class="vadm-chips" id="vadmChips">
+            <button type="button" data-amt="100">+100</button>
+            <button type="button" data-amt="500">+500</button>
+            <button type="button" data-amt="1000">+1,000</button>
+        </div>
+        <input id="vadmAmount" class="vadm-input" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00">
+        <p class="vadm-note">Credited straight into the user's real (live) wallet — usable immediately for trading and balance.</p>
+        <div class="vadm-btn-row">
+            <button type="button" id="vadmCancel" class="vadm-btn ghost">Cancel</button>
+            <button type="button" id="vadmConfirm" class="vadm-btn solid">Add balance</button>
+        </div>
+    </div>
+</div>
+
+<style id="vanta-admin-css">
+.vanta-admin-page{
+  display:none;position:fixed;left:0;right:0;top:66px;bottom:0;z-index:90;
+  min-height:0;padding:24px 22px 40px;box-sizing:border-box;overflow-y:auto;
+  background:var(--bg);
+  -webkit-overflow-scrolling:touch;
+}
+.vanta-admin-page.vw-active{display:block;animation:vwPageIn .22s ease-out}
+@media(max-width:899px){
+  .vanta-admin-page{top:66px;bottom:calc(var(--nav-height) + env(safe-area-inset-bottom));padding:16px 12px 30px}
+}
+
+/* Responsive credit modal that sits above the page */
+.vadm-modal{position:fixed;inset:0;z-index:500;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.45);backdrop-filter:blur(3px)}
+.vadm-modal.open{display:flex}
+.vadm-modal-box{width:min(420px,100%);margin:auto;max-height:92vh;overflow-y:auto;padding:22px;border:1px solid var(--line);border-radius:20px;background:var(--panel);box-shadow:0 24px 70px var(--shadow);box-sizing:border-box;animation:vadmPop .2s ease-out}
+@keyframes vadmPop{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+.vadm-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.vadm-modal-head h3{font-size:16px;font-weight:900;color:var(--text);margin:0}
+.vadm-x{width:32px;height:32px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
+.vadm-x:active{transform:scale(.95)}
+.vadm-target{font-size:12px;color:var(--muted);margin:0 0 16px;word-break:break-all}
+.vadm-label{display:block;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 7px}
+.vadm-select,.vadm-input{width:100%;padding:12px 14px;border-radius:13px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:15px;font-weight:700;box-sizing:border-box;outline:none}
+.vadm-select:focus,.vadm-input:focus{border-color:rgba(37,99,235,.6)}
+.vadm-chips{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.vadm-chips button{flex:1;min-width:80px;padding:9px 6px;border-radius:11px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:12.5px;font-weight:800;cursor:pointer}
+.vadm-chips button:active{transform:scale(.96)}
+.vadm-note{font-size:10.5px;color:var(--muted);line-height:1.5;margin:12px 0 2px}
+.vadm-btn-row{display:flex;gap:10px;margin-top:16px}
+.vadm-btn{flex:1;padding:14px;border-radius:14px;border:0;font-size:14px;font-weight:900;cursor:pointer}
+.vadm-btn.ghost{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
+.vadm-btn.solid{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff}
+.vadm-btn:disabled{opacity:.6;cursor:not-allowed}
+
+/* Stat tiles */
+.vadm-wrap{width:min(900px,100%);margin:0 auto;display:grid;gap:16px}
+.vadm-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.vadm-stat{padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.vadm-stat label{display:block;font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.vadm-stat b{display:block;margin-top:6px;font-size:18px;font-weight:950;color:var(--text);letter-spacing:-.02em}
+
+/* Accounts card */
+.vadm-card{padding:18px;border:1px solid var(--line);border-radius:20px;background:var(--panel)}
+.vadm-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.vadm-card-head strong{font-size:14px;font-weight:900;color:var(--text)}
+.vadm-search{padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:13px;font-weight:600;outline:none;width:min(260px,100%);box-sizing:border-box}
+.vadm-search:focus{border-color:rgba(37,99,235,.6)}
+.vadm-users{display:flex;flex-direction:column;gap:10px}
+.vadm-empty{padding:26px;text-align:center;color:var(--muted);font-size:13px;font-weight:700}
+.vadm-user{
+  display:grid;grid-template-columns:minmax(0,1fr) 118px 118px 84px auto;gap:10px;align-items:center;
+  padding:13px 15px;border:1px solid var(--line);border-radius:15px;background:var(--panel-2);
+}
+.vadm-u-main{min-width:0}
+.vadm-u-email{font-size:13px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vadm-u-meta{font-size:10.5px;color:var(--muted);margin-top:3px}
+.vadm-u-bal{text-align:right}
+.vadm-u-bal label{display:block;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.vadm-u-bal b{font-size:13.5px;font-weight:900;color:var(--text)}
+.vadm-u-bal b.up{color:#0d8a3c}
+.vadm-u-role{text-align:center}
+.vadm-u-role span{display:inline-block;padding:4px 10px;border-radius:999px;font-size:9px;font-weight:900;letter-spacing:.04em}
+.vadm-u-role .admin{background:rgba(184,134,11,.15);color:#b8860b;border:1px solid rgba(184,134,11,.3)}
+.vadm-u-role .user{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
+.vadm-u-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.vadm-btn-sm{padding:8px 12px;border-radius:11px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:11.5px;font-weight:900;cursor:pointer;white-space:nowrap}
+.vadm-btn-sm:active{transform:scale(.96)}
+.vadm-btn-sm.role{border-color:var(--line);background:var(--panel-2);color:var(--muted)}
+@media(max-width:720px){
+  .vadm-user{grid-template-columns:1fr 1fr;row-gap:10px}
+  .vadm-u-main{grid-column:1/-1}
+  .vadm-u-bal{text-align:left}
+  .vadm-u-actions{grid-column:1/-1;justify-content:flex-start;width:100%}
+  .vadm-btn-sm{flex:1}
+}
+
+/* Admin-only nav entries & 5-col bottom nav */
+[data-page="admin"]{display:none!important}
+body.vanta-admin [data-page="admin"]{display:flex!important}
+body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
+</style>
+
+<script id="vanta-admin-js">
+(function(){
+  const COINS=['USDT','GOLF','USDC','BTC','ETH','SOL','TRX','BNB','XRP','DOGE','ADA','LINK','LTC'];
+
+  function vantaIsAdmin(){
+    try{ const u=JSON.parse(localStorage.getItem('vanta_user')||'null'); return !!(u&&u.is_admin); }catch(e){ return false; }
+  }
+  function vantaApplyAdminUI(){
+    const isAdmin=vantaIsAdmin();
+    document.body.classList.toggle('vanta-admin',isAdmin);
+    return isAdmin;
+  }
+
+  const $=id=>document.getElementById(id);
+  const money=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmt=v=>Number(v||0).toLocaleString('en-US',{maximumFractionDigits:4,minimumFractionDigits:2});
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  let usersCache=[];
+  let modalUserEmail=null;
+
+  function renderUsers(){
+    const list=$('vadmUsers'), empty=$('vadmUsersEmpty');
+    if(!list) return;
+    const q=($('vadmSearch').value||'').trim().toLowerCase();
+    const rows=usersCache.filter(u=>!q||u.email.toLowerCase().includes(q));
+    empty.style.display=rows.length?'none':'block';
+    if(!rows.length){ list.innerHTML=''; return; }
+    list.innerHTML=rows.map(u=>{
+      const created=new Date(String(u.created_at).endsWith('Z')?u.created_at:u.created_at+'Z').toLocaleDateString();
+      const other=Object.keys(u.balances||{}).filter(s=>s!=='USDT'&&s!=='GOLF').length;
+      return '<div class="vadm-user">'
+        +'<div class="vadm-u-main">'
+        +'<div class="vadm-u-email">'+esc(u.email)+'</div>'
+        +'<div class="vadm-u-meta">'+(u.label?esc(u.label)+' · ':'')+'Joined '+created
+          +(other>0?' · '+other+' coins':'')+'</div>'
+        +'</div>'
+        +'<div class="vadm-u-bal"><label>USDT</label><b '+classFor(u.usdt_balance)+'>'+fmt(u.usdt_balance)+'</b></div>'
+        +'<div class="vadm-u-bal"><label>GOLF</label><b>'+fmt(u.golf_balance)+'</b></div>'
+        +'<div class="vadm-u-role">'+(u.is_admin?'<span class="admin">ADMIN</span>':'<span class="user">USER</span>')+'</div>'
+        +'<div class="vadm-u-actions">'
+        +'<button type="button" class="vadm-btn-sm" data-credit="'+esc(u.email)+'">+ Add balance</button>'
+        +'<button type="button" class="vadm-btn-sm role" data-role="'+esc(u.id)+'" data-make="'+(u.is_admin?'0':'1')+'">'
+          +(u.is_admin?'Remove admin':'Make admin')+'</button>'
+        +'</div></div>';
+    }).join('');
+
+    function classFor(v){ return v>0?'class="up"':''; }
+    list.querySelectorAll('[data-credit]').forEach(b=>b.addEventListener('click',()=>openCredit(b.dataset.credit)));
+    list.querySelectorAll('[data-role]').forEach(b=>b.addEventListener('click',()=>toggleRole(b.dataset.role,b.dataset.make==='1')));
+  }
+
+  async function refreshAdmin(){
+    if(!vantaApplyAdminUI()) return; // logged out → nothing visible anyway
+    try{
+      const stats=await vantaApi('/api/admin/stats');
+      const users=await vantaApi('/api/admin/users');
+      $('vadmCountUsers').textContent=stats.users;
+      $('vadmCountAdmins').textContent=stats.admins;
+      $('vadmUsdtTotal').textContent=money(stats.usdt_total);
+      $('vadmGolfTotal').textContent=fmt(stats.golf_total);
+      $('vadmTradeCount').textContent=stats.trades;
+      usersCache=users||[];
+      renderUsers();
+    }catch(e){
+      if(String(e.message||'').indexOf('Admin access required')>=0){
+        vantaApplyAdminUI();
+        showToast('Admin access required');
+      }
+    }
+  }
+  window.vantaAdminRefresh=refreshAdmin;
+
+  function openCredit(email){
+    modalUserEmail=email;
+    $('vadmTarget').textContent=email;
+    $('vadmAmount').value='';
+    const sel=$('vadmCoin');
+    sel.innerHTML=COINS.map(c=>'<option value="'+c+'">'+c+'</option>').join('');
+    sel.value='USDT';
+    $('vadmModal').classList.add('open');
+    $('vadmModal').setAttribute('aria-hidden','false');
+    setTimeout(()=>$('vadmAmount').focus({preventScroll:true}),80);
+  }
+  function closeModal(){
+    $('vadmModal').classList.remove('open');
+    $('vadmModal').setAttribute('aria-hidden','true');
+    modalUserEmail=null;
+  }
+
+  $('vadmChips').addEventListener('click',e=>{
+    const b=e.target.closest('[data-amt]');
+    if(!b)return;
+    const cur=Number($('vadmAmount').value||0);
+    $('vadmAmount').value=String(Number((cur+Number(b.dataset.amt)).toFixed(6)));
+  });
+  $('vadmConfirm').addEventListener('click',async()=>{
+    const amt=Number($('vadmAmount').value);
+    if(!(amt>0)){ showToast('Enter an amount greater than 0'); return; }
+    const btn=$('vadmConfirm');
+    btn.disabled=true; btn.textContent='Adding…';
+    try{
+      await vantaApi('/api/admin/users/credit',{method:'POST',body:JSON.stringify({email:modalUserEmail,symbol:$('vadmCoin').value,amount:amt})});
+      showToast('Balance credited to '+modalUserEmail);
+      closeModal();
+      refreshAdmin();
+    }catch(e){ showToast(e.message||'Could not credit balance'); }
+    finally{ btn.disabled=false; btn.textContent='Add balance'; }
+  });
+  async function toggleRole(userId,make){
+    try{
+      await vantaApi('/api/admin/users/'+encodeURIComponent(userId)+'/set-admin',{method:'POST',body:JSON.stringify({is_admin:make})});
+      showToast(make?'Admin role granted':'Admin role removed');
+      refreshAdmin();
+    }catch(e){ showToast(e.message||'Could not update role'); }
+  }
+
+  $('vadmClose').addEventListener('click',closeModal);
+  $('vadmCancel').addEventListener('click',closeModal);
+  $('vadmModal').addEventListener('click',e=>{ if(e.target===$('vadmModal')) closeModal(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('vadmModal').classList.contains('open')) closeModal(); });
+  $('vadmSearch').addEventListener('input',renderUsers);
+
+  /* Apply admin UI on load and keep it fresh when the session is set
+     (enter/login/signup). The dashboard router calls vantaAdminRefresh each
+     time the admin page is opened. */
+  vantaApplyAdminUI();
+  if(window.vantaEnterApp){
+    const orig=window.vantaEnterApp;
+    window.vantaEnterApp=async function(){
+      vantaApplyAdminUI();
+      await orig.apply(this,arguments);
+    };
+  }
+  setInterval(()=>{ if($('vantaAdminPage')?.classList.contains('vw-active')) refreshAdmin(); },15000);
 })();
 </script>
 

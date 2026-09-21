@@ -67,3 +67,12 @@ MARKET_TICK_INTERVAL_SECONDS = float(os.environ.get("MARKET_TICK_INTERVAL_SECOND
 MARKET_STARTING_PRICE = float(os.environ.get("MARKET_STARTING_PRICE", "4052.0"))
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "test")
+
+# --- Admin bootstrap ----------------------------------------------------------
+# On startup, bootstrap_admin() promotes the account with this email to admin
+# (creating it if it doesn't exist yet). Both must be set to enable it —
+# nothing is hardcoded in code. Add these on Render as:
+#   email_admin   e.g. you@gmail.com
+#   password_admin   e.g. 123123aa
+ADMIN_BOOTSTRAP_EMAIL = os.environ.get("email_admin", "")
+ADMIN_BOOTSTRAP_PASSWORD = os.environ.get("password_admin", "")

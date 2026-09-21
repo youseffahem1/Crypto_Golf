@@ -8,7 +8,7 @@ from .database import Base, engine, SessionLocal
 from . import models, market_service, deposit_monitor, trading_service
 from .routes import (
     auth_routes, wallet_routes, trade_routes, swap_routes, golf_routes,
-    market_routes, transfer_routes, message_routes, users_routes,
+    market_routes, transfer_routes, message_routes, users_routes, admin_routes,
 )
 from .config import (
     ALLOWED_ORIGINS, MARKET_TICK_INTERVAL_SECONDS, DEPOSIT_POLL_INTERVAL_SECONDS,
@@ -44,6 +44,9 @@ app.include_router(market_routes.router)
 app.include_router(transfer_routes.router)
 app.include_router(message_routes.router)
 app.include_router(users_routes.router)
+app.include_router(admin_routes.router)
+
+admin_routes.bootstrap_admin()
 
 
 @app.get("/api/health")

@@ -198,3 +198,37 @@ class ReportRequest(BaseModel):
 
 class BlockRequest(BaseModel):
     user_id: str
+
+
+# =============================================================================
+# Admin panel schemas — used only by admin endpoints (require_admin).
+# =============================================================================
+
+class AdminUserOut(BaseModel):
+    id: str
+    email: str
+    label: Optional[str] = None
+    is_admin: bool
+    usdt_balance: float
+    golf_balance: float
+    created_at: datetime
+    balances: dict = Field(default_factory=dict)
+
+
+class AdminStatsOut(BaseModel):
+    users: int
+    admins: int
+    usdt_total: float
+    golf_total: float
+    trades: int
+
+
+class AdminCreditRequest(BaseModel):
+    email: Optional[str] = Field(default=None, max_length=200)
+    user_id: Optional[str] = None
+    symbol: str = "USDT"
+    amount: float = Field(gt=0)
+
+
+class AdminSetAdminRequest(BaseModel):
+    is_admin: bool = True

@@ -63,10 +63,12 @@ class TradeOpenRequest(BaseModel):
     direction: str  # "UP" | "DOWN"
     amount: float = Field(gt=0)
     duration_seconds: int
+    symbol: str = Field(default="GOLF", max_length=20)
 
 
 class TradeOut(BaseModel):
     id: str
+    symbol: str = "GOLF"
     direction: str
     amount: float
     entry_price: float
@@ -133,6 +135,32 @@ class WalletLayoutOut(BaseModel):
     platform_coins: list[str]
     normal_wallet_coins: list[str]
     balances: dict
+    deposit_addresses: dict = Field(default_factory=dict)
+    withdraw_addresses: dict = Field(default_factory=dict)
+
+
+# --- Platform coin trading / investment overview ---------------------------
+
+class PlatformCoinOut(BaseModel):
+    symbol: str
+    name: str
+    price: float
+    launch_price: float
+    change_pct: float
+    tradeable: bool
+    balance: float = 0.0
+    usdt_invested: float = 0.0
+    current_value: float = 0.0
+    unrealized_pnl: float = 0.0
+
+
+class PlatformOverviewOut(BaseModel):
+    coins: list[PlatformCoinOut]
+    usdt_balance: float = 0.0
+    total_platform_value: float = 0.0
+    total_usdt_invested: float = 0.0
+    total_unrealized_pnl: float = 0.0
+    total_trade_profit: float = 0.0
 
 
 class UserSearchOut(BaseModel):

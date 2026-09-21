@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import schemas, models, deposit_monitor, swap_service
-from ..config import PLATFORM_COINS, NORMAL_WALLET_COINS
+from ..config import (
+    PLATFORM_COINS, NORMAL_WALLET_COINS, DEPOSIT_ADDRESSES, WITHDRAW_ADDRESSES,
+)
 from ..database import get_db
 from ..auth import get_current_user_id
 
@@ -17,11 +19,24 @@ def _explorer_url(tx_hash: str) -> str:
 def wallet_layout(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """Describes the two-wallet structure the UI renders: which coins are
     platform-issued (Trading / Investment wallet) vs established currencies
-    (Normal wallet), plus the user's full balance table."""
+    (Normal wallet), plus the user's full balance table and every coin's
+    (optionally configured) deposit/withdraw delivery address."""
+    deposit = dict(DEPOSIT_ADDRESSES)
+    withdraw = dict(WITHDRAW_ADDRESSES)
+
+    # Every user already has a real TRON Nile deposit address — surface it
+    # as USDT's deposit address so the wallet flow is honest instead of
+    # inventing one. Empty otherwise (the frontend shows "Not Provided Yet").
+    usdt_addr = db.query(models.DepositAddress).filter_by(user_id=user_id).first()
+    if usdt_addr is not None:
+        deposit.setdefault("USDT", usdt_addr.address)
+
     return schemas.WalletLayoutOut(
         platform_coins=list(PLATFORM_COINS),
         normal_wallet_coins=list(NORMAL_WALLET_COINS),
         balances=swap_service.user_balances(db, user_id),
+        deposit_addresses=deposit,
+        withdraw_addresses=withdraw,
     )
 
 

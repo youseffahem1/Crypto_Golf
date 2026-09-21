@@ -3,12 +3,14 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from .database import Base, engine, SessionLocal
 from . import models, market_service, deposit_monitor, trading_service
 from .routes import (
     auth_routes, wallet_routes, trade_routes, swap_routes, golf_routes,
     market_routes, transfer_routes, message_routes, users_routes, admin_routes,
+    platform_routes,
 )
 from .config import (
     ALLOWED_ORIGINS, MARKET_TICK_INTERVAL_SECONDS, DEPOSIT_POLL_INTERVAL_SECONDS,
@@ -29,6 +31,25 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+
+def _migrate():
+    """Additive, non-destructive migrations for pre-existing databases
+    (create_all does not alter existing tables). Every existing trade is a
+    GOLF trade, so the new column is backfilled with 'GOLF' — historical
+    settlement semantics are preserved exactly."""
+    insp = inspect(engine)
+    if not insp.has_table("trades"):
+        return
+    columns = {c["name"] for c in insp.get_columns("trades")}
+    if "symbol" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE trades ADD COLUMN symbol VARCHAR(20) DEFAULT 'GOLF'"))
+            conn.execute(text("UPDATE trades SET symbol = 'GOLF' WHERE symbol IS NULL OR symbol = ''"))
+        logging.info("[migrate] added trades.symbol = 'GOLF'")
+
+
+_migrate()
+
 _db = SessionLocal()
 try:
     market_service.ensure_seeded(_db)
@@ -45,6 +66,7 @@ app.include_router(transfer_routes.router)
 app.include_router(message_routes.router)
 app.include_router(users_routes.router)
 app.include_router(admin_routes.router)
+app.include_router(platform_routes.router)
 
 admin_routes.bootstrap_admin()
 

@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Local database — NEVER commit (live testnet data)
+backend/vanta.db
+*.sqlite3
+
+# Node
+node_modules/
+
+# OS
+Thumbs.db
+.DS_Store

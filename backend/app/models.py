@@ -94,11 +94,14 @@ class TradeStatus(str, enum.Enum):
 class Trade(Base):
     """A binary UP/DOWN prediction against the server's own authoritative
     demo price feed (see market_service.py) — never settled from anything
-    the client sends. amount is virtual USDT only."""
+    the client sends. amount is virtual USDT only. symbol identifies the
+    platform coin the position is opened on (GOLF, NOVA, ABC, …); default
+    "GOLF" keeps every historical trade's semantics unchanged."""
     __tablename__ = "trades"
 
     id = Column(String, primary_key=True, default=gen_id)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    symbol = Column(String, default="GOLF", nullable=False)
     direction = Column(Enum(TradeDirection), nullable=False)
     amount = Column(Float, nullable=False)
     entry_price = Column(Float, nullable=False)

@@ -54,13 +54,51 @@ COIN_PRICE_REFRESH_SECONDS = int(os.environ.get("COIN_PRICE_REFRESH_SECONDS", "1
 # home is the Trading/Investment wallet, or an established cryptocurrency
 # that lives in the Normal wallet. Every symbol listed in one of these two
 # groups must also exist in market_service.SUPPORTED_SYMBOLS.
-PLATFORM_COINS = os.environ.get("PLATFORM_COINS", "GOLF")
+PLATFORM_COINS = os.environ.get("PLATFORM_COINS", "GOLF,NOVA,ABC")
 PLATFORM_COINS = tuple(c.strip().upper() for c in PLATFORM_COINS.split(",") if c.strip())
+
+# Display name + launch (USD) price per platform coin. GOLF keeps its own
+# authoritative walk seeded from MARKET_STARTING_PRICE; every other platform
+# coin gets an independent server-side walk seeded from its launch price, so
+# "change since launch" is a real number derived from the market — never
+# hardcoded. Any coin in PLATFORM_COINS missing from these maps falls back to
+# sane defaults.
+PLATFORM_COIN_NAMES = {
+    "GOLF": "Golf Coin", "NOVA": "Nova Coin", "ABC": "ABC Coin",
+}
+PLATFORM_COIN_LAUNCH_USD = {"NOVA": 0.25, "ABC": 0.01}
+PLATFORM_COIN_WALK_BAND_PCT = float(os.environ.get("PLATFORM_COIN_WALK_BAND_PCT", "8"))
+
+# Immutable platform-coins group (what /api/platform/coins reports). This is
+# the authoritative set — frontends should read it from the API, never hardcode.
+PLATFORM_COINS_LIVE = os.environ.get("PLATFORM_COINS_LIVE", "")  # optional: restrict tradeable
+PLATFORM_COINS_LIVE = tuple(c.strip().upper() for c in PLATFORM_COINS_LIVE.split(",") if c.strip())
+
 NORMAL_WALLET_COINS = os.environ.get(
     "NORMAL_WALLET_COINS",
     "USDT,USDC,BTC,ETH,BNB,SOL,LTC,TRX,XRP,DOGE,ADA,LINK",
 )
 NORMAL_WALLET_COINS = tuple(c.strip().upper() for c in NORMAL_WALLET_COINS.split(",") if c.strip())
+
+
+# --- Configurable deposit / withdraw delivery addresses (optional) ----------
+# Map "SYMBOL=ADDRESS" entries separated by commas, e.g.
+#   DEPOSIT_ADDRESSES="GOLF=TFoo...,NOVA=TRBar..."
+# Empty (default) → the frontend shows "Not Provided Yet" for that coin
+# instead of inventing an address. The RATES/api never exposes these; the
+# wallet layout serves them read-only so withdrawal is a clear, honest flow
+# (copy the address, send from a real wallet).
+def _addr_map(raw):
+    out = {}
+    for entry in (x.strip() for x in raw.split(",") if x.strip()):
+        if "=" in entry:
+            sym, addr = entry.split("=", 1)
+            out[sym.strip().upper()] = addr.strip()
+    return out
+
+
+DEPOSIT_ADDRESSES = _addr_map(os.environ.get("DEPOSIT_ADDRESSES", ""))
+WITHDRAW_ADDRESSES = _addr_map(os.environ.get("WITHDRAW_ADDRESSES", ""))
 
 # --- Demo market (authoritative server-side price simulator) ---------------
 # The chart's *rendering* code in the frontend is untouched per spec — this

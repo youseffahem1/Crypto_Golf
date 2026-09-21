@@ -2132,6 +2132,14 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
         Messages
     </button>
 
+    <button class="side-item" data-page="history">
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path d="M4 5h16v14H4z"/>
+            <path d="M4 9h16M8 13h4M8 17h8"/>
+        </svg>
+        History
+    </button>
+
     <button class="side-item" data-page="admin" data-admin>
         <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
             <path d="M12 3l7 3v5c0 4.5-2.9 8.2-7 10-4.1-1.8-7-5.5-7-10V6z"/>
@@ -2239,7 +2247,7 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 
                 <div class="asset-info">
 
-                    <div class="gold-icon">
+                    <div class="gold-icon" id="assetIcon">
                         <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
                             <path d="M7 17h10l2-7H5l2 7z"/>
                             <path d="M9 10l1.7-5h2.6L15 10"/>
@@ -2248,11 +2256,11 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                     </div>
 
                     <div>
-                        <div class="asset-name">
+                        <div class="asset-name" id="assetName">
                             GOLF <span style="color:#777c88">•</span> <span class="payout">93%</span>
                         </div>
 
-                        <div class="asset-meta">
+                        <div class="asset-meta" id="assetMeta">
                             <span class="market-dot"></span>
                             OTC Market
                             <span>•</span>
@@ -2426,19 +2434,19 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                     <span class="profit-value">+93% · <span id="profitAmount">$93</span></span>
                 </div>
 
-                <!-- MAIN TRADE BUTTONS -->
+                <!-- MAIN TRADE BUTTONS: BUY (green, left) / SELL (red, right) -->
                 <div class="trade-buttons">
 
-                    <button class="trade-btn down-btn" id="downBtn">
+                    <button class="trade-btn up-btn" id="upBtn">
 
                         <div class="trade-btn-content">
 
                             <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                                <path d="M12 4v15"/>
-                                <path d="M6 13l6 6 6-6"/>
+                                <path d="M12 20V5"/>
+                                <path d="M6 11l6-6 6 6"/>
                             </svg>
 
-                            <span>DOWN</span>
+                            <span>BUY</span>
 
                         </div>
 
@@ -2454,15 +2462,15 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 
                     </button>
 
-                    <button class="trade-btn up-btn" id="upBtn">
+                    <button class="trade-btn down-btn" id="downBtn">
 
                         <div class="trade-btn-content">
 
-                            <span>UP</span>
+                            <span>SELL</span>
 
                             <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                                <path d="M12 20V5"/>
-                                <path d="M6 11l6-6 6 6"/>
+                                <path d="M12 4v15"/>
+                                <path d="M6 13l6 6 6-6"/>
                             </svg>
 
                         </div>
@@ -2520,8 +2528,205 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
     </main>
 
     <!-- =====================================================
-         MOBILE BOTTOM NAV
+         TRADING OVERVIEW — Markets & Platform Coins
     ====================================================== -->
+    <section class="vanta-trading-page" id="vantaTradingPage" aria-label="Trading overview">
+      <div class="vtp-inner">
+
+        <div class="vtp-hero">
+          <div>
+            <div class="vtp-eyebrow">Trading</div>
+            <h1 class="vtp-title">VANTA Markets</h1>
+            <div class="vtp-sub">Buy calls that pay when the coin goes up, sell calls that pay when it goes down — both settled at the server price.</div>
+          </div>
+          <div class="vtp-balance">
+            <div class="vtp-balance-label">USDT Balance</div>
+            <div class="vtp-balance-value" id="vtpUsdt">$0.00</div>
+            <div class="vtp-balance-meta" id="vtpCoverage">Platform portfolio —</div>
+          </div>
+        </div>
+
+        <div class="vtp-cards">
+          <button class="vtp-card vtp-card-profit" id="vtpProfitCard" type="button">
+            <div class="vtp-card-head">
+              <span class="vtp-card-ico">📈</span>
+              <span class="vtp-card-link">Detail →</span>
+            </div>
+            <div class="vtp-card-label">Total Profit</div>
+            <div class="vtp-card-value vtp-up" id="vtpProfit">+$0.00</div>
+            <div class="vtp-card-sub" id="vtpProfitSub">Realized trades + holdings</div>
+          </button>
+
+          <div class="vtp-card">
+            <div class="vtp-card-head">
+              <span class="vtp-card-ico">💼</span>
+              <span class="vtp-card-tag" id="vtpInvestTag">Invested</span>
+            </div>
+            <div class="vtp-card-label">Original Investment</div>
+            <div class="vtp-card-value" id="vtpInvest">$0.00</div>
+            <div class="vtp-card-sub" id="vtpInvestSub">USDT swapped into platform coins</div>
+          </div>
+
+          <div class="vtp-card vtp-card-perf">
+            <div class="vtp-card-head">
+              <span class="vtp-card-ico">🚀</span>
+              <span class="vtp-card-tag" id="vtpPerfTag">+0.00%</span>
+            </div>
+            <div class="vtp-card-label">Coin Performance</div>
+            <div class="vtp-card-value" id="vtpPerf">$0.00</div>
+            <div class="vtp-card-sub" id="vtpPerfSub">Current platform value</div>
+          </div>
+        </div>
+
+        <div class="vtp-invest-bar">
+          <div class="vtp-invest-left">
+            <div class="vtp-invest-title">Invest in a platform coin</div>
+            <div class="vtp-invest-sub">Swap USDT into NOVA, ABC or GOLF — then trade the price.</div>
+          </div>
+          <div class="vtp-invest-actions">
+            <select class="vtp-invest-pick" id="vtpInvestPick" aria-label="Choose a platform coin"></select>
+            <button class="vtp-invest-btn" id="vtpInvestGo" type="button">Invest →</button>
+          </div>
+        </div>
+
+        <div class="vtp-head-row">
+          <h2 class="vtp-sec-title">Platform Coins</h2>
+          <button class="vtp-sec-link" id="vtpHistoryLink" type="button">View History →</button>
+        </div>
+
+        <div class="vtp-coin-list" id="vtpCoinList"></div>
+
+      </div>
+    </section>
+
+    <!-- =====================================================
+         HISTORY PAGE — Trading / Wallet / Chat
+    ====================================================== -->
+    <section class="vanta-history-page" id="vantaHistoryPage" aria-label="History">
+      <div class="vhp-inner">
+        <div class="vhp-tabs">
+          <button class="vhp-tab active" data-vtab="trading" type="button">Trading</button>
+          <button class="vhp-tab" data-vtab="wallet" type="button">Wallet</button>
+          <button class="vhp-tab" data-vtab="chat" type="button">Chat</button>
+        </div>
+        <div class="vhp-head">
+          <div class="vhp-title" id="vhpTitle">Trading History</div>
+          <button class="vhp-close" id="vhpClose" type="button">Close</button>
+        </div>
+        <div class="vhp-panel" id="vhpPanel"><div class="vd-empty">Loading…</div></div>
+      </div>
+    </section>
+
+    <style id="vanta-trading-overview-css">
+      .vanta-trading-page{display:none}
+      .vanta-trading-page.vw-active{display:block;animation:vwPageIn .22s ease-out}
+      .vanta-history-page{display:none}
+      .vanta-history-page.vw-active{display:block;animation:vwPageIn .22s ease-out}
+      #vantaTradingPage,#vantaHistoryPage{max-width:min(980px,100%);width:100%;margin:0 auto;padding:18px 0 6px}
+      .vtp-inner,.vhp-inner{display:flex;flex-direction:column;gap:16px;padding:0 14px}
+      .vtp-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;border:1px solid var(--line);background:linear-gradient(145deg,var(--panel-2),var(--panel));border-radius:20px;padding:18px;box-shadow:var(--shadow)}
+      .vtp-eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:800}
+      .vtp-title{font-size:22px;font-weight:900;margin:2px 0}
+      .vtp-sub{color:var(--muted);font-size:12px;max-width:460px;line-height:1.5}
+      .vtp-balance{text-align:right}
+      .vtp-balance-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+      .vtp-balance-value{font-size:24px;font-weight:900}
+      .vtp-balance-meta{font-size:11px;color:var(--muted);margin-top:3px}
+      .vtp-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+      .vtp-card{border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:16px;text-align:left;color:inherit;box-shadow:var(--shadow);transition:transform .14s ease,border-color .14s ease}
+      button.vtp-card{cursor:pointer}
+      button.vtp-card:hover{transform:translateY(-2px);border-color:rgba(255,200,87,.45)}
+      .vtp-card-prof .vtp-card-head{color:var(--gold)}
+      .vtp-card-head{display:flex;align-items:center;justify-content:space-between}
+      .vtp-card-ico{font-size:17px}
+      .vtp-card-link{font-size:11px;color:var(--gold);font-weight:800}
+      .vtp-card-tag{font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;background:rgba(255,200,87,.14);color:var(--gold)}
+      .vtp-card-label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:12px;font-weight:700}
+      .vtp-card-value{font-size:22px;font-weight:900;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .vtp-up{color:var(--up)}
+      .vtp-down{color:var(--down)}
+      .vtp-card-sub{font-size:11px;color:var(--muted);margin-top:4px}
+      .vtp-invest-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px dashed var(--line);border-radius:16px;padding:14px 16px;background:rgba(255,200,87,.05)}
+      .vtp-invest-title{font-size:14px;font-weight:800}
+      .vtp-invest-sub{font-size:11px;color:var(--muted);margin-top:2px}
+      .vtp-invest-actions{display:flex;align-items:center;gap:8px}
+      .vtp-invest-pick,.vtp-invest-btn{height:42px;border-radius:12px;font-size:13px;font-weight:800}
+      .vtp-invest-pick{border:1px solid var(--line);background:var(--panel-2);color:inherit;padding:0 12px;min-width:130px}
+      .vtp-invest-btn{border:0;padding:0 18px;background:linear-gradient(135deg,var(--up),#0d8a3c);color:#fff;cursor:pointer;box-shadow:0 8px 22px rgba(24,223,130,.22)}
+      .vtp-head-row{display:flex;align-items:center;justify-content:space-between}
+      .vtp-sec-title{font-size:15px;font-weight:900}
+      .vtp-sec-link{font-size:12px;color:var(--gold);font-weight:800;background:none;border:0;cursor:pointer;padding:4px}
+      .vtp-coin-list{display:flex;flex-direction:column;gap:10px}
+      .vtp-coin{display:flex;align-items:center;gap:12px;border:1px solid var(--line);background:var(--panel);border-radius:16px;padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:transform .14s ease,border-color .14s ease}
+      .vtp-coin:hover{transform:translateY(-1px);border-color:rgba(255,200,87,.4)}
+      .vtp-coin-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;font-size:15px;font-weight:900;flex-shrink:0;background:linear-gradient(145deg,#40321a,#17130a);border:1px solid rgba(255,200,87,.2);color:var(--gold)}
+      .vtp-coin-names{min-width:0}
+      .vtp-coin-sym{font-size:14px;font-weight:900}
+      .vtp-coin-name{font-size:11px;color:var(--muted)}
+      .vtp-coin-price{text-align:right;min-width:84px}
+      .vtp-coin-price b{font-size:13px;display:block}
+      .vtp-coin-price span{font-size:11px;color:var(--muted)}
+      .vtp-coin-center{flex:1;display:flex;flex-direction:column;gap:4px}
+      .vtp-coin-bar{height:5px;border-radius:99px;background:var(--line);overflow:hidden}
+      .vtp-coin-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold),var(--up))}
+      .vtp-coin-meta{display:flex;gap:10px;font-size:10px;color:var(--muted);align-items:center;flex-wrap:wrap}
+      .vtp-coin-actions{display:flex;flex-direction:column;gap:6px}
+      .vtp-inv, .vtp-dw{font-size:11px;font-weight:800;border-radius:10px;padding:7px 12px;border:0;cursor:pointer;white-space:nowrap}
+      .vtp-inv{background:linear-gradient(135deg,var(--up),#0d8a3c);color:#fff;box-shadow:0 6px 16px rgba(24,223,130,.2)}
+      .vtp-dw{background:var(--panel-2);color:var(--gold);border:1px solid rgba(255,200,87,.28)}
+      .vtp-coin-badge{font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;padding:2px 8px;border-radius:99px;background:rgba(24,223,130,.12);color:var(--up)}
+      /* profit breakdown modal */
+      .vtp-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(4,6,10,.66);backdrop-filter:blur(6px)}
+      .vtp-modal.open{display:flex}
+      .vtp-modal-card{width:min(410px,100%);border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:20px;box-shadow:0 28px 70px rgba(0,0,0,.5);animation:vwPageIn .2s ease-out}
+      .vtp-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+      .vtp-modal-title{font-size:16px;font-weight:900}
+      .vtp-modal-x{width:30px;height:30px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-size:15px;cursor:pointer}
+      .vtp-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+      .vtp-row:last-child{border-bottom:0}
+      .vtp-row .vtp-k{color:var(--muted);font-size:12px}
+      .vtp-row .vtp-v{font-weight:800}
+      .vtp-addr-row{font-size:11px;color:var(--muted);word-break:break-all;line-height:1.5}
+      .vtp-actions{display:flex;gap:10px;margin-top:16px}
+      .vtp-act{flex:1;border:0;border-radius:12px;padding:12px;font-weight:800;font-size:13px;cursor:pointer}
+      .vtp-act-primary{background:linear-gradient(135deg,var(--up),#0d8a3c);color:#fff}
+      .vtp-act-ghost{background:var(--panel-2);color:inherit;border:1px solid var(--line)}
+      /* history page */
+      .vhp-tabs{display:flex;gap:8px}
+      .vhp-tab{flex:1;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-weight:800;font-size:13px;cursor:pointer}
+      .vhp-tab.active{background:linear-gradient(135deg,var(--up),#0d8a3c);color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(24,223,130,.22)}
+      .vhp-head{display:flex;align-items:center;justify-content:space-between}
+      .vhp-title{font-size:15px;font-weight:900}
+      .vhp-close{font-size:12px;color:var(--gold);font-weight:800;background:none;border:0;cursor:pointer;padding:4px}
+      .vhp-panel{display:flex;flex-direction:column;gap:10px}
+      .vh-item{display:flex;align-items:center;gap:11px;border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow)}
+      .vh-badge{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:13px;font-weight:900;flex-shrink:0}
+      .vh-badge.up{background:rgba(24,223,130,.14);color:var(--up)}
+      .vh-badge.down{background:rgba(255,77,105,.14);color:var(--down)}
+      .vh-badge.mid{background:rgba(255,200,87,.14);color:var(--gold)}
+      .vh-main{flex:1;min-width:0}
+      .vh-title2{font-size:13px;font-weight:800}
+      .vh-meta{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .vh-right{text-align:right}
+      .vh-val{font-size:13px;font-weight:900}
+      .vh-val.up{color:var(--up)}
+      .vh-val.down{color:var(--down)}
+      .vh-time{font-size:10px;color:var(--muted);margin-top:2px}
+      .vhp-unread{display:inline-block;min-width:18px;height:18px;border-radius:99px;background:var(--down);color:#fff;font-size:10px;line-height:18px;text-align:center;padding:0 5px;margin-left:6px}
+      @media (max-width:700px){
+        .vtp-cards{grid-template-columns:1fr}
+      }
+      @media (max-width:430px){
+        .vtp-hero{flex-direction:column;align-items:stretch}
+        .vtp-balance{text-align:left}
+        .vtp-coin{flex-wrap:wrap}
+        .vtp-coin-actions{flex-direction:row;width:100%}
+        .vtp-inv,.vtp-dw{flex:1}
+        .vtp-coin-price{min-width:0}
+        .vtp-invest-actions{width:100%}
+        .vtp-invest-pick{flex:1}
+      }
+    </style>
     <nav class="bottom-nav">
     <button class="nav-item active" data-page="dashboard">
         <div class="nav-icon">
@@ -2795,9 +3000,10 @@ function money(value) {
 
 
 function price(value) {
-
+    if (window.vantaActiveCoin && window.vantaActiveCoin !== "GOLF") {
+        return (Number(value) || 0).toFixed(8).replace(/0+$/, "").replace(/\.$/, "") || "0";
+    }
     return Number(value).toFixed(3);
-
 }
 
 
@@ -3119,12 +3325,24 @@ function buildDemoCandles(count, step, volatility, fromPrice) {
     return series;
 }
 
-/* Candles are the server's own authoritative GOLF/USDT price history —
-   the same series that determines every trade's win/loss. */
+/* Candles are the server's own authoritative price history for the active
+   platform coin (GOLFUSDT by default, NOVAUSDT/ABCUSDT… on the matching
+   coin screen) — the same series that determines every trade's win/loss. */
+function vantaCandlesEndpoint() {
+    const c = window.vantaActiveCoin;
+    if (c && c !== "GOLF") return "/api/market/candles?symbol=" + encodeURIComponent(c) + "&limit=150";
+    return "/api/market/candles?limit=150";
+}
+function vantaPriceEndpoint() {
+    const c = window.vantaActiveCoin;
+    if (c && c !== "GOLF") return "/api/market/symbol-price?symbol=" + encodeURIComponent(c);
+    return "/api/market/price";
+}
+
 async function seedCandles() {
 
     try {
-        const rows = await vantaApi("/api/market/candles?limit=150");
+        const rows = await vantaApi(vantaCandlesEndpoint());
         if (rows && rows.length) {
             candles = rows.map(vantaMapCandle);
             currentPrice = candles[candles.length - 1].close;
@@ -3149,7 +3367,7 @@ async function seedCandles() {
 
 async function vantaResyncCandles() {
     try {
-        const rows = await vantaApi("/api/market/candles?limit=150");
+        const rows = await vantaApi(vantaCandlesEndpoint());
         if (rows && rows.length) {
             candles = rows.map(vantaMapCandle);
             demoMode = false;
@@ -3159,13 +3377,13 @@ async function vantaResyncCandles() {
 
 async function vantaPollPrice() {
     try {
-        const p = await vantaApi("/api/market/price");
+        const p = await vantaApi(vantaPriceEndpoint());
         serverPrice = Number(p.price);
     } catch (e) {
         /* No server — gently animate the demo market instead of freezing.
            The wandering target keeps the live candle easing side to side. */
         const wander = (Math.random() - 0.5) * currentPrice * 0.0015;
-        serverPrice = Math.max(1, currentPrice + wander);
+        serverPrice = Math.max(Number(window.vantaActiveCoin === "GOLF" ? 0.000001 : 0.00000001), currentPrice + wander);
     }
 }
 
@@ -3966,6 +4184,7 @@ async function createTrade(direction) {
 
         const trade = {
             id: "demo-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+            symbol: window.vantaActiveCoin || "GOLF",
             direction,
             amount,
             entryPrice: currentPrice,
@@ -3987,7 +4206,7 @@ async function createTrade(direction) {
         vantaRenderAccountPanel();
 
         showToast(
-            `${direction === "UP" ? "↑ UP" : "↓ DOWN"} opened (Practice) · ${price(trade.entryPrice)}`
+            `${direction === "UP" ? "↑ BUY" : "↓ SELL"} opened (Practice) · ${price(trade.entryPrice)}`
         );
         return;
     }
@@ -4004,7 +4223,8 @@ async function createTrade(direction) {
             body: JSON.stringify({
                 direction,
                 amount,
-                duration_seconds: duration.seconds
+                duration_seconds: duration.seconds,
+                symbol: window.vantaActiveCoin || "GOLF"
             })
         });
     } catch (e) {
@@ -4014,6 +4234,7 @@ async function createTrade(direction) {
 
     const trade = {
         id: serverTrade.id,
+        symbol: serverTrade.symbol || "GOLF",
         direction: serverTrade.direction,
         amount: serverTrade.amount,
         entryPrice: serverTrade.entry_price,
@@ -4032,7 +4253,7 @@ async function createTrade(direction) {
     refreshBalance();
 
     showToast(
-        `${direction === "UP" ? "↑ UP" : "↓ DOWN"} opened · ${price(trade.entryPrice)}`
+        `${direction === "UP" ? "↑ BUY" : "↓ SELL"} opened · ${price(trade.entryPrice)}`
     );
 
 }
@@ -4154,7 +4375,8 @@ function positionTrade(trade) {
 
 function positionAllTrades() {
 
-    trades.forEach(
+    const activeCoin = window.vantaActiveCoin || "GOLF";
+    trades.filter(t => (t.symbol || "GOLF") === activeCoin).forEach(
         positionTrade
     );
 
@@ -4167,9 +4389,12 @@ function positionAllTrades() {
 
 function renderOpenTrades() {
 
-    openCountEl.textContent = trades.length;
+    const activeCoin = window.vantaActiveCoin || "GOLF";
+    const activeTrades = trades.filter(t => (t.symbol || "GOLF") === activeCoin);
 
-    if (!trades.length) {
+    openCountEl.textContent = activeTrades.length;
+
+    if (!activeTrades.length) {
         openTradesEl.innerHTML = `
             <div class="empty-state">No open trades</div>
         `;
@@ -4178,7 +4403,7 @@ function renderOpenTrades() {
 
     openTradesEl.innerHTML = "";
 
-    trades.forEach(trade => {
+    activeTrades.forEach(trade => {
         const remaining = Math.max(0, Math.ceil((trade.endTime - Date.now()) / 1000));
         const item = document.createElement("div");
         item.className = "open-trade";
@@ -4191,11 +4416,11 @@ function renderOpenTrades() {
 
             <div class="open-main">
                 <div class="open-top">
-                    <span class="open-direction">${trade.direction}</span>
+                    <span class="open-direction">${trade.direction === "UP" ? "BUY" : "SELL"}</span>
                     <span class="open-id">${trade.id}</span>
                 </div>
                 <div class="open-info">
-                    <span>GOLF</span>
+                    <span>${trade.symbol || "GOLF"}</span>
                     <span>${price(trade.entryPrice)}</span>
                 </div>
             </div>
@@ -4341,6 +4566,7 @@ async function vantaSyncTrades() {
         if (trades.some(t => t.id === st.id)) return;
         const trade = {
             id: st.id,
+            symbol: st.symbol || "GOLF",
             direction: st.direction,
             amount: st.amount,
             entryPrice: st.entry_price,
@@ -4370,6 +4596,7 @@ async function vantaSyncTrades() {
 
     history = hist.slice(0, 5).map(h => ({
         id: h.id,
+        symbol: h.symbol || "GOLF",
         direction: h.direction,
         amount: h.amount,
         profit: h.profit || 0,
@@ -4585,7 +4812,10 @@ function vantaSettleDemoTrades() {
 
 function renderHistory() {
 
-    if (!history.length) {
+    const activeCoin = window.vantaActiveCoin || "GOLF";
+    const filtered = history.filter(item => (item.symbol || "GOLF") === activeCoin);
+
+    if (!filtered.length) {
 
         historyList.innerHTML = `
             <div class="empty-state">
@@ -4601,7 +4831,7 @@ function renderHistory() {
     historyList.innerHTML = "";
 
 
-    history.forEach(item => {
+    filtered.forEach(item => {
 
         const row =
             document.createElement(
@@ -4637,11 +4867,11 @@ function renderHistory() {
                 <div>
 
                     <div class="history-name">
-                        ${item.id} · ${item.direction}
+                        ${item.id} · ${item.direction === "UP" ? "BUY" : "SELL"}
                     </div>
 
                     <div class="history-meta">
-                        GOLF · ${money(item.amount)}
+                        ${item.symbol || "GOLF"} · ${money(item.amount)}
                     </div>
 
                 </div>
@@ -6176,6 +6406,8 @@ async function vantaHandleEntry() {
     {sym:'USDT', name:'Tether', sub:'Primary currency'},
     {sym:'USDC', name:'USD Coin', sub:'Stablecoin'},
     {sym:'GOLF', name:'Golf Coin', sub:'Platform token'},
+    {sym:'NOVA', name:'Nova Coin', sub:'Platform token'},
+    {sym:'ABC', name:'ABC Coin', sub:'Platform token'},
     {sym:'BTC', name:'Bitcoin', sub:'Bitcoin'},
     {sym:'ETH', name:'Ethereum', sub:'Ethereum'},
     {sym:'SOL', name:'Solana', sub:'Solana'},
@@ -6210,12 +6442,12 @@ async function vantaHandleEntry() {
       <section class="vfx-golf-mini"><div class="vfx-golf-mini-head"><strong>⛳ GOLF — Early Access</strong><span class="vfx-golf-price" id="vfxGolfPrice">$0.00</span></div><p id="vfxGolfBlurb">GOLF is the early-access token traded on this platform. Its price is set by the same authoritative server-side market used for trading.</p><div class="vfx-golf-target" id="vfxGolfChange">24h change: 0.00%</div></section>
       <section class="vfx-wallet-row">
         <section class="vfx-wallet-col" id="vfxInvestWallet">
-          <div class="vfx-w-col-head"><strong>Trading · Investment Wallet</strong><span class="vfx-tag plat">Platform coins</span></div>
-          <div id="vfxInvestHoldings"><div class="vfx-w-note">Platform-issued coins you hold. Swap USDT into these, then trade them on GOLF markets.</div></div>
+          <div class="vfx-w-col-head"><strong>Platform Investment Wallet</strong><span class="vfx-tag plat">Platform coins</span></div>
+          <div id="vfxInvestHoldings"><div class="vfx-w-note">Platform-issued coins you hold. Swap USDT into these, then trade them on VANTA Markets.</div></div>
           <button class="vfx-w-link" id="vfxInvestTradeBtn" type="button">Open Investment Trading →</button>
         </section>
         <section class="vfx-wallet-col" id="vfxNormalWallet">
-          <div class="vfx-w-col-head"><strong>Normal Wallet</strong><span class="vfx-tag norm">Established crypto</span></div>
+          <div class="vfx-w-col-head"><strong>Standard Crypto Wallet</strong><span class="vfx-tag norm">Established crypto</span></div>
           <div id="vfxNormalHoldings"><div class="vfx-w-note">Established cryptocurrencies you hold on the platform (BTC, ETH, BNB, USDT, USDC, SOL, LTC, …).</div></div>
         </section>
       </section>`;
@@ -8431,21 +8663,31 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
   };
 
   /* ---------------- PAGE ROUTER ---------------- */
-  const PAGES=['dashboard','trading','wallet','messages','admin'];
+  const PAGES=['dashboard','trading','wallet','messages','history','admin'];
   const dashPage=$('vantaDashPage'), walletPage=$('vantaWalletPage'), msgPage=$('vantaMessagesPage'), adminPage=$('vantaAdminPage');
+  const tradingPage=$('vantaTradingPage'), historyPage=$('vantaHistoryPage');
   const mainEl=document.querySelector('.main');
   function setPage(page){
     dashPage?.classList.toggle('vw-active',page==='dashboard');
     walletPage?.classList.toggle('vw-active',page==='wallet');
     msgPage?.classList.toggle('vw-active',page==='messages');
+    historyPage?.classList.toggle('vw-active',page==='history');
     document.getElementById('vantaAdminPage')?.classList.toggle('vw-active',page==='admin');
-    if(mainEl) mainEl.style.display = page==='trading' ? '' : 'none';
+    if(page==='trading'){
+      const coinOpen=!!window.vantaActiveCoin;
+      tradingPage?.classList.toggle('vw-active',!coinOpen);
+      if(mainEl) mainEl.style.display = coinOpen ? '' : 'none';
+    }else{
+      tradingPage?.classList.remove('vw-active');
+      if(mainEl) mainEl.style.display = 'none';
+    }
     document.querySelectorAll('.side-item,.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
     window.scrollTo({top:0,behavior:'instant'});
     if(page==='wallet'){ if(window.vantaRefreshWalletSplit) window.vantaRefreshWalletSplit(); refreshCoinPricesInWallet(); }
     if(page==='dashboard'){ if(typeof refreshBalance==='function') refreshBalance(); renderDashboardTransfers(); refreshGolfCard(); }
     if(page==='messages'){ if(window.vantaRefreshMessages) window.vantaRefreshMessages(false); }
     if(page==='admin'){ if(window.vantaAdminRefresh) window.vantaAdminRefresh(); }
+    if(page==='trading'||page==='history'){ if(window.vantaRenderTradingPage) window.vantaRenderTradingPage(page); }
   }
   function refreshCoinPricesInWallet(){
     try{
@@ -8657,19 +8899,25 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
 
     const usdVal=(sym,amt)=>{ const p=Number(prices[sym])||Number(prices['USDT']===1?0:0); return Number(amt)* (sym==='USDT'?1:(Number(prices[sym])||0)); };
 
-    function rowHtml(sym){
+    function rowHtml(sym,withDw){
       const amt=Number(bal[sym]||0);
       const usd=amt*(sym==='USDT'?1:(Number(prices[sym])||0));
-      return '<div class="vfx-hold"><b>'+sym+'</b><span>'+coinFmt(amt)+' <em>≈ '+money(usd)+'</em></span></div>';
+      return '<div class="vfx-hold'+(withDw?' vfx-hold-dw':'')+'"><b>'+sym+'</b><span>'+coinFmt(amt)+' <em>≈ '+money(usd)+'</em></span>'
+        +(withDw?'<button class="vfx-dw" type="button" data-dw-sym="'+sym+'">Deposit / Withdraw</button>':'')
+        +'</div>';
     }
 
     const plat=layout.platform_coins||[];
     const hasPlat=plat.some(s=>Number(bal[s]||0)>0);
     platBox.innerHTML = plat.length
-      ? '<div style="padding:2px 0 4px">'+plat.map(rowHtml).join('')+
-        '<div class="vfx-w-note">USDT → '+plat.join(' → ')+' — these coins live in the investment section and are traded on GOLF markets.</div></div>'
+      ? '<div style="padding:2px 0 4px">'+plat.map(s=>rowHtml(s,true)).join('')+
+        '<div class="vfx-w-note">'+(window.PLATFORM_COINS_META?window.PLATFORM_COINS_META.join(' → '):'USDT → platform coins')+' — these coins live in the investment wallet and are traded on VANTA Markets.</div></div>'
       : '<div class="vd-empty">No platform coins issued yet.</div>';
     if(!hasPlat){ /* create the holder rows for zero balances too */ }
+    platBox.querySelectorAll('[data-dw-sym]').forEach(b=>b.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(window.vantaShowCoinAddress) window.vantaShowCoinAddress(b.dataset.dwSym);
+    }));
 
     const norm=layout.normal_wallet_coins||[];
     normBox.innerHTML = norm.length
@@ -9988,6 +10236,369 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
     if(activeTab==='users') loadUsers();
     if(activeTab==='txs') loadTxs();
   },20000);
+})();
+</script>
+
+<script id="vanta-trading-overview-js">
+(function(){
+  const $=id=>document.getElementById(id);
+  const q=s=>document.querySelector(s);
+  const openModal=id=>$(id)?.classList.add('open');
+  const closeModal=id=>$(id)?.classList.remove('open');
+  const toast=msg=>{ if(typeof showToast==='function') showToast(msg); else alert(msg); };
+  const money=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const coinFmt=n=>{
+    const v=Number(n||0);
+    if(!Number.isFinite(v)||v===0)return'0';
+    if(v>=1000)return v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if(v>=1)return v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4});
+    return v.toLocaleString('en-US',{maximumFractionDigits:8});
+  };
+  const timeAgo=ts=>{
+    if(!ts)return'';
+    const d=Date.parse(String(ts).endsWith('Z')?ts:ts+'Z');
+    if(Number.isNaN(d))return'';
+    const s=Math.max(0,(Date.now()-d)/1000);
+    if(s<60)return'now';
+    if(s<3600)return Math.floor(s/60)+'m';
+    if(s<86400)return Math.floor(s/3600)+'h';
+    return new Date(d).toLocaleDateString();
+  };
+  const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const tradingPage=$('vantaTradingPage');
+  const historyPage=$('vantaHistoryPage');
+  const mainEl=q('.main');
+  const coinName=sym=>{const c=(window.VANTACOINS||[]).find(x=>x.sym===sym);return c?c.name:sym;};
+
+  if(!window.vantaActiveCoin) window.vantaActiveCoin=null;
+
+  /* ---------------- PROFIT MODAL ---------------- */
+  let platformData=null;
+  const profitModal=document.createElement('div');
+  profitModal.id='vtpProfitModal'; profitModal.className='vtp-modal'; profitModal.setAttribute('role','dialog');
+  profitModal.innerHTML=`
+    <div class="vtp-modal-card">
+      <div class="vtp-modal-head">
+        <div class="vtp-modal-title">Total Profit</div>
+        <button type="button" class="vtp-modal-x" data-close>×</button>
+      </div>
+      <div id="vpProfitBody">
+        <div class="vtp-row"><span class="vtp-k">Realized trading profit</span><span class="vtp-v" id="vpReal">+$0.00</span></div>
+        <div class="vtp-row"><span class="vtp-k">Platform holdings P/L</span><span class="vtp-v" id="vpHold">+$0.00</span></div>
+        <div class="vtp-row"><span class="vtp-k">Original investment</span><span class="vtp-v" id="vpInvest">$0.00</span></div>
+        <div class="vtp-row"><span class="vtp-k">Current platform value</span><span class="vtp-v" id="vpValue">$0.00</span></div>
+        <div class="vtp-row"><span class="vtp-k">Available USDT</span><span class="vtp-v" id="vpUsdt">$0.00</span></div>
+      </div>
+      <div class="vtp-actions">
+        <button type="button" class="vtp-act vtp-act-primary" id="vpMove">Move to Wallet</button>
+        <button type="button" class="vtp-act vtp-act-ghost" id="vpReinvest">Reinvest</button>
+      </div>
+    </div>`;
+  document.body.appendChild(profitModal);
+  profitModal.addEventListener('click',e=>{ if(e.target===profitModal||e.target.dataset.close) closeModal('vtpProfitModal'); });
+  $('vpMove')?.addEventListener('click',()=>{ closeModal('vtpProfitModal'); if(window.vantaSetPage) window.vantaSetPage('wallet'); });
+  $('vpReinvest')?.addEventListener('click',()=>{
+    closeModal('vtpProfitModal');
+    const pick=$('vtpInvestPick'), sym=pick&&pick.value?pick.value:'GOLF';
+    if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT',sym);
+    else toast('Please open the Wallet page first.');
+  });
+  function openProfitModal(d){
+    if($('vpReal'))$('vpReal').textContent=(d.trade_profit>0?'+':'')+money(d.trade_profit);
+    if($('vpHold'))$('vpHold').textContent=(d.unrealized>0?'+':'')+money(d.unrealized);
+    if($('vpInvest'))$('vpInvest').textContent=money(d.invested);
+    if($('vpValue'))$('vpValue').textContent=money(d.value);
+    if($('vpUsdt'))$('vpUsdt').textContent=money(d.usdt);
+    openModal('vtpProfitModal');
+  }
+
+  /* ---------------- ADDRESS (Deposit / Withdraw) MODAL ---------------- */
+  const addrModal=document.createElement('div');
+  addrModal.id='vtpAddrModal'; addrModal.className='vtp-modal'; addrModal.setAttribute('role','dialog');
+  addrModal.innerHTML=`
+    <div class="vtp-modal-card">
+      <div class="vtp-modal-head">
+        <div class="vtp-modal-title" id="vpAddrTitle">Deposit</div>
+        <button type="button" class="vtp-modal-x" data-close>×</button>
+      </div>
+      <div id="vpAddrBody"></div>
+      <div class="vtp-actions">
+        <button type="button" class="vtp-act vtp-act-primary" id="vpAddrCopy">Copy</button>
+        <button type="button" class="vtp-act vtp-act-ghost" data-close>Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(addrModal);
+  addrModal.addEventListener('click',e=>{ if(e.target===addrModal||e.target.dataset.close) closeModal('vtpAddrModal'); });
+  let addrCopyValue='';
+  $('vpAddrCopy')?.addEventListener('click',()=>{
+    if(!addrCopyValue){ toast('No address available yet.'); return; }
+    try{ navigator.clipboard.writeText(addrCopyValue); toast('Address copied.'); }catch(e){ toast(addrCopyValue); }
+  });
+  function vantaShowAddress(sym,mode,depAddrs,wdAddrs){
+    const map=mode==='deposit'?depAddrs:wdAddrs;
+    const val=(map&&map[sym])||(map&&map.USDT)||'';
+    if($('vpAddrTitle'))$('vpAddrTitle').textContent=(sym+' '+(mode==='deposit'?'Deposit':'Withdraw')+' Address');
+    if($('vpAddrBody')){
+      if(val){ addrCopyValue=val; $('vpAddrBody').innerHTML='<div class="vtp-addr-row">'+esc(val)+'</div><div class="vtp-sub" style="font-size:10px;color:var(--muted);margin-top:6px">'+esc(sym)+' is testnet — only send test funds to this address.</div>'; }
+      else{ addrCopyValue=''; $('vpAddrBody').innerHTML='<div class="vtp-addr-row">Not Provided Yet.</div><div class="vtp-sub" style="font-size:10px;color:var(--muted);margin-top:6px">The platform admin has not configured a '+esc(mode)+' address for '+esc(sym)+' yet.</div>'; }
+    }
+    openModal('vtpAddrModal');
+  }
+
+  /* ---------------- OVERVIEW RENDER ---------------- */
+  async function fetchPlatform(){
+    const fallback={usdt_balance:typeof balance!=='undefined'?balance:0, total_platform_value:0, total_usdt_invested:0, total_unrealized_pnl:0, total_trade_profit:0, coins:[]};
+    try{
+      const p=await vantaApi('/api/platform/coins');
+      return p||fallback;
+    }catch(e){ return fallback; }
+  }
+
+  async function vantaRefreshOverview(fast){
+    if(!tradingPage)return;
+    const d=await fetchPlatform();
+    platformData=d;
+    const coins=d.coins||[];
+    if($('vtpUsdt'))$('vtpUsdt').textContent=money(d.usdt_balance);
+    if($('vtpCoverage'))$('vtpCoverage').textContent='Platform portfolio · '+coins.length+' coins';
+    const tradeProfit=Number(d.total_trade_profit||0);
+    const unreal=Number(d.total_unrealized_pnl||0);
+    const totalProfit=tradeProfit+unreal;
+    if($('vtpProfit')){ $('vtpProfit').textContent=(totalProfit>0?'+':'')+money(totalProfit); $('vtpProfit').classList.toggle('vtp-up',totalProfit>=0); $('vtpProfit').classList.toggle('vtp-down',totalProfit<0); }
+    if($('vtpProfitSub'))$('vtpProfitSub').textContent='Trades '+money(tradeProfit)+' · Holdings '+money(unreal);
+    if($('vtpInvest'))$('vtpInvest').textContent=money(d.total_usdt_invested);
+    const pct=Number(d.total_usdt_invested||0)>0?((Number(d.total_platform_value||0)/Number(d.total_usdt_invested||0)-1)*100):0;
+    if($('vtpPerf'))$('vtpPerf').textContent=money(d.total_platform_value);
+    if($('vtpPerfTag')){ $('vtpPerfTag').textContent=(pct>=0?'+':'')+pct.toFixed(2)+'%'; $('vtpPerfTag').style.color=pct>=0?'var(--up)':'var(--down)'; }
+    if($('vtpPerfSub'))$('vtpPerfSub').textContent='Value vs '+money(d.total_usdt_invested)+' invested';
+    renderInvestPick(coins);
+    renderCoinList(coins,d.usdt_balance);
+  }
+
+  function renderInvestPick(coins){
+    const pick=$('vtpInvestPick'); if(!pick)return;
+    const opts=coins.filter(c=>c.tradeable!==false).map(c=>'<option value="'+esc(c.symbol)+'">'+esc(c.symbol)+' — '+esc(c.name)+'</option>').join('');
+    if(pick.textContent!==opts) pick.innerHTML=opts||'<option value="GOLF">GOLF</option>';
+  }
+
+  function renderCoinList(coins,usdt){
+    const list=$('vtpCoinList'); if(!list)return;
+    const maxInv=Math.max(1,coins.reduce((m,c)=>Math.max(m,Number(c.usdt_invested||0)),0));
+    list.innerHTML=coins.map(c=>{
+      const bal=Number(c.balance||0);
+      const inv=Number(c.usdt_invested||0);
+      const val=Number(c.current_value||0);
+      const ch=Number(c.change_pct||0);
+      const pctOfMax=inv>0?(inv/maxInv*100):0;
+      return '<div class="vtp-coin" data-sym="'+esc(c.symbol)+'" data-invest>'
+        +'<div class="vtp-coin-icon">'+esc(c.symbol[0])+'</div>'
+        +'<div class="vtp-coin-names"><div class="vtp-coin-sym">'+esc(c.symbol)+ (c.tradeable===false?' <span class="vtp-coin-badge">Hold only</span>':'')+'</div><div class="vtp-coin-name">'+esc(c.name)+'</div></div>'
+        +'<div class="vtp-coin-center">'
+          +'<div class="vtp-coin-bar"><i style="width:'+Math.round(pctOfMax)+'%"></i></div>'
+          +'<div class="vtp-coin-meta"><span>Held <b>'+coinFmt(bal)+'</b></span><span>· '+ (ch>=0?'+':'') +ch.toFixed(2)+'%</span><span>· Invested '+money(inv)+'</span></div>'
+        +'</div>'
+        +'<div class="vtp-coin-price"><b>'+coinFmt(Number(c.price||0))+' USDT</b><span>Value '+money(val)+'</span></div>'
+        +'<div class="vtp-coin-actions">'
+          +'<button class="vtp-inv" type="button" data-invest-btn>Invest</button>'
+          +'<button class="vtp-dw" type="button" data-dw-btn>Deposit/Withdraw</button>'
+        +'</div>'
+      +'</div>';
+    }).join('')||'<div class="vd-empty">No platform coins yet.</div>';
+
+    list.querySelectorAll('[data-invest]').forEach(row=>{
+      row.addEventListener('click',e=>{
+        if(e.target.closest('[data-invest-btn]')){ openInvest(row.dataset.sym); return; }
+        if(e.target.closest('[data-dw-btn]')){ openAddresses(row.dataset.sym); return; }
+        vantaOpenCoinScreen(row.dataset.sym);
+      });
+    });
+  }
+
+  function openInvest(sym){
+    if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT',sym);
+    else toast('Please open the Wallet page to convert.');
+  }
+  async function openAddresses(sym){
+    let layout=window.vantaWalletLayout;
+    if(!layout){
+      try{ layout=await vantaApi('/api/wallet/layout'); window.vantaWalletLayout=layout; }catch(e){ layout=null; }
+    }
+    const dep=(layout&&layout.deposit_addresses)||{};
+    const wd=(layout&&layout.withdraw_addresses)||{};
+    vantaShowAddress(sym,'deposit',dep,wd);
+  }
+  window.vantaShowCoinAddress=openAddresses;
+  function fillPick(){
+    const pick=$('vtpInvestPick');
+    if(!pick||pick.options.length)return;
+    if(platformData&&platformData.coins){ renderInvestPick(platformData.coins); }
+  }
+
+  /* ---------------- COIN TRADE SCREEN ---------------- */
+  let backBtn=null;
+  function vantaOpenCoinScreen(sym){
+    window.vantaActiveCoin=sym;
+    tradingPage?.classList.remove('vw-active');
+    if(mainEl) mainEl.style.display='';
+    const nameEl=$('assetName');
+    if(nameEl) nameEl.innerHTML=esc(sym)+' <span style="color:#777c88">•</span> <span class="payout">93%</span>';
+    const metaEl=$('assetMeta');
+    if(metaEl) metaEl.innerHTML='<span class="market-dot"></span>'+esc(coinName(sym))+' · Buy-call / Sell-call <span>•</span> <span id="marketTime">1m</span>';
+    const bar=q('.asset-bar');
+    if(bar && !backBtn){
+      backBtn=document.createElement('button');
+      backBtn.id='vtpBack'; backBtn.type='button'; backBtn.className='vtp-back'; backBtn.innerHTML='‹';
+      backBtn.setAttribute('aria-label','Back to markets');
+      backBtn.addEventListener('click',vantaBackToOverview);
+      bar.prepend(backBtn);
+    }
+    document.querySelectorAll('.trade-marker').forEach(m=>m.remove());
+    if(typeof candles!=='undefined') candles.length=0;
+    if(typeof serverPrice!=='undefined') serverPrice=null;
+    (async()=>{
+      if(typeof seedCandles==='function') await seedCandles();
+      if(typeof candleStart!=='undefined') candleStart=performance.now();
+      if(typeof resizeCanvas==='function') resizeCanvas();
+      if(typeof renderChart==='function') renderChart();
+      if(typeof renderOpenTrades==='function') renderOpenTrades();
+      if(typeof renderHistory==='function') renderHistory();
+      if(typeof createMarker==='function'){ (typeof trades!=='undefined'?trades:[]).filter(t=>(t.symbol||'GOLF')===sym).forEach(createMarker); }
+      if(typeof positionAllTrades==='function') positionAllTrades();
+      if(typeof updateBalance==='function') updateBalance();
+      if(typeof updateProfit==='function') updateProfit();
+    })();
+    if(typeof refreshBalance==='function') refreshBalance();
+  }
+  function vantaBackToOverview(){
+    window.vantaActiveCoin=null;
+    if(backBtn){ backBtn.remove(); backBtn=null; }
+    const nameEl=$('assetName');
+    if(nameEl) nameEl.innerHTML='GOLF <span style="color:#777c88">•</span> <span class="payout">93%</span>';
+    const metaEl=$('assetMeta');
+    if(metaEl) metaEl.innerHTML='<span class="market-dot"></span>OTC Market <span>•</span> <span id="marketTime">1m</span>';
+    document.querySelectorAll('.trade-marker').forEach(m=>m.remove());
+    if(mainEl) mainEl.style.display='none';
+    tradingPage?.classList.add('vw-active');
+    vantaRefreshOverview(false);
+  }
+
+  /* ---------------- HISTORY PAGE ---------------- */
+  let vhpTab='trading';
+  async function renderHistoryTab(tab){
+    const panel=$('vhpPanel'); if(!panel)return;
+    panel.innerHTML='<div class="vd-empty">Loading…</div>';
+    if(tab==='trading'){
+      $('vhpTitle').textContent='Trading History';
+      try{
+        const [open,donet]=await Promise.all([
+          vantaApi('/api/trade/open-trades').catch(()=>[]),
+          vantaApi('/api/trade/history').catch(()=>[])
+        ]);
+        const openRows=(open||[]).map(t=>({open:true,id:t.id,symbol:t.symbol||'GOLF',direction:t.direction,amount:t.amount,entry:t.entry_price,end:t.closes_at,status:t.status}));
+        const doneRows=(donet||[]).map(t=>({id:t.id,symbol:t.symbol||'GOLF',direction:t.direction,amount:t.amount,profit:t.profit||0,status:t.status,at:t.opened_at}));
+        if(!openRows.length&&!doneRows.length){ panel.innerHTML='<div class="vd-empty">No trades yet. Open the Trading page and pick a platform coin to start.</div>'; return; }
+        const html=[];
+        if(openRows.length){
+          html.push('<div class="vtp-sec-title" style="margin-top:6px">Open ('+openRows.length+')</div>');
+          openRows.slice(0,10).forEach(t=>{
+            html.push('<div class="vh-item"><div class="vh-badge '+(t.direction==='UP'?'up':'down')+'">'+(t.direction==='UP'?'↑':'↓')+'</div>'
+              +'<div class="vh-main"><div class="vh-title2">'+esc(t.symbol)+' · '+(t.direction==='UP'?'BUY':'SELL')+'</div>'
+              +'<div class="vh-meta">'+esc(t.id)+' · entry '+coinFmt(t.entry)+'</div></div>'
+              +'<div class="vh-right"><div class="vh-val">'+money(t.amount)+'</div><div class="vh-time">'+timeAgo(t.end)+' left</div></div></div>');
+          });
+        }
+        if(doneRows.length){
+          html.push('<div class="vtp-sec-title" style="margin-top:12px">Completed</div>');
+          doneRows.slice(0,20).forEach(t=>{
+            const won=t.status==='WON',los=t.status==='LOST';
+            html.push('<div class="vh-item"><div class="vh-badge '+(t.direction==='UP'?'up':'down')+'">'+(t.direction==='UP'?'↑':'↓')+'</div>'
+              +'<div class="vh-main"><div class="vh-title2">'+esc(t.symbol)+' · '+(t.direction==='UP'?'BUY':'SELL')+'</div>'
+              +'<div class="vh-meta">'+esc(t.id)+' · '+money(t.amount)+'</div></div>'
+              +'<div class="vh-right"><div class="vh-val '+(won?'up':los?'down':'')+'">'+(won?'+':los?'−':'')+money(Math.abs(t.profit))+'</div>'
+              +'<div class="vh-time">'+timeAgo(t.at)+' · '+esc(t.status)+'</div></div></div>');
+          });
+        }
+        panel.innerHTML=html.join('');
+      }catch(e){ panel.innerHTML='<div class="vd-empty">Could not load trading history.</div>'; }
+      return;
+    }
+    if(tab==='wallet'){
+      $('vhpTitle').textContent='Wallet History';
+      const rows=[];
+      try{
+        const [th,dep]=await Promise.all([
+          vantaApi('/api/transfer/history').catch(()=>null),
+          vantaApi('/api/wallet/deposits').catch(()=>null)
+        ]);
+        if(th){
+          (th.sent||[]).forEach(t=>rows.push({dir:'out',sym:t.symbol,amount:t.amount,at:t.created_at,note:'→ '+t.other_email}));
+          (th.received||[]).forEach(t=>rows.push({dir:'in',sym:t.symbol,amount:t.amount,at:t.created_at,note:'← '+t.other_email}));
+        }
+        (dep||[]).forEach(t=>rows.push({dir:'in',sym:'USDT',amount:t.amount,at:t.created_at||t.id,note:'Deposit · '+t.status}));
+        rows.sort((a,b)=>Date.parse(String(b.at).endsWith('Z')?b.at:b.at+'Z')-Date.parse(String(a.at).endsWith('Z')?a.at:a.at+'Z'));
+        if(!rows.length){ panel.innerHTML='<div class="vd-empty">No wallet activity yet. Deposit USDT or swap coins to get started.</div>'; return; }
+        panel.innerHTML=rows.slice(0,30).map(t=>
+          '<div class="vh-item"><div class="vh-badge '+(t.dir==='in'?'up':'down')+'">'+(t.dir==='in'?'+':'−')+'</div>'
+          +'<div class="vh-main"><div class="vh-title2">'+esc(t.note)+'</div><div class="vh-meta">'+esc(t.sym)+'</div></div>'
+          +'<div class="vh-right"><div class="vh-val '+(t.dir==='in'?'up':'down')+'">'+(t.dir==='in'?'+':'−')+coinFmt(t.amount)+'</div><div class="vh-time">'+timeAgo(t.at)+'</div></div></div>'
+        ).join('');
+      }catch(e){ panel.innerHTML='<div class="vd-empty">Could not load wallet history.</div>'; }
+      return;
+    }
+    if(tab==='chat'){
+      $('vhpTitle').textContent='Chat History';
+      try{
+        const convs=await vantaApi('/api/messages/conversations');
+        if(!convs.length){ panel.innerHTML='<div class="vd-empty">No conversations yet. Search for a user in the Messages tab.</div>'; return; }
+        panel.innerHTML=convs.slice(0,30).map(c=>
+          '<div class="vh-item vhp-convo" data-cid="'+esc(c.user_id)+'"><div class="vh-badge mid">'+(c.email||'?').charAt(0).toUpperCase()+'</div>'
+          +'<div class="vh-main"><div class="vh-title2">'+(c.email||'').split('@')[0]+(c.unread_count>0?'<span class="vhp-unread">'+c.unread_count+'</span>':'')+'</div>'
+          +'<div class="vh-meta">'+esc(c.last_message||'Say hi…')+'</div></div>'
+          +'<div class="vh-right"><div class="vh-time">'+timeAgo(c.last_message_at)+'</div></div></div>'
+        ).join('');
+        panel.querySelectorAll('.vhp-convo').forEach(b=>b.addEventListener('click',()=>{ if(window.vantaSetPage) window.vantaSetPage('messages'); }));
+      }catch(e){ panel.innerHTML='<div class="vd-empty">'+(window.vantaToken&&window.vantaToken()?'Could not load conversations.':'Log in to see your conversations.')+'</div>'; }
+      return;
+    }
+  }
+
+  function vantaRenderTradingPage(page){
+    fillPick();
+    if(!page||page==='trading'){ if(tradingPage&&tradingPage.classList.contains('vw-active')) vantaRefreshOverview(false); return; }
+    if(page==='history'&&historyPage&&historyPage.classList.contains('vw-active')){ renderHistoryTab(vhpTab); }
+  }
+  window.vantaRenderTradingPage=vantaRenderTradingPage;
+
+  /* ---------------- WIRING ---------------- */
+  $('vtpProfitCard')?.addEventListener('click',()=>{
+    const d=platformData||{trade_profit:0,unrealized:0,invested:0,value:0,usdt:0};
+    openProfitModal({trade_profit:d.total_trade_profit||0,unrealized:d.total_unrealized_pnl||0,invested:d.total_usdt_invested||0,value:d.total_platform_value||0,usdt:d.usdt_balance||0});
+  });
+  $('vtpInvestGo')?.addEventListener('click',()=>{
+    const pick=$('vtpInvestPick'),sym=pick&&pick.value?pick.value:'GOLF';
+    openInvest(sym);
+  });
+  $('vtpHistoryLink')?.addEventListener('click',()=>{ if(window.vantaSetPage) window.vantaSetPage('history'); });
+  $('vhpClose')?.addEventListener('click',()=>{ if(window.vantaSetPage) window.vantaSetPage('trading'); });
+  historyPage?.querySelectorAll('.vhp-tab').forEach(tab=>tab.addEventListener('click',()=>{
+    historyPage.querySelectorAll('.vhp-tab').forEach(t=>t.classList.toggle('active',t===tab));
+    vhpTab=tab.dataset.vtab||'trading';
+    renderHistoryTab(vhpTab);
+  }));
+  window.vantaOpenCoinScreen=vantaOpenCoinScreen;
+  window.vantaBackToOverview=vantaBackToOverview;
+
+  /* ---------------- CSS for back button + coin screen ---------------- */
+  const st=document.createElement('style');
+  st.textContent='.vtp-back{width:36px;height:36px;flex-shrink:0;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);color:inherit;font-size:20px;line-height:1;cursor:pointer;display:grid;place-items:center;box-shadow:var(--shadow)}.vhp-convo{cursor:pointer}.vhp-convo:hover{border-color:rgba(255,200,87,.4)}.vfx-hold-dw{flex-wrap:wrap}.vfx-dw{flex-basis:100%;border:1px solid rgba(255,200,87,.3);background:transparent;color:var(--gold);border-radius:9px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;margin-top:4px}';
+  document.head.appendChild(st);
+
+  /* Poll overview while visible. */
+  setInterval(()=>{
+    if(tradingPage&&tradingPage.classList.contains('vw-active')) vantaRefreshOverview(true);
+    if(historyPage&&historyPage.classList.contains('vw-active')&&vhpTab==='trading') renderHistoryTab('trading');
+  },8000);
 })();
 </script>
 

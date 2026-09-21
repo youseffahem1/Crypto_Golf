@@ -2297,6 +2297,139 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
             </section>
 
             <!-- =================================================
+                 INFO CARDS: PROFIT / INVESTED / MARKET CAP
+            ================================================== -->
+            <section class="info-cards" aria-label="Wallet overview">
+
+                <article class="info-card ic-profit">
+
+                    <div class="ic-top">
+                        <div class="ic-top-left">
+                            <span class="ic-chip">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <path d="M3 7h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3V7z"/>
+                                    <path d="M16 10h4m0 0a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-4"/>
+                                    <circle cx="7.5" cy="13" r="1.4"/>
+                                </svg>
+                            </span>
+                            <span class="ic-label">PROFIT</span>
+                        </div>
+                        <span class="ic-badge">AVAILABLE</span>
+                    </div>
+
+                    <div class="ic-value" id="icProfit">+$0.00</div>
+
+                    <div class="ic-sub">Move your realized + open profit to the wallet, or trade it on GOLF/USDT.</div>
+
+                    <div class="ic-actions">
+                        <button class="ic-btn" id="icMoveBtn">Move to Wallet</button>
+                        <button class="ic-btn ic-btn-ghost" id="icTradeBtn">Trade</button>
+                    </div>
+
+                </article>
+
+                <article class="info-card ic-invest">
+
+                    <div class="ic-top">
+                        <div class="ic-top-left">
+                            <span class="ic-chip">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <path d="M4 19V5M4 19h16"/>
+                                    <path d="M7 15l4-5 3 3 5-7"/>
+                                </svg>
+                            </span>
+                            <span class="ic-label">INVESTED</span>
+                        </div>
+                        <span class="ic-badge">TOTAL</span>
+                    </div>
+
+                    <div class="ic-value" id="icInvested">$0.00</div>
+
+                    <div class="ic-total" id="icInvestedTotal">Total: $0.00</div>
+
+                    <div class="ic-msg" id="icInvestedMsg">You made +$0.00</div>
+
+                </article>
+
+                <article class="info-card ic-market">
+
+                    <div class="ic-top">
+                        <div class="ic-top-left">
+                            <span class="ic-chip">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <path d="M12 3l7 4.5-7 4.5-7-4.5L12 3z"/>
+                                    <path d="M5 12.5l7 4.5 7-4.5M5 16.5l7 4.5 7-4.5"/>
+                                </svg>
+                            </span>
+                            <span class="ic-label">MARKET CAP</span>
+                        </div>
+                        <span class="ic-badge" id="icMcapSym">GOLF</span>
+                    </div>
+
+                    <div class="ic-value" id="icMarketCap">$0.00</div>
+
+                    <div class="ic-total" id="icMcapLiquidity">Liquidity $0.00</div>
+
+                    <div class="ic-msg" id="icMcapPct">0.00%</div>
+
+                </article>
+
+            </section>
+
+            <!-- =================================================
+                 BALANCE / TRADE AMOUNT / TRADE
+            ================================================== -->
+            <section class="trade-strip" aria-label="Trade amount">
+
+                <div class="ts-balance">
+                    <span class="ts-label">Balance</span>
+                    <span class="ts-value" id="stripBalance">$0.00</span>
+                </div>
+
+                <div class="setting-box ts-amount">
+
+                    <button class="small-control" id="amountMinus">−</button>
+
+                    <div class="setting-content">
+                        <div class="setting-label">Trade Amount</div>
+
+                        <input
+                            id="amountInput"
+                            type="number"
+                            value="100"
+                            min="1"
+                            step="10"
+                            style="
+                                width:100%;
+                                background:transparent;
+                                border:0;
+                                outline:0;
+                                color:var(--text);
+                                text-align:center;
+                                font-size:15px;
+                                font-weight:800;
+                            "
+                        >
+                    </div>
+
+                    <button class="small-control" id="amountPlus">+</button>
+
+                </div>
+
+                <button class="ts-trade" id="stripTradeBtn">
+
+                    <span>Trade</span>
+
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M5 12h14"/>
+                        <path d="M14 7l5 5-5 5"/>
+                    </svg>
+
+                </button>
+
+            </section>
+
+            <!-- =================================================
                  CHART
             ================================================== -->
             <section class="chart-card" id="chartCard">
@@ -2385,37 +2518,6 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                 </div>
 
                 <div class="settings-row">
-
-                    <!-- AMOUNT -->
-                    <div class="setting-box">
-
-                        <button class="small-control" id="amountMinus">−</button>
-
-                        <div class="setting-content">
-                            <div class="setting-label">Amount</div>
-
-                            <input
-                                id="amountInput"
-                                type="number"
-                                value="100"
-                                min="1"
-                                step="10"
-                                style="
-                                    width:100%;
-                                    background:transparent;
-                                    border:0;
-                                    outline:0;
-                                    color:var(--text);
-                                    text-align:center;
-                                    font-size:15px;
-                                    font-weight:800;
-                                "
-                            >
-                        </div>
-
-                        <button class="small-control" id="amountPlus">+</button>
-
-                    </div>
 
                     <!-- DURATION -->
                     <div class="setting-box">
@@ -3187,6 +3289,9 @@ function updateBalance() {
     balanceEl.textContent = value;
 
     desktopBalanceEl.textContent = value;
+
+    const stripBalanceEl = document.getElementById("stripBalance");
+    if (stripBalanceEl) stripBalanceEl.textContent = value;
 
     const tag = document.getElementById("vantaModeTag");
     if (tag) {
@@ -12077,6 +12182,325 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       _sp.apply(this,arguments);
       if(page==='dashboard'){ setTimeout(()=>{ vantaRenderHomeExtra(); },60); }
       if(page==='wallet'){ setTimeout(()=>{ vantaPostProcessWallet(); },250); }
+    };
+  }
+})();
+</script>
+
+<style id="vanta-info-cards-css">
+/* ==========================================================
+   INFO CARDS — PROFIT / INVESTED / MARKET CAP
+========================================================== */
+.info-cards{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+  margin:0 0 12px;
+}
+.info-card{
+  position:relative;
+  overflow:hidden;
+  min-width:0;
+  border-radius:22px;
+  border:1px solid rgba(114,135,255,.16);
+  background:
+    radial-gradient(120% 100% at 50% 0%,rgba(114,135,255,.08),transparent 58%),
+    linear-gradient(180deg,#11141f,#090b12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 22px 50px -32px rgba(0,0,0,.6);
+  padding:16px 18px 15px;
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+}
+.info-card::before{
+  content:"";
+  position:absolute;
+  top:-45%;
+  left:50%;
+  width:150%;
+  height:130%;
+  transform:translateX(-50%);
+  pointer-events:none;
+  opacity:.55;
+  background:radial-gradient(closest-side,var(--ic-glow,rgba(77,141,255,.16)),transparent 70%);
+}
+.ic-profit{--ic-accent:#1ee68d;--ic-accent-soft:rgba(24,223,130,.35);--ic-accent-bg:rgba(24,223,130,.12);--ic-glow:rgba(24,223,130,.18)}
+.ic-invest{--ic-accent:#4d8dff;--ic-accent-soft:rgba(77,141,255,.35);--ic-accent-bg:rgba(77,141,255,.12);--ic-glow:rgba(77,141,255,.20)}
+.ic-market{--ic-accent:#a78bfa;--ic-accent-soft:rgba(167,139,250,.38);--ic-accent-bg:rgba(167,139,250,.12);--ic-glow:rgba(167,139,250,.18)}
+.ic-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+}
+.ic-top-left{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.ic-chip{
+  width:30px;
+  height:30px;
+  flex:0 0 auto;
+  border-radius:9px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--ic-accent-bg);
+  border:1px solid var(--ic-accent-soft);
+  color:var(--ic-accent);
+}
+.ic-chip svg{width:15px;height:15px}
+.ic-label{
+  font-size:10px;
+  letter-spacing:.16em;
+  font-weight:900;
+  color:#8a93b1;
+}
+.ic-badge{
+  flex:0 0 auto;
+  font-size:8.5px;
+  font-weight:900;
+  letter-spacing:.12em;
+  color:var(--ic-accent);
+  border:1px solid var(--ic-accent-soft);
+  background:var(--ic-accent-bg);
+  padding:3px 9px;
+  border-radius:99px;
+}
+.ic-value{
+  font-size:26px;
+  font-weight:900;
+  letter-spacing:-.02em;
+  line-height:1;
+  color:#fff;
+}
+.ic-profit .ic-value{color:#1ee68d;text-shadow:0 0 22px rgba(24,223,130,.35)}
+.ic-market .ic-value{color:#e5ddff}
+.ic-value.neg{color:#ff4d69 !important;text-shadow:none}
+.ic-sub{font-size:11px;color:#8a93b1;line-height:1.45}
+.ic-total{font-size:11.5px;color:#cdd2e3;font-weight:600}
+.ic-msg{font-size:12px;font-weight:800;color:#1ee68d}
+.ic-msg.neg{color:#ff4d69}
+.ic-actions{display:flex;gap:8px;margin-top:2px}
+.ic-btn{
+  flex:1;
+  white-space:nowrap;
+  border:none;
+  border-radius:12px;
+  padding:10px 12px;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.04em;
+  font-family:inherit;
+  cursor:pointer;
+  color:#08111f;
+  background:linear-gradient(90deg,#18df82,#0fc47a);
+  box-shadow:0 10px 24px -10px rgba(24,223,130,.55);
+  transition:filter .15s ease,transform .15s ease;
+}
+.ic-btn:hover{filter:brightness(1.07)}
+.ic-btn:active{transform:translateY(1px)}
+.ic-btn.ic-btn-ghost{
+  color:#cdd5ff;
+  background:rgba(114,135,255,.12);
+  border:1px solid rgba(114,135,255,.28);
+  box-shadow:none;
+}
+
+/* ==========================================================
+   TRADE STRIP — BALANCE | TRADE AMOUNT | TRADE
+========================================================== */
+.trade-strip{
+  display:grid;
+  grid-template-columns:minmax(150px,1.1fr) minmax(210px,1.5fr) 150px;
+  gap:10px;
+  margin-bottom:12px;
+  align-items:stretch;
+}
+.ts-balance{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:6px;
+  min-width:0;
+  padding:14px 16px;
+  border-radius:18px;
+  border:1px solid rgba(114,135,255,.16);
+  background:
+    radial-gradient(120% 100% at 0% 0%,rgba(77,141,255,.10),transparent 58%),
+    linear-gradient(180deg,#10131f,#090b12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+}
+.ts-label{
+  font-size:9px;
+  letter-spacing:.16em;
+  font-weight:900;
+  color:#8a93b1;
+}
+.ts-value{
+  font-size:20px;
+  font-weight:900;
+  letter-spacing:-.01em;
+  color:#fff;
+}
+.trade-strip .setting-box{
+  height:auto;
+  min-height:66px;
+  padding:8px 6px;
+}
+.trade-strip .small-control{width:36px;height:40px}
+.ts-trade{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  border:none;
+  border-radius:18px;
+  padding:0 20px;
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.08em;
+  font-family:inherit;
+  color:#071018;
+  background:linear-gradient(90deg,#4d8dff,#7c6cff);
+  box-shadow:0 14px 30px -12px rgba(77,141,255,.55);
+  cursor:pointer;
+  transition:filter .15s ease,transform .15s ease;
+}
+.ts-trade svg{width:15px;height:15px}
+.ts-trade:hover{filter:brightness(1.07)}
+.ts-trade:active{transform:translateY(1px)}
+
+/* Controls now keeps only Duration + Potential Return */
+.controls .settings-row{grid-template-columns:1fr 1fr !important}
+.controls .setting-box:last-of-type{grid-column:auto !important}
+
+/* ==========================================================
+   RESPONSIVE
+========================================================== */
+@media (max-width:860px){
+  .info-cards{grid-template-columns:repeat(2,1fr)}
+  .ic-market{grid-column:1 / -1}
+  .trade-strip{grid-template-columns:1fr minmax(190px,1.5fr)}
+  .ts-trade{grid-column:1 / -1;height:52px}
+}
+@media (max-width:560px){
+  .info-cards{grid-template-columns:1fr}
+  .ic-market{grid-column:auto}
+  .info-card{padding:15px 16px}
+  .ic-value{font-size:24px}
+  .trade-strip{grid-template-columns:1fr}
+  .ts-trade{grid-column:auto;height:50px}
+}
+</style>
+
+<script id="vanta-info-cards-js">
+/* ==========================================================
+   INFO CARDS + TRADE STRIP — live data wiring
+========================================================== */
+(function(){
+  'use strict';
+  if (window.__vantaDashboardCards) return;
+  window.__vantaDashboardCards = true;
+
+  var mainEl = document.querySelector('.main');
+
+  function byId(id){ return document.getElementById(id); }
+
+  function usd(v){
+    var n = Number(v) || 0;
+    var s = n < 0 ? '-' : '';
+    var a = Math.abs(n);
+    if (a >= 1000) return s + '$' + a.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if (a >= 1) return s + '$' + a.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4});
+    return s + '$' + a.toLocaleString('en-US',{maximumFractionDigits:8});
+  }
+  function compactUsd(v){
+    var n = Number(v) || 0;
+    var s = n < 0 ? '-' : '';
+    var a = Math.abs(n);
+    if (a >= 1e9) return s + '$' + (a/1e9).toFixed(2) + 'B';
+    if (a >= 1e6) return s + '$' + (a/1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return s + '$' + (a/1e3).toFixed(1) + 'K';
+    return usd(n);
+  }
+  function sign(n){ return n > 0 ? '+' : (n < 0 ? '' : ''); }
+  function setText(id, txt){ var el = byId(id); if (el) el.textContent = txt; }
+  function setNeg(id, neg){ var el = byId(id); if (el) el.classList.toggle('neg', !!neg); }
+
+  function refreshInfoCards(){
+    var platPromise = (typeof vantaApi === 'function')
+      ? vantaApi('/api/platform/coins').catch(function(){ return null; })
+      : Promise.resolve(null);
+
+    var golfPromise = fetch((window.VANTA_API_BASE || '') + '/api/golf/stats')
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .catch(function(){ return null; });
+
+    return Promise.all([platPromise, golfPromise]).then(function(res){
+      var p = res[0];
+      if (p && typeof p.total_trade_profit !== 'undefined') {
+        var profit = (Number(p.total_trade_profit) || 0) + (Number(p.total_unrealized_pnl) || 0);
+        var invested = Number(p.total_usdt_invested) || 0;
+        var total = Number(p.total_platform_value) || 0;
+        var made = total - invested;
+        setText('icProfit', sign(profit) + usd(profit));
+        setNeg('icProfit', profit < 0);
+        setText('icInvested', usd(invested));
+        setText('icInvestedTotal', 'Total: ' + usd(total));
+        setText('icInvestedMsg', 'You made ' + sign(made) + usd(made));
+        setNeg('icInvestedMsg', made < 0);
+      }
+      var g = res[1];
+      if (g && typeof g.market_cap_usdt !== 'undefined') {
+        setText('icMarketCap', compactUsd(g.market_cap_usdt));
+        setText('icMcapLiquidity', 'Liquidity ' + usd(g.liquidity_usdt));
+        var ch = Number(g.change_24h_pct) || 0;
+        setText('icMcapPct', sign(ch) + ch.toFixed(2) + '%');
+        setNeg('icMcapPct', ch < 0);
+      }
+    });
+  }
+  window.vantaRefreshInfoCards = refreshInfoCards;
+
+  function padIsVisible(){
+    return !!mainEl && getComputedStyle(mainEl).display !== 'none';
+  }
+
+  function scrollToTrade(){
+    var c = document.querySelector('.chart-card') || document.querySelector('.controls');
+    if (c) c.scrollIntoView({behavior:'smooth', block:'start'});
+    var a = byId('amountInput');
+    if (a) setTimeout(function(){ a.focus(); }, 450);
+  }
+
+  function wire(btn, fn){
+    if (btn && !btn.dataset.vantaWired) {
+      btn.dataset.vantaWired = '1';
+      btn.addEventListener('click', fn);
+    }
+  }
+
+  wire(byId('icMoveBtn'), function(){ if (window.vantaSetPage) window.vantaSetPage('wallet'); });
+  wire(byId('icTradeBtn'), scrollToTrade);
+  wire(byId('stripTradeBtn'), scrollToTrade);
+
+  setInterval(function(){
+    if (padIsVisible()) refreshInfoCards();
+  }, 7000);
+
+  if (window.vantaSetPage) {
+    var sp = window.vantaSetPage;
+    window.vantaSetPage = function(page){
+      sp.apply(this, arguments);
+      if (page === 'trading') {
+        setTimeout(function(){
+          if (typeof updateBalance === 'function') updateBalance();
+          refreshInfoCards();
+        }, 120);
+      }
     };
   }
 })();

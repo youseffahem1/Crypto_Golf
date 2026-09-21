@@ -1189,11 +1189,11 @@ body {
     }
 
     .chart-card {
-        height: 310px;
-        min-height: 310px;
+        height: clamp(240px, 46dvh, 520px);
+        min-height: 240px;
     }
 
-    .timeframes .tf:nth-child(n+5) {
+    .timeframes .tf:nth-child(n+6) {
         display: none;
     }
 
@@ -1239,8 +1239,8 @@ body {
     }
 
     .chart-card {
-        height: 285px;
-        min-height: 285px;
+        height: clamp(235px, 44dvh, 500px);
+        min-height: 235px;
     }
 
     .asset-bar {
@@ -2242,60 +2242,6 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 
         <div class="mobile-layout">
 
-            <!-- ASSET -->
-            <section class="asset-bar">
-
-                <div class="asset-info">
-
-                    <div class="gold-icon" id="assetIcon">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
-                            <path d="M7 17h10l2-7H5l2 7z"/>
-                            <path d="M9 10l1.7-5h2.6L15 10"/>
-                            <path d="M8 17v2M16 17v2"/>
-                        </svg>
-                    </div>
-
-                    <div>
-                        <div class="asset-name" id="assetName">
-                            GOLF <span style="color:#777c88">•</span> <span class="payout">93%</span>
-                        </div>
-
-                        <div class="asset-meta" id="assetMeta">
-                            <span class="market-dot"></span>
-                            OTC Market
-                            <span>•</span>
-                            <span id="marketTime">1m</span>
-                        </div>
-                    </div>
-
-                </div>
-
-                <div class="asset-actions">
-
-                    <button class="asset-action">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path d="M4 19V5M4 19h16"/>
-                            <path d="M7 15l4-5 3 3 5-7"/>
-                        </svg>
-                    </button>
-
-                    <button class="asset-action">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path d="M4 12h16M12 4v16"/>
-                            <circle cx="12" cy="12" r="8"/>
-                        </svg>
-                    </button>
-
-                    <button class="asset-action">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path d="M7 10l5 5 5-5"/>
-                        </svg>
-                    </button>
-
-                </div>
-
-            </section>
-
             <!-- =================================================
                  INFO CARDS: PROFIT / INVESTED / MARKET CAP
             ================================================== -->
@@ -2504,6 +2450,60 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                 </div>
 
                 <div id="tradeMarkers"></div>
+
+            </section>
+
+            <!-- ASSET -->
+            <section class="asset-bar">
+
+                <div class="asset-info">
+
+                    <div class="gold-icon" id="assetIcon">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                            <path d="M7 17h10l2-7H5l2 7z"/>
+                            <path d="M9 10l1.7-5h2.6L15 10"/>
+                            <path d="M8 17v2M16 17v2"/>
+                        </svg>
+                    </div>
+
+                    <div>
+                        <div class="asset-name" id="assetName">
+                            GOLF <span style="color:#777c88">•</span> <span class="payout">93%</span>
+                        </div>
+
+                        <div class="asset-meta" id="assetMeta">
+                            <span class="market-dot"></span>
+                            OTC Market
+                            <span>•</span>
+                            <span id="marketTime">1m</span>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="asset-actions">
+
+                    <button class="asset-action">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M4 19V5M4 19h16"/>
+                            <path d="M7 15l4-5 3 3 5-7"/>
+                        </svg>
+                    </button>
+
+                    <button class="asset-action">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M4 12h16M12 4v16"/>
+                            <circle cx="12" cy="12" r="8"/>
+                        </svg>
+                    </button>
+
+                    <button class="asset-action">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M7 10l5 5 5-5"/>
+                        </svg>
+                    </button>
+
+                </div>
 
             </section>
 
@@ -5256,7 +5256,8 @@ document.querySelectorAll(".tf")
                 .forEach(btn => btn.classList.remove("active"));
             button.classList.add("active");
 
-            document.getElementById("marketTime").textContent = tf;
+            const mtEl = document.getElementById("marketTime");
+            if (mtEl) mtEl.textContent = tf;
 
             /* In demo mode, rebuild the synthetic history at this
                timeframe's cadence so every frame feels different. */
@@ -8034,7 +8035,7 @@ button,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
   .asset-meta{font-size:9px}
   .asset-action{width:32px;height:32px}
 
-  .chart-card{height:290px;min-height:290px}
+  .chart-card{height:clamp(240px,44dvh,530px);min-height:240px}
   .timeframes{gap:2px;padding:3px}
   .tf{padding:5px 6px;font-size:8px}
   .chart-tool{width:27px;height:27px}
@@ -8091,7 +8092,7 @@ button,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
   .header .profile,.header .icon-btn{width:34px;height:34px}
   .balance{font-size:13px}
 
-  .chart-card{height:272px;min-height:272px}
+  .chart-card{height:clamp(220px,42dvh,520px);min-height:220px}
   .chart-tool{display:none}
   .controls{padding:10px}
   .settings-row{gap:4px}
@@ -12378,22 +12379,111 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 .controls .setting-box:last-of-type{grid-column:auto !important}
 
 /* ==========================================================
-   RESPONSIVE
+   RESPONSIVE — INFO CARDS ALWAYS STAY 3-UP (never stack)
+   PROFIT | INVESTED | MARKET CAP side-by-side at every width.
+   Charts-first: sections shrink, chart keeps the height.
 ========================================================== */
-@media (max-width:860px){
-  .info-cards{grid-template-columns:repeat(2,1fr)}
-  .ic-market{grid-column:1 / -1}
-  .trade-strip{grid-template-columns:1fr minmax(190px,1.5fr)}
-  .ts-trade{grid-column:1 / -1;height:52px}
+@media (max-width:900px){
+  /* Three compact cards, side-by-side — denser on small screens. */
+  .info-cards{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:clamp(4px,1vw,12px);
+    margin-bottom:8px;
+  }
+  .info-card{padding:13px 12px 12px;gap:7px;border-radius:18px}
+  .ic-chip{width:26px;height:26px;border-radius:8px}
+  .ic-chip svg{width:13px;height:13px}
+  .ic-label{font-size:8px;letter-spacing:.11em}
+  .ic-badge{font-size:7.5px;padding:2px 7px;letter-spacing:.08em}
+  .ic-value{font-size:20px}
+  .ic-total,.ic-msg,.ic-sub{font-size:9.5px}
+  .ic-actions{gap:6px;margin-top:0}
+  .ic-btn{padding:8px 6px;font-size:9.5px;border-radius:10px;white-space:nowrap}
+
+  /* Trade strip: Balance | Amount | Trade stays horizontal + compact. */
+  .trade-strip{
+    grid-template-columns:minmax(0,1fr) minmax(130px,1.5fr) auto;
+    gap:8px;
+    margin-bottom:8px;
+  }
+  .ts-balance{padding:10px 12px;gap:4px}
+  .ts-label{font-size:8px}
+  .ts-value{font-size:16px}
+  .ts-trade{padding:0 15px}
+  .trade-strip .setting-box{min-height:58px;min-width:0}
+  .trade-strip .small-control{width:32px;height:36px;flex:0 0 32px}
+
+  .asset-bar{min-height:52px;margin-bottom:6px}
 }
 @media (max-width:560px){
-  .info-cards{grid-template-columns:1fr}
-  .ic-market{grid-column:auto}
-  .info-card{padding:15px 16px}
-  .ic-value{font-size:24px}
-  .trade-strip{grid-template-columns:1fr}
-  .ts-trade{grid-column:auto;height:50px}
+  .info-card{
+    padding:11px 10px 11px;
+    border-radius:15px;
+    gap:6px;
+  }
+  .ic-label{font-size:7px}
+  .ic-chip{width:24px;height:24px;border-radius:7px}
+  .ic-chip svg{width:12px;height:12px}
+  .ic-value{font-size:18px}
+  .ic-total,.ic-msg,.ic-sub{font-size:9px}
+  .ic-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .ic-btn{font-size:8.5px;padding:7px 2px;letter-spacing:0;border-radius:9px;white-space:normal}
+
+  .trade-strip{grid-template-columns:minmax(0,1fr) minmax(118px,1.5fr) auto;gap:6px}
+  .ts-balance{padding:8px 9px}
+  .ts-label{font-size:7px;letter-spacing:.12em}
+  .ts-value{font-size:14px}
+  .ts-trade{padding:0 11px;font-size:12px}
+  .ts-trade svg{width:13px;height:13px}
+  .trade-strip .small-control{width:28px;height:34px;flex:0 0 28px}
+  .trade-strip .setting-label{font-size:7.5px}
+
+  .controls{padding:12px !important}
+  .mode-row{margin-bottom:10px}
+  .trade-buttons{grid-template-columns:1fr 46px 1fr;gap:6px}
+  .trade-btn{min-height:54px !important}
 }
+@media (max-width:420px){
+  .info-card{padding:10px 8px 10px}
+  .ic-badge{display:none}
+  .ic-sub{display:none}
+  .ic-value{font-size:16px}
+  .ic-actions{display:grid;grid-template-columns:1fr;gap:0}
+  .ic-btn.ic-btn-ghost{display:none}
+  .ic-total{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ic-msg{font-size:9px}
+
+  .trade-strip{grid-template-columns:minmax(0,1fr) minmax(106px,1.5fr) auto;gap:5px}
+  .ts-balance{padding:7px 8px}
+  .ts-value{font-size:13px}
+  .ts-label{font-size:7px}
+  .ts-trade{padding:0 10px;font-size:11.5px}
+  .ts-trade svg{width:12px;height:12px}
+  .trade-strip .small-control{width:27px;height:32px;flex:0 0 27px}
+
+  .asset-actions .asset-action:nth-child(n+2){display:none}
+}
+
+/* ---- Full-width fixed bottom navigation (mobile app style) ---- */
+html{overflow-x:hidden}
+@media (max-width:899px){
+  .bottom-nav{
+    left:0 !important;
+    right:0 !important;
+    bottom:0 !important;
+    width:100% !important;
+    max-width:none !important;
+    grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+    padding-left:calc(6px + env(safe-area-inset-left));
+    padding-right:calc(6px + env(safe-area-inset-right));
+  }
+  .bottom-nav .nav-item{
+    max-width:none !important;
+    width:100% !important;
+    justify-self:stretch !important;
+  }
+}
+body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !important}
 </style>
 
 <script id="vanta-info-cards-js">

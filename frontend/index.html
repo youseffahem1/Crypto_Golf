@@ -2991,7 +2991,7 @@ let durationIndex = 0;
 
 const CHART = {
 
-    visibleCandles: 75,
+    visibleCandles: 55,
 
     paddingTop: 50,
     paddingBottom: 27,
@@ -3353,7 +3353,7 @@ function buildDemoCandles(count, step, volatility, fromPrice) {
         }
         regime--;
         const open = price;
-        const pull = (anchor - open) * 0.009;
+        const pull = (anchor - open) * 0.052;
         const noise = random(-1, 1) * price * vol * 0.9;
         /* Momentum builds across a streak, then decays — long green / red
            runs alternate with pauses instead of a straight marching line. */
@@ -3464,7 +3464,7 @@ async function vantaPollPrice() {
                pins on the band, too low and bodies vanish again. */
             const drift = dm.dir * currentPrice * (0.0008 * dm.impulse) * (dt / 1000);
             const shake = (Math.random() - 0.5) * currentPrice * 0.004 * (dt / 1000);
-            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0032;
+            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0042;
             next = clamp(currentPrice + drift + shake + pull, 0.08, VANTA_GOLF_OSC_HIGH - 0.02);
         } else {
             next = clamp(currentPrice + (Math.random() - 0.5) * currentPrice * 0.002, 0.02, currentPrice * 1.05);
@@ -3487,14 +3487,17 @@ let currentTimeframe = "1m";
 const timeframeConfig = {
     /* Timeframe name = real candle duration: the 1m candle stays open for
        a full 60 seconds, 5m for 5 minutes, and so on — it never closes
-       early or depends on animation speed. */
-    "1m":  { speed: 60000,   volatility: 0.42, visible: 75 },
-    "5m":  { speed: 300000,  volatility: 0.52, visible: 65 },
-    "15m": { speed: 900000,  volatility: 0.64, visible: 55 },
-    "30m": { speed: 1800000, volatility: 0.76, visible: 50 },
-    "1H":  { speed: 3600000, volatility: 0.90, visible: 45 },
-    "4H":  { speed: 14400000, volatility: 1.05, visible: 40 },
-    "1D":  { speed: 86400000, volatility: 1.25, visible: 35 }
+       early or depends on animation speed.
+       Visible range stays tight (TradingView / Binance style) so a screen
+       of candles fills the plot height instead of stretching the whole
+       band edge to edge. */
+    "1m":  { speed: 60000,   volatility: 0.42, visible: 55 },
+    "5m":  { speed: 300000,  volatility: 0.52, visible: 50 },
+    "15m": { speed: 900000,  volatility: 0.64, visible: 44 },
+    "30m": { speed: 1800000, volatility: 0.76, visible: 40 },
+    "1H":  { speed: 3600000, volatility: 0.90, visible: 36 },
+    "4H":  { speed: 14400000, volatility: 1.05, visible: 32 },
+    "1D":  { speed: 86400000, volatility: 1.25, visible: 30 }
 };
 
 /* The default timeframe (1m) already opens candleDuration to its real
@@ -3738,43 +3741,71 @@ function getBounds() {
 
     if (chartScaleNow) return chartScaleNow;
 
-    const visible =
-        getChartData();
+    const visible = getChartData();
 
-    let min =
-        Infinity;
-
-    let max =
-        -Infinity;
-
-
-    visible.forEach(candle => {
-
-        min =
-            Math.min(min, candle.low);
-
-        max =
-            Math.max(max, candle.high);
-
-    });
-
-
-    /* Include open trade prices so entry lines never disappear off-chart. */
-    trades.forEach(trade => {
-        min = Math.min(min, trade.entryPrice);
-        max = Math.max(max, trade.entryPrice);
-    });
-
-    /* Always keep the live forming price + current price on screen. */
-    min = Math.min(min, currentPrice);
-    max = Math.max(max, currentPrice);
-
-    if (!isFinite(min) || !isFinite(max) || min === Infinity || max === -Infinity) {
-        min = currentPrice;
-        max = currentPrice;
+    if (!visible.length) {
+        chartScaleNow = vantaNiceBounds(currentPrice, currentPrice);
+        return chartScaleNow;
     }
 
-    chartScaleNow = vantaNiceBounds(min, max);
+    /*
+       Professional auto-scale (TradingView / Binance style): the price range
+       comes from the candles the user can actually see, with rare outlier
+       wicks trimmed (roughly 2% / 98% quantiles) so a single fat spike or
+       one jump candle can never squash every older candle into the bottom
+       corner. Open trades and the live price still stay on screen, but only
+       inside a small budget on each side so they don't distort the body
+       scale — exactly how the big platforms treat a spiking current bar.
+    */
+
+    const lows = visible.map(c => Math.min(c.low == null || !isFinite(c.low) ? c.open : c.low, c.open, c.close));
+    const highs = visible.map(c => Math.max(c.high == null || !isFinite(c.high) ? c.close : c.high, c.open, c.close));
+
+    let lo;
+    let hi;
+
+    if (lows.length >= 12) {
+        lows.sort((a, b) => a - b);
+        highs.sort((a, b) => a - b);
+        /* ~4% / ~96% quantile edges: a fat move in a couple of candles
+           no longer squeezes everything else into the bottom corner. */
+        const iLo = Math.max(0, Math.floor(lows.length * 0.04) - 1);
+        const iHi = Math.min(highs.length - 1, Math.max(iLo, Math.floor(highs.length * 0.96)));
+        lo = lows[iLo];
+        hi = highs[iHi];
+    } else {
+        lo = Math.min.apply(null, lows);
+        hi = Math.max.apply(null, highs);
+    }
+
+    if (!isFinite(lo) || !isFinite(hi) || !(hi >= lo)) {
+        lo = currentPrice;
+        hi = currentPrice;
+    }
+
+    /* Live price + open trades may nudge the range by ~10% on either side
+       (they ride the edge instead of stretching the canvas). */
+    const budget = Math.max((hi - lo) * 0.1, Math.max(Math.abs(hi), Math.abs(lo)) * 1e-6);
+    const clampInto = v =>
+        Math.max(lo - budget, Math.min(hi + budget, v));
+
+    trades.forEach(trade => {
+        const v = clampInto(trade.entryPrice);
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    });
+
+    const live = clampInto(currentPrice);
+    if (live < lo) lo = live;
+    if (live > hi) hi = live;
+
+    /* Extreme safety: identical values still get a readable 2-unit band. */
+    if (!(hi - lo > 0)) {
+        lo = lo - 1e-6;
+        hi = hi + 1e-6;
+    }
+
+    chartScaleNow = vantaNiceBounds(lo, hi);
     return chartScaleNow;
 
 }
@@ -4129,6 +4160,23 @@ function drawCandles(width, height, bounds) {
         ctx.fillRect(
             x -
             bodyWidth / 2,
+            top,
+            bodyWidth,
+            bodyHeight
+        );
+
+
+        /* Crisp 1px edge on the body (TradingView-style) so overlapping
+           candles keep their definition instead of blending together. */
+        ctx.strokeStyle =
+            bullish
+                ? "rgba(0,105,70,.5)"
+                : "rgba(150,25,45,.55)";
+
+        ctx.lineWidth = 1;
+
+        ctx.strokeRect(
+            x - bodyWidth / 2,
             top,
             bodyWidth,
             bodyHeight
@@ -5170,7 +5218,7 @@ let pinchStartZoom = 0;
 
 function applyChartZoom(next) {
     chartZoom = clamp(Math.round(next), -25, 45);
-    CHART.visibleCandles = clamp(75 - chartZoom, 25, 110);
+    CHART.visibleCandles = clamp(55 - chartZoom, 25, 110);
     renderChart();
     positionAllTrades();
 }
@@ -5308,11 +5356,11 @@ renderChart = function() {
 
 /* Toolbar: Zoom in / Zoom out / Fullscreen / Crosshair / Reset view.
    Reset = real auto-fit: return to the active timeframe's own candle
-   count (1m=75, 1D=35…) with the newest candles on screen. */
+   count (1m=55, 1D=30…) with the newest candles on screen. */
 function vantaResetChartView() {
     const cfg = timeframeConfig[currentTimeframe] || timeframeConfig["1m"];
     chartViewOffset = 0;
-    chartZoom = clamp(75 - cfg.visible, -25, 45);
+    chartZoom = clamp(55 - cfg.visible, -25, 45);
     CHART.visibleCandles = cfg.visible;
     renderChart();
     positionAllTrades();

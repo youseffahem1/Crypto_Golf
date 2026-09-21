@@ -31,21 +31,27 @@ from . import models
 from .config import (
     MARKET_STARTING_PRICE, PLATFORM_COINS, PLATFORM_COIN_NAMES,
     PLATFORM_COIN_LAUNCH_USD, PLATFORM_COIN_WALK_BAND_PCT,
-    GOLF_START_PRICE, GOLF_TARGET_PRICE, GOLF_DRIFT_RATE,
+    GOLF_START_PRICE, GOLF_TARGET_PRICE, GOLF_RAMP_DAYS,
+    GOLF_OSC_HIGH, GOLF_VOLATILITY, GOLF_REVERT,
 )
 
 SYMBOL = "GOLFUSDT"
 CANDLE_INTERVAL_SECONDS = 60  # the 1m candle stays open a full 60s before a new one opens
 
-# GOLF ramp: the demo market launches at $0.10 and drifts up gradually toward
-# a $3.00 cap (the "0.1 → 3" run the product wants). Every tick pulls the
-# price toward GOLF_TARGET by GOLF_DRIFT × the remaining gap, so it rises
-# smoothly, never overshoots the target, and settles there.
-GOLF_START = GOLF_START_PRICE
-GOLF_TARGET = GOLF_TARGET_PRICE
-GOLF_DRIFT = GOLF_DRIFT_RATE
-PRICE_FLOOR = 0.01
-PRICE_BAND_LOW = PRICE_FLOOR
+# GOLF market model: the coin trades like a normal token within a natural
+# band (currently ~$0.10–0.60) with ordinary up/down candles; the band's
+# ceiling then rises slowly so the price reaches ~$3.00 after GOLF_RAMP_DAYS.
+# Every tick adds symmetric relative noise plus a mild pull back toward the
+# ceiling's anchor — so it oscillates organically (mixed green/red candles,
+# wicks included) instead of marching straight up.
+GOLF_START = float(GOLF_START_PRICE)
+GOLF_TARGET = float(GOLF_TARGET_PRICE)
+GOLF_RAMP_SECONDS = float(GOLF_RAMP_DAYS) * 86400.0
+GOLF_OSC_HIGH = float(GOLF_OSC_HIGH)
+GOLF_VOL = float(GOLF_VOLATILITY)
+GOLF_REVERT = float(GOLF_REVERT)
+GOLF_FLOOR = 0.05
+PRICE_BAND_LOW = GOLF_FLOOR
 PRICE_BAND_HIGH = GOLF_TARGET
 
 # Platform coins that get their own independent authoritative price walk.
@@ -164,7 +170,7 @@ def _reseed_golf_if_out_of_band(db: Session):
     last = _last_db_candle(db)
     if last is None:
         return
-    if last.close > GOLF_TARGET * 1.001 or last.close < PRICE_FLOOR * 0.9:
+    if last.close > GOLF_TARGET * 1.001 or last.close < GOLF_FLOOR * 0.9:
         db.query(models.Candle).filter_by(symbol=SYMBOL).delete()
         db.commit()
 
@@ -174,21 +180,25 @@ def _seed_golf(db: Session):
     if exists:
         return
     now = datetime.utcnow()
+    # ~4h of seeded history: starts at $0.10 and behaves like a normal token
+    # inside the 0.1–0.6 band — candles a few percent each, mixed green/red,
+    # wicks included. (Per-candle steps use volatility * sqrt(ticks) so the
+    # seeded bodies match the size the live 60-tick candles produce.)
     price = GOLF_START
-    # Seed ~2h of history that already shows a gentle rise partway up the
-    # 0.1 → 3 ramp (so the chart reads as a live uptrend from day one).
-    ramp_top = GOLF_START + (GOLF_TARGET - GOLF_START) * random.uniform(0.05, 0.15)
+    ceil = GOLF_OSC_HIGH
+    anchor = ceil * 0.98
     rows = []
-    for i in range(120):
+    for i in range(240):
         open_ = price
-        drift = (ramp_top - open_) * 0.02
-        move = drift + random.uniform(-abs(open_) * 0.008, abs(open_) * 0.008)
-        close = _clamp(open_ + move, PRICE_BAND_LOW, PRICE_BAND_HIGH)
-        high = max(open_, close) + abs(open_ * random.uniform(0.002, 0.006))
-        low = min(open_, close) - abs(open_ * random.uniform(0.002, 0.006))
+        pull = (anchor - price) * GOLF_REVERT * CANDLE_INTERVAL_SECONDS
+        noise = price * random.uniform(-GOLF_VOL, GOLF_VOL) * 8.0
+        impulse = price * random.uniform(-GOLF_VOL, GOLF_VOL) * 24.0 if random.random() < 0.05 else 0.0
+        close = _clamp(open_ + pull + noise + impulse, GOLF_FLOOR, ceil)
+        high = max(open_, close) + open_ * random.uniform(0.001, 0.005)
+        low = min(open_, close) - open_ * random.uniform(0.001, 0.005)
         rows.append(models.Candle(
             symbol=SYMBOL, open=open_, high=high, low=low, close=close,
-            open_time=now - timedelta(seconds=(120 - i) * CANDLE_INTERVAL_SECONDS),
+            open_time=now - timedelta(seconds=(240 - i) * CANDLE_INTERVAL_SECONDS),
         ))
         price = close
     db.add_all(rows)
@@ -270,6 +280,26 @@ def _extra_checkpoint(db: Session):
     db.commit()
 
 
+def _golf_ceiling(db: Session) -> float:
+    """Current top of GOLF's natural band: ~GOLF_OSC_HIGH at launch, rising
+    linearly so it reaches GOLF_TARGET after GOLF_RAMP_DAYS. Anchored to the
+    persisted candle series (oldest → newest open_time) so the ramp survives
+    restarts and keeps progressing in real time."""
+    first = db.query(models.Candle).filter_by(symbol=SYMBOL) \
+        .order_by(models.Candle.open_time.asc()).first()
+    newest = db.query(models.Candle).filter_by(symbol=SYMBOL) \
+        .order_by(models.Candle.open_time.desc()).first()
+    if first is None or newest is None or GOLF_RAMP_SECONDS <= 0:
+        return GOLF_OSC_HIGH
+    elapsed = (newest.open_time - first.open_time).total_seconds()
+    raw = min(1.0, max(0.0, elapsed / GOLF_RAMP_SECONDS))
+    # Curved ramp: stays essentially inside the launch band for the first
+    # weeks, then accelerates so it lands on the $3.00 target after exactly
+    # GOLF_RAMP_DAYS.
+    frac = raw * raw
+    return GOLF_OSC_HIGH + (GOLF_TARGET - GOLF_OSC_HIGH) * frac
+
+
 def tick(db: Session):
     """Advances the market by one server tick — called periodically by the
     background loop in main.py. Advances GOLF AND every other configured
@@ -288,16 +318,19 @@ def tick(db: Session):
         _state["forming"] = {
             "symbol": SYMBOL, "open": last.open, "high": last.high,
             "low": last.low, "close": last.close, "open_time": last.open_time,
+            "ceil": _golf_ceiling(db),
         }
         _last_checkpoint = now
 
     forming = _state["forming"]
     age = (now - forming["open_time"]).total_seconds()
 
-    drift = (GOLF_TARGET - forming["close"]) * GOLF_DRIFT if forming["close"] < GOLF_TARGET else 0.0
-    noise = forming["close"] * random.uniform(-0.004, 0.004)
-    impulse = forming["close"] * random.uniform(-0.02, 0.02) if random.random() < 0.04 else 0.0
-    new_close = _clamp(forming["close"] + drift + noise + impulse, PRICE_BAND_LOW, PRICE_BAND_HIGH)
+    ceil = forming.get("ceil") or _golf_ceiling(db)
+    anchor = ceil * 0.98
+    pull = (anchor - forming["close"]) * GOLF_REVERT
+    noise = forming["close"] * random.uniform(-GOLF_VOL, GOLF_VOL)
+    impulse = forming["close"] * random.uniform(-GOLF_VOL * 6.0, GOLF_VOL * 6.0) if random.random() < 0.04 else 0.0
+    new_close = _clamp(forming["close"] + pull + noise + impulse, GOLF_FLOOR, min(ceil, PRICE_BAND_HIGH))
 
     if age >= CANDLE_INTERVAL_SECONDS:
         closed = dict(forming)
@@ -307,6 +340,7 @@ def tick(db: Session):
             "high": max(closed["close"], new_close),
             "low": min(closed["close"], new_close),
             "close": new_close, "open_time": now,
+            "ceil": _golf_ceiling(db),
         }
     else:
         forming["close"] = new_close

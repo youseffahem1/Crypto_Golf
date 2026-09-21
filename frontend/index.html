@@ -2935,8 +2935,8 @@ let serverPrices = {};
 let currentPrice = 0.1;
 let previousPrice = currentPrice;
 
-const VANTA_GOLF_TARGET = 3.0;
-const VANTA_GOLF_DRIFT = 0.002;
+const VANTA_GOLF_OSC_LOW = 0.1;
+const VANTA_GOLF_OSC_HIGH = 0.6;
 let serverPrice = null;
 
 let candles = [];
@@ -3304,15 +3304,17 @@ function vantaMapCandle(row) {
    backend server isn't running. */
 function buildDemoCandles(count, step, volatility, fromPrice) {
     const now = Date.now();
-    let price = Math.max(0.01, fromPrice);
+    let price = Math.max(0.02, fromPrice);
+    const anchor = (VANTA_GOLF_OSC_LOW + VANTA_GOLF_OSC_HIGH) / 2;
     const series = [];
     for (let i = count - 1; i >= 0; i--) {
         const open = price;
-        const drift = Math.max(0, VANTA_GOLF_TARGET - price) * VANTA_GOLF_DRIFT;
-        const move = random(-1, 1) * price * volatility + drift;
-        const close = Math.max(0.01, open + move);
-        const high = Math.max(open, close) + Math.abs(random(0, Math.max(price, 0.01) * volatility * 0.6));
-        const low = Math.min(open, close) - Math.abs(random(0, Math.max(price, 0.01) * volatility * 0.6));
+        const pull = (anchor - open) * 0.02;
+        const move = random(-1, 1) * price * 0.025 + pull;
+        const close = Math.max(0.02, Math.min(VANTA_GOLF_OSC_HIGH + 0.02, open + move));
+        const wick = Math.max(price, 0.02) * Math.abs(random(0, 0.02));
+        const high = Math.max(open, close) + wick;
+        const low = Math.min(open, close) - wick;
         series.push({ open, high, low, close, timestamp: now - i * step });
         price = close;
     }
@@ -3375,12 +3377,17 @@ async function vantaPollPrice() {
         serverPrice = Number(p.price);
     } catch (e) {
         /* No server — gently animate the demo market instead of freezing.
-           GOLF drifts up toward its 3.0 target like the server ramp; the
-           wandering target keeps the live candle easing side to side. */
+           GOLF oscillates naturally inside its 0.1–0.6 band (mixed up/down,
+           no straight march) so the demo looks like a real token. */
         const isGolf = !window.vantaActiveCoin || window.vantaActiveCoin === "GOLF";
-        const drift = isGolf ? Math.max(0, VANTA_GOLF_TARGET - currentPrice) * VANTA_GOLF_DRIFT : 0;
-        const wander = (Math.random() - 0.5) * currentPrice * 0.0015 + drift;
-        serverPrice = Math.max(0.01, currentPrice + wander);
+        let wander;
+        if (isGolf) {
+            const anchor = (VANTA_GOLF_OSC_LOW + VANTA_GOLF_OSC_HIGH) / 2;
+            wander = (Math.random() - 0.5) * currentPrice * 0.02 + (anchor - currentPrice) * 0.02;
+        } else {
+            wander = (Math.random() - 0.5) * currentPrice * 0.0015;
+        }
+        serverPrice = Math.max(0.02, currentPrice + wander);
     }
 }
 

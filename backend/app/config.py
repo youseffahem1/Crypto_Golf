@@ -106,15 +106,21 @@ WITHDRAW_ADDRESSES = _addr_map(os.environ.get("WITHDRAW_ADDRESSES", ""))
 # authoritative on the server so a client can never influence its own
 # outcome. See market_service.py.
 #
-# GOLF ramp: the coin launches at GOLF_START_PRICE and drifts up gradually
-# toward GOLF_TARGET_PRICE (never exceeding it) at
-# GOLF_DRIFT_RATE × the remaining gap per tick. Defaults give the requested
-# "0.1 → 3" gradual run. MARKET_STARTING_PRICE is the historical alias for
-# the launch price and stays in sync with GOLF_START_PRICE when unset.
+# GOLF market model: a normal token that trades naturally inside a band —
+# ~$0.10–0.60 from launch — with ordinary mixed (green/red) candles. The
+# band's ceiling then rises linearly so the price reaches ~$3.00 after
+# GOLF_RAMP_DAYS. Prices never exceed GOLF_TARGET_PRICE.
+#   GOLF_OSC_HIGH     band ceiling today (default 0.6)
+#   GOLF_RAMP_DAYS    days until the ceiling reaches GOLF_TARGET_PRICE (30)
+#   GOLF_VOLATILITY   per-tick relative noise (0.003)
+#   GOLF_REVERT       pull-back strength toward the band anchor (0.0008)
 MARKET_TICK_INTERVAL_SECONDS = float(os.environ.get("MARKET_TICK_INTERVAL_SECONDS", "1"))
 GOLF_START_PRICE = float(os.environ.get("GOLF_START_PRICE", "0.1"))
 GOLF_TARGET_PRICE = float(os.environ.get("GOLF_TARGET_PRICE", "3.0"))
-GOLF_DRIFT_RATE = float(os.environ.get("GOLF_DRIFT_RATE", "0.002"))
+GOLF_RAMP_DAYS = float(os.environ.get("GOLF_RAMP_DAYS", "30"))
+GOLF_OSC_HIGH = float(os.environ.get("GOLF_OSC_HIGH", "0.6"))
+GOLF_VOLATILITY = float(os.environ.get("GOLF_VOLATILITY", "0.003"))
+GOLF_REVERT = float(os.environ.get("GOLF_REVERT", "0.0008"))
 MARKET_STARTING_PRICE = float(os.environ.get("MARKET_STARTING_PRICE", str(GOLF_START_PRICE)))
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "test")

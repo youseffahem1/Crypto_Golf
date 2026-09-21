@@ -105,8 +105,17 @@ WITHDRAW_ADDRESSES = _addr_map(os.environ.get("WITHDRAW_ADDRESSES", ""))
 # is only the price series that actually determines trade win/loss, kept
 # authoritative on the server so a client can never influence its own
 # outcome. See market_service.py.
+#
+# GOLF ramp: the coin launches at GOLF_START_PRICE and drifts up gradually
+# toward GOLF_TARGET_PRICE (never exceeding it) at
+# GOLF_DRIFT_RATE × the remaining gap per tick. Defaults give the requested
+# "0.1 → 3" gradual run. MARKET_STARTING_PRICE is the historical alias for
+# the launch price and stays in sync with GOLF_START_PRICE when unset.
 MARKET_TICK_INTERVAL_SECONDS = float(os.environ.get("MARKET_TICK_INTERVAL_SECONDS", "1"))
-MARKET_STARTING_PRICE = float(os.environ.get("MARKET_STARTING_PRICE", "4052.0"))
+GOLF_START_PRICE = float(os.environ.get("GOLF_START_PRICE", "0.1"))
+GOLF_TARGET_PRICE = float(os.environ.get("GOLF_TARGET_PRICE", "3.0"))
+GOLF_DRIFT_RATE = float(os.environ.get("GOLF_DRIFT_RATE", "0.002"))
+MARKET_STARTING_PRICE = float(os.environ.get("MARKET_STARTING_PRICE", str(GOLF_START_PRICE)))
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "test")
 

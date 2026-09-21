@@ -28,12 +28,25 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from . import models
-from .config import MARKET_STARTING_PRICE, PLATFORM_COINS, PLATFORM_COIN_NAMES, PLATFORM_COIN_LAUNCH_USD, PLATFORM_COIN_WALK_BAND_PCT
+from .config import (
+    MARKET_STARTING_PRICE, PLATFORM_COINS, PLATFORM_COIN_NAMES,
+    PLATFORM_COIN_LAUNCH_USD, PLATFORM_COIN_WALK_BAND_PCT,
+    GOLF_START_PRICE, GOLF_TARGET_PRICE, GOLF_DRIFT_RATE,
+)
 
 SYMBOL = "GOLFUSDT"
 CANDLE_INTERVAL_SECONDS = 60  # the 1m candle stays open a full 60s before a new one opens
-PRICE_BAND_LOW = MARKET_STARTING_PRICE * 0.985
-PRICE_BAND_HIGH = MARKET_STARTING_PRICE * 1.015
+
+# GOLF ramp: the demo market launches at $0.10 and drifts up gradually toward
+# a $3.00 cap (the "0.1 → 3" run the product wants). Every tick pulls the
+# price toward GOLF_TARGET by GOLF_DRIFT × the remaining gap, so it rises
+# smoothly, never overshoots the target, and settles there.
+GOLF_START = GOLF_START_PRICE
+GOLF_TARGET = GOLF_TARGET_PRICE
+GOLF_DRIFT = GOLF_DRIFT_RATE
+PRICE_FLOOR = 0.01
+PRICE_BAND_LOW = PRICE_FLOOR
+PRICE_BAND_HIGH = GOLF_TARGET
 
 # Platform coins that get their own independent authoritative price walk.
 # GOLF uses the original single-walk machinery below (unchanged behaviour);
@@ -137,9 +150,23 @@ def ensure_seeded(db: Session):
     """Idempotent: seeds an initial candle history for GOLF and every other
     configured platform coin (each from its own launch price) if none exists
     yet."""
+    _reseed_golf_if_out_of_band(db)
     _seed_golf(db)
     for sym in list(_extra_states.keys()):
         _seed_extra(db, sym)
+
+
+def _reseed_golf_if_out_of_band(db: Session):
+    """If the persisted GOLF series was seeded under an older price model
+    whose last price sits outside the current 0.1 → 3 ramp, drop it so the
+    fresher ramp re-seeds from GOLF_START. Idempotent — runs at most once,
+    because the reseeded series sits inside the band afterwards."""
+    last = _last_db_candle(db)
+    if last is None:
+        return
+    if last.close > GOLF_TARGET * 1.001 or last.close < PRICE_FLOOR * 0.9:
+        db.query(models.Candle).filter_by(symbol=SYMBOL).delete()
+        db.commit()
 
 
 def _seed_golf(db: Session):
@@ -147,14 +174,18 @@ def _seed_golf(db: Session):
     if exists:
         return
     now = datetime.utcnow()
-    price = MARKET_STARTING_PRICE
+    price = GOLF_START
+    # Seed ~2h of history that already shows a gentle rise partway up the
+    # 0.1 → 3 ramp (so the chart reads as a live uptrend from day one).
+    ramp_top = GOLF_START + (GOLF_TARGET - GOLF_START) * random.uniform(0.05, 0.15)
     rows = []
     for i in range(120):
         open_ = price
-        move = random.uniform(-0.3, 0.3)
+        drift = (ramp_top - open_) * 0.02
+        move = drift + random.uniform(-abs(open_) * 0.008, abs(open_) * 0.008)
         close = _clamp(open_ + move, PRICE_BAND_LOW, PRICE_BAND_HIGH)
-        high = max(open_, close) + random.uniform(0.05, 0.3)
-        low = min(open_, close) - random.uniform(0.05, 0.3)
+        high = max(open_, close) + abs(open_ * random.uniform(0.002, 0.006))
+        low = min(open_, close) - abs(open_ * random.uniform(0.002, 0.006))
         rows.append(models.Candle(
             symbol=SYMBOL, open=open_, high=high, low=low, close=close,
             open_time=now - timedelta(seconds=(120 - i) * CANDLE_INTERVAL_SECONDS),
@@ -263,9 +294,10 @@ def tick(db: Session):
     forming = _state["forming"]
     age = (now - forming["open_time"]).total_seconds()
 
-    noise = random.uniform(-0.06, 0.06)
-    impulse = random.uniform(-0.15, 0.15) if random.random() < 0.05 else 0.0
-    new_close = _clamp(forming["close"] + noise + impulse, PRICE_BAND_LOW, PRICE_BAND_HIGH)
+    drift = (GOLF_TARGET - forming["close"]) * GOLF_DRIFT if forming["close"] < GOLF_TARGET else 0.0
+    noise = forming["close"] * random.uniform(-0.004, 0.004)
+    impulse = forming["close"] * random.uniform(-0.02, 0.02) if random.random() < 0.04 else 0.0
+    new_close = _clamp(forming["close"] + drift + noise + impulse, PRICE_BAND_LOW, PRICE_BAND_HIGH)
 
     if age >= CANDLE_INTERVAL_SECONDS:
         closed = dict(forming)

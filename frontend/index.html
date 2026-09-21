@@ -2341,12 +2341,12 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                 </div>
 
                 <div class="price-pill" id="pricePill">
-                    4052.000
+                    0.100000
                 </div>
 
                 <div class="chart-bottom">
                     <div class="current-price">
-                        GOLF/USDT · <span id="currentPrice">4052.000</span>
+                        GOLF/USDT · <span id="currentPrice">0.100000</span>
                     </div>
 
                     <div class="candle-timer" id="candleTimer">
@@ -2932,8 +2932,11 @@ let golfPrice = 0;
 let coinBalances = {};
 let serverPrices = {};
 
-let currentPrice = 4052.000;
+let currentPrice = 0.1;
 let previousPrice = currentPrice;
+
+const VANTA_GOLF_TARGET = 3.0;
+const VANTA_GOLF_DRIFT = 0.002;
 let serverPrice = null;
 
 let candles = [];
@@ -3301,14 +3304,15 @@ function vantaMapCandle(row) {
    backend server isn't running. */
 function buildDemoCandles(count, step, volatility, fromPrice) {
     const now = Date.now();
-    let price = fromPrice;
+    let price = Math.max(0.01, fromPrice);
     const series = [];
     for (let i = count - 1; i >= 0; i--) {
         const open = price;
-        const move = random(-1, 1) * price * volatility;
-        const close = Math.max(1, open + move);
-        const high = Math.max(open, close) + Math.abs(random(0, price * volatility * 0.6));
-        const low = Math.min(open, close) - Math.abs(random(0, price * volatility * 0.6));
+        const drift = Math.max(0, VANTA_GOLF_TARGET - price) * VANTA_GOLF_DRIFT;
+        const move = random(-1, 1) * price * volatility + drift;
+        const close = Math.max(0.01, open + move);
+        const high = Math.max(open, close) + Math.abs(random(0, Math.max(price, 0.01) * volatility * 0.6));
+        const low = Math.min(open, close) - Math.abs(random(0, Math.max(price, 0.01) * volatility * 0.6));
         series.push({ open, high, low, close, timestamp: now - i * step });
         price = close;
     }
@@ -3371,9 +3375,12 @@ async function vantaPollPrice() {
         serverPrice = Number(p.price);
     } catch (e) {
         /* No server — gently animate the demo market instead of freezing.
-           The wandering target keeps the live candle easing side to side. */
-        const wander = (Math.random() - 0.5) * currentPrice * 0.0015;
-        serverPrice = Math.max(Number(window.vantaActiveCoin === "GOLF" ? 0.000001 : 0.00000001), currentPrice + wander);
+           GOLF drifts up toward its 3.0 target like the server ramp; the
+           wandering target keeps the live candle easing side to side. */
+        const isGolf = !window.vantaActiveCoin || window.vantaActiveCoin === "GOLF";
+        const drift = isGolf ? Math.max(0, VANTA_GOLF_TARGET - currentPrice) * VANTA_GOLF_DRIFT : 0;
+        const wander = (Math.random() - 0.5) * currentPrice * 0.0015 + drift;
+        serverPrice = Math.max(0.01, currentPrice + wander);
     }
 }
 

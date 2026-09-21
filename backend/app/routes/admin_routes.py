@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from .. import schemas, models, swap_service, market_service, tron_service
 from ..database import SessionLocal, get_db
-from ..auth import require_admin, hash_password
+from ..auth import require_admin, hash_password, get_current_user_id
 from ..config import ADMIN_BOOTSTRAP_EMAIL, ADMIN_BOOTSTRAP_PASSWORD
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -111,6 +111,114 @@ def admin_set_role(
     db.commit()
     db.refresh(user)
     return _to_admin_user(user, db)
+
+
+@router.get("/users/{user_id}/activity", response_model=list[schemas.AdminActivityItem])
+def admin_activity(
+    user_id: str,
+    db: Session = Depends(get_db),
+    _: bool = Depends(require_admin),
+):
+    """Every transaction for one user, merged into a single newest-first
+    timeline: trades, verified deposits, swaps and internal transfers
+    (both sides). Used by the admin panel's per-user activity view."""
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    items: list[schemas.AdminActivityItem] = []
+
+    for t in db.query(models.Trade).filter_by(user_id=user_id).all():
+        items.append(schemas.AdminActivityItem(
+            type="TRADE",
+            symbol="USDT",
+            amount=t.amount,
+            direction=str(t.direction.value),
+            status=str(t.status.value),
+            created_at=t.opened_at,
+            meta={"profit": t.profit, "entry": t.entry_price, "exit": t.exit_price},
+        ))
+
+    for d in db.query(models.Deposit).filter_by(user_id=user_id).all():
+        items.append(schemas.AdminActivityItem(
+            type="DEPOSIT",
+            symbol=d.token,
+            amount=d.amount,
+            status=str(d.status.value),
+            created_at=d.confirmed_at or d.created_at,
+            meta={"tx": d.tx_hash, "network": d.network, "from": d.from_address},
+        ))
+
+    for s in db.query(models.SwapTx).filter_by(user_id=user_id).all():
+        items.append(schemas.AdminActivityItem(
+            type="SWAP",
+            symbol=f"{s.from_symbol}→{s.to_symbol}",
+            amount=s.from_amount,
+            status="COMPLETED",
+            created_at=s.created_at,
+            meta={"to_amount": s.to_amount, "rate": s.rate},
+        ))
+
+    for tr in db.query(models.Transfer).filter(
+        or_(models.Transfer.sender_id == user_id, models.Transfer.recipient_id == user_id)
+    ).all():
+        sent = tr.sender_id == user_id
+        counterpart = tr.recipient if sent else tr.sender
+        items.append(schemas.AdminActivityItem(
+            type="TRANSFER",
+            symbol=tr.symbol,
+            amount=tr.amount,
+            direction="SENT" if sent else "RECEIVED",
+            status=str(tr.status.value),
+            created_at=tr.created_at,
+            meta={"with": counterpart.email if counterpart else "", "note": tr.note},
+        ))
+
+    items.sort(key=lambda x: x.created_at, reverse=True)
+    return items[:300]
+
+
+@router.delete("/users/{user_id}")
+def admin_delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    _: bool = Depends(require_admin),
+    acting_admin_id: str = Depends(get_current_user_id),
+):
+    """Permanently remove an account and everything attached to it (trades,
+    deposits, swaps, transfer/message history involving them, messages,
+    blocks and reports). Guards: the acting admin can't delete their own
+    account, and the last remaining admin can never be deleted."""
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == acting_admin_id:
+        raise HTTPException(status_code=400, detail="You can't delete your own account")
+    if user.is_admin and db.query(models.User).filter_by(is_admin=True).count() <= 1:
+        raise HTTPException(status_code=400, detail="You can't delete the last admin")
+
+    email = user.email
+    uid = user.id
+    db.query(models.UserBlock).filter(
+        or_(models.UserBlock.blocker_id == uid, models.UserBlock.blocked_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.Report).filter(
+        or_(models.Report.reporter_id == uid, models.Report.reported_user_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.DirectMessage).filter(
+        or_(models.DirectMessage.sender_id == uid, models.DirectMessage.recipient_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.Transfer).filter(
+        or_(models.Transfer.sender_id == uid, models.Transfer.recipient_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.DepositAddress).filter_by(user_id=uid).delete(synchronize_session=False)
+    db.query(models.Deposit).filter_by(user_id=uid).delete(synchronize_session=False)
+    db.query(models.Trade).filter_by(user_id=uid).delete(synchronize_session=False)
+    db.query(models.SwapTx).filter_by(user_id=uid).delete(synchronize_session=False)
+    db.query(models.CoinBalance).filter_by(user_id=uid).delete(synchronize_session=False)
+    db.query(models.User).filter_by(id=uid).delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True, "email": email}
 
 
 def bootstrap_admin():

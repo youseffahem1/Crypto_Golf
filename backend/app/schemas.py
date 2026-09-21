@@ -232,3 +232,13 @@ class AdminCreditRequest(BaseModel):
 
 class AdminSetAdminRequest(BaseModel):
     is_admin: bool = True
+
+
+class AdminActivityItem(BaseModel):
+    type: str  # TRADE / DEPOSIT / SWAP / TRANSFER
+    symbol: str
+    amount: float
+    direction: Optional[str] = None  # trade UP/DOWN, transfer SENT/RECEIVED
+    status: str
+    created_at: datetime
+    meta: dict = Field(default_factory=dict)

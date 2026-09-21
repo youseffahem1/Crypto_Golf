@@ -8940,8 +8940,14 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 
   .vanta-nav-toggle{display:grid}
 
+  /* The drawer. flex-direction:column MUST be mirrored here — the base
+     layout rules for .desktop-sidebar live only inside the desktop
+     media query, so on mobile it would default to a horizontal row
+     (extremely crowded) if not forced. */
   .desktop-sidebar{
     display:flex!important;
+    flex-direction:column!important;
+    align-items:stretch!important;
     position:fixed!important;
     top:0!important;left:0!important;bottom:0!important;
     width:min(300px,86vw)!important;
@@ -8958,12 +8964,51 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
   .desktop-sidebar.vanta-nav-open{transform:translateX(0)}
   .vanta-sidebar-close{display:flex}
 
-  .side-balance{margin-bottom:12px}
-  .side-item{height:48px;font-size:13px;border-radius:13px}
-  .side-item svg{width:20px;flex:0 0 20px}
-  .side-item.active{background:linear-gradient(135deg,rgba(37,99,235,.16),rgba(37,99,235,.07))}
-  .brand{padding:0 12px 16px;font-size:16px}
-  .side-menu{gap:6px;margin-top:2px}
+  /* Mirror the desktop inner layout (these classes are only styled inside
+     the desktop media query) so the drawer looks exactly like the sidebar. */
+  .brand{
+    display:block;
+    padding:0 12px 16px;
+    font-size:16px;font-weight:950;letter-spacing:-.02em;
+    color:var(--text);
+  }
+  .brand span{color:var(--gold)}
+  .side-balance{
+    padding:14px 15px;
+    border-radius:16px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    margin-bottom:14px;
+  }
+  .side-balance-label{
+    font-size:9px;font-weight:800;
+    letter-spacing:.12em;text-transform:uppercase;
+  }
+  .side-balance-value{
+    font-size:19px;font-weight:900;
+    color:var(--text);
+    margin-top:4px;letter-spacing:-.01em;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .side-menu{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+  .side-item{
+    display:flex;align-items:center;gap:12px;
+    width:100%;height:48px;padding:0 14px;
+    border:0;border-radius:13px;
+    background:transparent;
+    color:var(--muted);
+    font-size:13px;font-weight:700;text-align:left;
+    cursor:pointer;box-sizing:border-box;
+    flex:0 0 auto;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .side-item:active{background:rgba(37,99,235,.12)}
+  .side-item svg{width:20px;height:20px;flex:0 0 20px}
+  .side-item.active{
+    background:linear-gradient(135deg,rgba(37,99,235,.16),rgba(37,99,235,.07));
+    color:var(--text);
+  }
+  .side-item.active svg{color:var(--gold)}
 
   /* Bottom nav: one full row of 4, comfy tap targets */
   .bottom-nav{
@@ -9144,6 +9189,35 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
     </div>
 </div>
 
+<div class="vadm-modal" id="vadmActivityModal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="vadm-modal-box vadm-box-wide">
+        <div class="vadm-modal-head">
+            <h3>Activity</h3>
+            <button type="button" class="vadm-x" id="vadmActivityClose" aria-label="Close">×</button>
+        </div>
+        <p class="vadm-target" id="vadmActivityTarget">—</p>
+        <div class="vadm-activity" id="vadmActivityList"></div>
+        <div class="vadm-activity-empty" id="vadmActivityEmpty" style="display:none">No transactions found for this user.</div>
+    </div>
+</div>
+
+<div class="vadm-modal" id="vadmDeleteModal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="vadm-modal-box vadm-box-narrow">
+        <div class="vadm-modal-head">
+            <h3>Delete user</h3>
+            <button type="button" class="vadm-x" id="vadmDeleteClose" aria-label="Close">×</button>
+        </div>
+        <p class="vadm-delete-warn">
+            Permanently delete <b id="vadmDeleteEmail">—</b> and everything attached to it
+            (trades, deposits, swaps, messages, transfer history). This cannot be undone.
+        </p>
+        <div class="vadm-btn-row">
+            <button type="button" id="vadmDeleteCancel" class="vadm-btn ghost">Cancel</button>
+            <button type="button" id="vadmDeleteConfirm" class="vadm-btn danger">Delete account</button>
+        </div>
+    </div>
+</div>
+
 <style id="vanta-admin-css">
 .vanta-admin-page{
   display:none;position:fixed;left:0;right:0;top:66px;bottom:0;z-index:90;
@@ -9178,6 +9252,52 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 .vadm-btn.ghost{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
 .vadm-btn.solid{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff}
 .vadm-btn:disabled{opacity:.6;cursor:not-allowed}
+.vadm-btn.danger{background:linear-gradient(135deg,#e11d48,#be123c);color:#fff}
+.vadm-box-narrow{width:min(380px,100%)}
+.vadm-box-wide{width:min(560px,100%)}
+
+/* Delete confirm */
+.vadm-delete-warn{font-size:12.5px;color:var(--muted);line-height:1.6;margin:4px 0 0}
+.vadm-delete-warn b{color:var(--text)}
+.vadm-delete-warn b.warn-email{color:#e11d48;word-break:break-all}
+
+/* Activity timeline */
+.vadm-activity{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.vadm-act-row{
+  display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:10px;align-items:center;
+  padding:11px 13px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2);
+}
+.vadm-act-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff;flex:0 0 38px;font-size:16px}
+.vadm-act-row .kind-trade .vadm-act-icon{background:linear-gradient(135deg,#4d8dff,#2563eb)}
+.vadm-act-row .kind-deposit .vadm-act-icon{background:linear-gradient(135deg,#2dd4a8,#0d8a3c)}
+.vadm-act-row .kind-swap .vadm-act-icon{background:linear-gradient(135deg,#a855f7,#6d28d9)}
+.vadm-act-row .kind-transfer .vadm-act-icon{background:linear-gradient(135deg,#ff9f43,#d97706)}
+.vadm-act-body{min-width:0}
+.vadm-act-title{font-size:12.5px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.vadm-act-title .t-dir.up{color:#0d8a3c}
+.vadm-act-title .t-dir.down{color:#e11d48}
+.vadm-act-title .t-dir.sent{color:#d97706}
+.vadm-act-title .t-dir.received{color:#0d8a3c}
+.vadm-act-title .t-symbol{color:var(--muted)}
+.vadm-act-meta{font-size:10.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.vadm-act-side{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.vadm-act-amt{font-size:13px;font-weight:900;color:var(--text);white-space:nowrap}
+.vadm-act-amt.out{color:#e11d48}
+.vadm-act-amt.in{color:#0d8a3c}
+.vadm-act-time{font-size:9.5px;color:var(--muted)}
+.vadm-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:8.5px;font-weight:900;letter-spacing:.05em}
+.vadm-pill.ok{background:rgba(13,138,60,.12);color:#0d8a3c;border:1px solid rgba(13,138,60,.28)}
+.vadm-pill.wait{background:rgba(184,134,11,.13);color:#b8860b;border:1px solid rgba(184,134,11,.3)}
+.vadm-pill.bad{background:rgba(225,29,72,.12);color:#e11d48;border:1px solid rgba(225,29,72,.3)}
+.vadm-pill.mut{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
+.vadm-activity-empty{padding:30px 16px;text-align:center;color:var(--muted);font-size:12.5px;font-weight:700}
+.vadm-act-loading{padding:30px 16px;text-align:center;color:var(--muted);font-size:12.5px;font-weight:700}
+@media(max-width:430px){
+  .vadm-act-row{grid-template-columns:34px minmax(0,1fr);padding:11px 12px}
+  .vadm-act-icon{width:34px;height:34px;border-radius:11px;flex-basis:34px;font-size:15px}
+  .vadm-act-side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:flex-end;gap:10px;text-align:left}
+  .vadm-act-amt{flex:0 0 auto}
+}
 
 /* Stat tiles */
 .vadm-wrap{width:min(900px,100%);margin:0 auto;display:grid;gap:16px}
@@ -9213,12 +9333,14 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 .vadm-btn-sm{padding:8px 12px;border-radius:11px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:11.5px;font-weight:900;cursor:pointer;white-space:nowrap}
 .vadm-btn-sm:active{transform:scale(.96)}
 .vadm-btn-sm.role{border-color:var(--line);background:var(--panel-2);color:var(--muted)}
+.vadm-btn-sm.act{border-color:rgba(168,85,247,.35);background:rgba(168,85,247,.08);color:#a855f7}
+.vadm-btn-sm.danger{border-color:rgba(225,29,72,.35);background:rgba(225,29,72,.08);color:#e11d48}
 @media(max-width:720px){
   .vadm-user{grid-template-columns:1fr 1fr;row-gap:10px}
   .vadm-u-main{grid-column:1/-1}
   .vadm-u-bal{text-align:left}
-  .vadm-u-actions{grid-column:1/-1;justify-content:flex-start;width:100%}
-  .vadm-btn-sm{flex:1}
+  .vadm-u-actions{grid-column:1/-1;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .vadm-btn-sm{width:100%;text-align:center}
 }
 
 /* Admin-only nav entries & 5-col bottom nav */
@@ -9269,14 +9391,18 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
         +'<div class="vadm-u-role">'+(u.is_admin?'<span class="admin">ADMIN</span>':'<span class="user">USER</span>')+'</div>'
         +'<div class="vadm-u-actions">'
         +'<button type="button" class="vadm-btn-sm" data-credit="'+esc(u.email)+'">+ Add balance</button>'
+        +'<button type="button" class="vadm-btn-sm act" data-activity="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Activity</button>'
         +'<button type="button" class="vadm-btn-sm role" data-role="'+esc(u.id)+'" data-make="'+(u.is_admin?'0':'1')+'">'
           +(u.is_admin?'Remove admin':'Make admin')+'</button>'
+        +'<button type="button" class="vadm-btn-sm danger" data-del="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Delete</button>'
         +'</div></div>';
     }).join('');
 
     function classFor(v){ return v>0?'class="up"':''; }
     list.querySelectorAll('[data-credit]').forEach(b=>b.addEventListener('click',()=>openCredit(b.dataset.credit)));
+    list.querySelectorAll('[data-activity]').forEach(b=>b.addEventListener('click',()=>openActivity(b.dataset.activity,b.dataset.email)));
     list.querySelectorAll('[data-role]').forEach(b=>b.addEventListener('click',()=>toggleRole(b.dataset.role,b.dataset.make==='1')));
+    list.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>askDelete(b.dataset.del,b.dataset.email)));
   }
 
   async function refreshAdmin(){
@@ -9343,6 +9469,118 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
       refreshAdmin();
     }catch(e){ showToast(e.message||'Could not update role'); }
   }
+
+  /* ---------------- Activity (per-user transactions) ---------------- */
+  function tAgo(ts){
+    try{
+      const d=Date.parse(String(ts).endsWith('Z')?ts:ts+'Z');
+      const s=Math.max(0,(Date.now()-d)/1000);
+      if(s<60)return 'just now';
+      if(s<3600)return Math.floor(s/60)+'m ago';
+      if(s<86400)return Math.floor(s/3600)+'h ago';
+      return new Date(d).toLocaleDateString();
+    }catch(e){ return ''; }
+  }
+  function pill(status){
+    if(status==='WON'||status==='CONFIRMED'||status==='COMPLETED') return '<span class="vadm-pill ok">'+status+'</span>';
+    if(status==='LOST'||status==='FAILED') return '<span class="vadm-pill bad">'+status+'</span>';
+    return '<span class="vadm-pill wait">'+status+'</span>';
+  }
+  function renderActItem(it){
+    const kind=String(it.type||'').toLowerCase().replace(/[^a-z]/g,'');
+    const dir=it.direction?String(it.direction).toLowerCase():'';
+    let icon,title,meta,amtHtml,amtCls='';
+    if(it.type==='TRADE'){
+      icon=it.direction==='UP'?'▲':'▼';
+      title='Trading <span class="t-symbol">USDT</span> <span class="t-dir '+esc(dir)+'">'+esc(it.direction)+'</span>';
+      meta='Entry '+fmt(it.meta&&it.meta.entry)+' · Exit '+(it.meta&&it.meta.exit?fmt(it.meta.exit):'—')
+        +(it.meta&&it.meta.profit!=null?' · P/L '+fmt(it.meta.profit):'');
+      amtHtml=fmt(it.amount)+' <span class="t-symbol">USDT</span>';
+    } else if(it.type==='DEPOSIT'){
+      icon='⤓';
+      title='Deposit <span class="t-symbol">'+esc(it.symbol)+'</span>';
+      meta=(it.meta&&it.meta.tx?esc(String(it.meta.tx).slice(0,20))+'… · ':'')+(it.meta&&it.meta.network?esc(it.meta.network):'');
+      amtHtml=fmt(it.amount)+' <span class="t-symbol">USDT</span>';
+    } else if(it.type==='SWAP'){
+      icon='⇄';
+      const parts=String(it.symbol||'').split('→');
+      const from=parts[0]||'';
+      const to=parts[1]||'';
+      title='Swap <span class="t-symbol">'+esc(from)+' → '+esc(to)+'</span>';
+      meta='Rate '+fmt(it.meta&&it.meta.rate)+' · Got '+fmt(it.meta&&it.meta.to_amount)+' '+esc(to);
+      amtHtml=fmt(it.amount)+' <span class="t-symbol">'+esc(from)+'</span>';
+    } else {
+      icon=it.direction==='RECEIVED'?'←':'→';
+      title='Transfer <span class="t-dir '+esc(dir)+'">'+esc(it.direction)+'</span>';
+      meta=''+(it.meta&&it.meta.with?'with '+esc(it.meta.with)+' ':'')+(it.meta&&it.meta.note?'· "'+esc(it.meta.note)+'"':'').trim();
+      amtCls=it.direction==='RECEIVED'?'in':'out';
+      amtHtml=(it.direction==='RECEIVED'?'+ ':'− ')+fmt(it.amount)+' <span class="t-symbol">'+esc(it.symbol)+'</span>';
+    }
+    return '<div class="vadm-act-row kind-'+kind+'">'
+      +'<div class="vadm-act-icon">'+icon+'</div>'
+      +'<div class="vadm-act-body"><div class="vadm-act-title">'+title+pill(it.status)+'</div>'
+      +'<div class="vadm-act-meta">'+meta+'</div></div>'
+      +'<div class="vadm-act-side"><div class="vadm-act-amt '+amtCls+'">'+amtHtml+'</div>'
+      +'<div class="vadm-act-time">'+tAgo(it.created_at)+'</div></div></div>';
+  }
+  async function openActivity(userId,email){
+    $('vadmActivityTarget').textContent=email;
+    const list=$('vadmActivityList'), empty=$('vadmActivityEmpty');
+    list.innerHTML='<div class="vadm-act-loading">Loading activity…</div>';
+    empty.style.display='none';
+    $('vadmActivityModal').classList.add('open');
+    $('vadmActivityModal').setAttribute('aria-hidden','false');
+    try{
+      const items=await vantaApi('/api/admin/users/'+encodeURIComponent(userId)+'/activity');
+      empty.style.display=items.length?'none':'block';
+      list.innerHTML=items.map(renderActItem).join('');
+    }catch(e){
+      empty.style.display='none';
+      list.innerHTML='<div class="vadm-act-loading">'+esc(e.message||'Could not load activity')+'</div>';
+    }
+  }
+  function closeActivity(){ $('vadmActivityModal').classList.remove('open'); $('vadmActivityModal').setAttribute('aria-hidden','true'); }
+
+  /* ---------------- Delete user ---------------- */
+  let delUserId=null;
+  function askDelete(userId,email){
+    delUserId=userId;
+    $('vadmDeleteEmail').textContent=email;
+    $('vadmDeleteModal').classList.add('open');
+    $('vadmDeleteModal').setAttribute('aria-hidden','false');
+  }
+  function closeDelete(){ $('vadmDeleteModal').classList.remove('open'); $('vadmDeleteModal').setAttribute('aria-hidden','true'); delUserId=null; }
+  $('vadmDeleteConfirm').addEventListener('click',async()=>{
+    if(!delUserId)return;
+    const btn=$('vadmDeleteConfirm');
+    btn.disabled=true; btn.textContent='Deleting…';
+    try{
+      await vantaApi('/api/admin/users/'+encodeURIComponent(delUserId),{method:'DELETE'});
+      showToast('User deleted');
+      closeDelete();
+      refreshAdmin();
+    }catch(e){ showToast(e.message||'Could not delete user'); }
+    finally{ btn.disabled=false; btn.textContent='Delete account'; }
+  });
+
+  /* ---------------- Modal open/close wiring ---------------- */
+  function modalClose(id){ const m=$(id); m.classList.remove('open'); m.setAttribute('aria-hidden','true'); }
+  function closeModalById(id){
+    modalClose(id);
+    if(id==='vadmModal') modalUserEmail=null;
+    if(id==='vadmDeleteModal') delUserId=null;
+  }
+  $('vadmActivityClose').addEventListener('click',closeActivity);
+  $('vadmDeleteClose').addEventListener('click',closeDelete);
+  $('vadmDeleteCancel').addEventListener('click',closeDelete);
+  $('vadmActivityModal').addEventListener('click',e=>{ if(e.target===$('vadmActivityModal')) closeActivity(); });
+  $('vadmDeleteModal').addEventListener('click',e=>{ if(e.target===$('vadmDeleteModal')) closeDelete(); });
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape')return;
+    ['vadmModal','vadmActivityModal','vadmDeleteModal'].forEach(id=>{
+      const m=$(id); if(m&&m.classList.contains('open')) closeModalById(id);
+    });
+  });
 
   $('vadmClose').addEventListener('click',closeModal);
   $('vadmCancel').addEventListener('click',closeModal);

@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Enum, Integer, Text, UniqueConstraint
+from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Enum, Integer, Text, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -164,6 +164,25 @@ class CoinBalance(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("user_id", "symbol", name="uq_user_symbol"),)
+
+
+class BalanceTransaction(Base):
+    """Permanent, server-side audit ledger for every admin balance adjustment
+    (ADMIN_CREDIT / ADMIN_DEBIT / ADJUSTMENT). Money here is stored as
+    Numeric(24,8) so fractional amounts never round-trip through binary float.
+    The balance change and its ledger row are written in ONE database
+    transaction — if the ledger insert fails, the balance is never updated."""
+
+    __tablename__ = "balance_transactions"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    symbol = Column(String, nullable=False)
+    tx_type = Column(String, default="ADMIN_CREDIT", nullable=False)
+    amount = Column(Numeric(24, 8), nullable=False)       # always positive; sign lives in tx_type
+    balance_after = Column(Numeric(24, 8), nullable=False)
+    note = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Candle(Base):

@@ -9141,26 +9141,107 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
         <div class="vd-head">
             <div>
                 <h1 class="vd-title">Admin Panel</h1>
-                <p class="vd-sub">Monitor every registered account &amp; credit real balances</p>
+                <p class="vd-sub">Live data straight from PostgreSQL — no mock values</p>
             </div>
             <span class="vd-live"><i></i> Administrator</span>
         </div>
 
-        <div class="vadm-stats" id="vadmStats">
-            <div class="vadm-stat"><label>Accounts</label><b id="vadmCountUsers">–</b></div>
-            <div class="vadm-stat"><label>Admins</label><b id="vadmCountAdmins">–</b></div>
-            <div class="vadm-stat"><label>USDT held</label><b id="vadmUsdtTotal">–</b></div>
-            <div class="vadm-stat"><label>GOLF held</label><b id="vadmGolfTotal">–</b></div>
-            <div class="vadm-stat"><label>Trades</label><b id="vadmTradeCount">–</b></div>
+        <div class="vadm-tabs" id="vadmTabs" role="tablist" aria-label="Admin sections">
+            <button type="button" class="vadm-tab active" data-atab="dash" data-role="tab" aria-selected="true">Dashboard</button>
+            <button type="button" class="vadm-tab" data-atab="users" data-role="tab" aria-selected="false">Users</button>
+            <button type="button" class="vadm-tab" data-atab="txs" data-role="tab" aria-selected="false">Transactions</button>
         </div>
 
-        <div class="vadm-card">
-            <div class="vadm-card-head">
-                <strong>Registered accounts</strong>
-                <input id="vadmSearch" class="vadm-search" type="search" placeholder="Search email…" autocomplete="off">
+        <div class="vadm-pane" data-apane="dash">
+            <div class="vadm-stats">
+                <div class="vadm-stat"><label>Total users</label><b id="vadmCountUsers">–</b></div>
+                <div class="vadm-stat"><label>Admins</label><b id="vadmCountAdmins">–</b></div>
+                <div class="vadm-stat"><label>Total balance</label><b id="vadmUsdTotal">–</b></div>
+                <div class="vadm-stat"><label>Transactions</label><b id="vadmTxnCount">–</b></div>
+                <div class="vadm-stat"><label>New users / 7d</label><b id="vadmNew7">–</b></div>
+                <div class="vadm-stat"><label>Trades</label><b id="vadmTradeCount">–</b></div>
             </div>
-            <div class="vadm-users" id="vadmUsers"></div>
-            <div class="vadm-empty" id="vadmUsersEmpty" style="display:none">No accounts match</div>
+            <div class="vadm-stats vadm-stats2">
+                <div class="vadm-stat"><label>USDT held</label><b id="vadmUsdtTotal">–</b></div>
+                <div class="vadm-stat"><label>GOLF held</label><b id="vadmGolfTotal">–</b></div>
+                <div class="vadm-stat"><label>Deposits</label><b id="vadmDepCount">–</b></div>
+                <div class="vadm-stat"><label>Deposit USDT</label><b id="vadmDepTotal">–</b></div>
+                <div class="vadm-stat"><label>Balance adj.</label><b id="vadmAdjCount">–</b></div>
+            </div>
+            <div class="vadm-card">
+                <div class="vadm-card-head">
+                    <strong>Recent transactions</strong>
+                    <button type="button" class="vadm-link" id="vadmGoTxs">Open all →</button>
+                </div>
+                <div class="vadm-activity" id="vadmDashRecent"></div>
+                <div class="vadm-activity-empty" id="vadmDashEmpty" style="display:none">No transactions yet.</div>
+                <div class="vadm-error" id="vadmDashError" style="display:none"></div>
+            </div>
+        </div>
+
+        <div class="vadm-pane" data-apane="users" style="display:none">
+            <div class="vadm-card">
+                <div class="vadm-card-head vadm-toolbar">
+                    <strong>Accounts <span class="vadm-count" id="vadmUserTotal"></span></strong>
+                    <input id="vadmSearch" class="vadm-search" type="search" placeholder="Search email or label…" autocomplete="off">
+                    <select id="vadmRole" class="vadm-select-sm" title="Role filter">
+                        <option value="all">All roles</option>
+                        <option value="admin">Admins</option>
+                        <option value="user">Users</option>
+                    </select>
+                    <select id="vadmSort" class="vadm-select-sm" title="Sort by">
+                        <option value="created_at|desc">Newest first</option>
+                        <option value="created_at|asc">Oldest first</option>
+                        <option value="email|asc">Email A–Z</option>
+                        <option value="usdt_balance|desc">USDT high → low</option>
+                        <option value="usdt_balance|asc">USDT low → high</option>
+                    </select>
+                </div>
+                <div class="vadm-users" id="vadmUsers"></div>
+                <div class="vadm-state" id="vadmUsersState" style="display:none"></div>
+                <div class="vadm-pager" id="vadmUPager" style="display:none">
+                    <button type="button" class="vadm-btn-sm" id="vadmUPrev">‹ Prev</button>
+                    <span class="vadm-pageinfo" id="vadmUPageInfo">–</span>
+                    <button type="button" class="vadm-btn-sm" id="vadmUNext">Next ›</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="vadm-pane" data-apane="txs" style="display:none">
+            <div class="vadm-card">
+                <div class="vadm-card-head vadm-toolbar vadm-toolbar-tx">
+                    <strong>Transactions <span class="vadm-count" id="vadmTxTotal"></span></strong>
+                    <input id="vadmTSearch" class="vadm-search" type="search" placeholder="Search email…" autocomplete="off">
+                    <input id="vadmTFrom" class="vadm-date" type="date" title="From date">
+                    <input id="vadmTTo" class="vadm-date" type="date" title="To date">
+                    <select id="vadmTType" class="vadm-select-sm" title="Type">
+                        <option value="">All types</option>
+                        <option value="TRADE">Trades</option>
+                        <option value="DEPOSIT">Deposits</option>
+                        <option value="SWAP">Swaps</option>
+                        <option value="TRANSFER">Transfers</option>
+                        <option value="CREDIT">Balance credit</option>
+                    </select>
+                    <select id="vadmTStatus" class="vadm-select-sm" title="Status">
+                        <option value="">All statuses</option>
+                        <option value="WON">Won</option>
+                        <option value="LOST">Lost</option>
+                        <option value="OPEN">Open</option>
+                        <option value="CONFIRMED">Confirmed</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="COMPLETED">Completed</option>
+                        <option value="FAILED">Failed</option>
+                    </select>
+                    <button type="button" class="vadm-btn-sm" id="vadmTSort" title="Newest / oldest">Newest first</button>
+                </div>
+                <div class="vadm-activity" id="vadmTList"></div>
+                <div class="vadm-state" id="vadmTState" style="display:none"></div>
+                <div class="vadm-pager" id="vadmTPager" style="display:none">
+                    <button type="button" class="vadm-btn-sm" id="vadmTPrev">‹ Prev</button>
+                    <span class="vadm-pageinfo" id="vadmTPageInfo">–</span>
+                    <button type="button" class="vadm-btn-sm" id="vadmTNext">Next ›</button>
+                </div>
+            </div>
         </div>
     </div>
 </section>
@@ -9181,7 +9262,7 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
             <button type="button" data-amt="1000">+1,000</button>
         </div>
         <input id="vadmAmount" class="vadm-input" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00">
-        <p class="vadm-note">Credited straight into the user's real (live) wallet — usable immediately for trading and balance.</p>
+        <p class="vadm-note">Updates the user's REAL balance in PostgreSQL atomically and writes an immutable ledger record — the change applies immediately to their live wallet.</p>
         <div class="vadm-btn-row">
             <button type="button" id="vadmCancel" class="vadm-btn ghost">Cancel</button>
             <button type="button" id="vadmConfirm" class="vadm-btn solid">Add balance</button>
@@ -9192,12 +9273,29 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 <div class="vadm-modal" id="vadmActivityModal" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="vadm-modal-box vadm-box-wide">
         <div class="vadm-modal-head">
-            <h3>Activity</h3>
+            <h3>User transactions</h3>
             <button type="button" class="vadm-x" id="vadmActivityClose" aria-label="Close">×</button>
         </div>
         <p class="vadm-target" id="vadmActivityTarget">—</p>
         <div class="vadm-activity" id="vadmActivityList"></div>
         <div class="vadm-activity-empty" id="vadmActivityEmpty" style="display:none">No transactions found for this user.</div>
+    </div>
+</div>
+
+<div class="vadm-modal" id="vadmDetailsModal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="vadm-modal-box vadm-box-wide">
+        <div class="vadm-modal-head">
+            <h3>User details</h3>
+            <button type="button" class="vadm-x" id="vadmDetailsClose" aria-label="Close">×</button>
+        </div>
+        <div id="vadmDetailsBody">
+            <div class="vadm-state">Loading user…</div>
+        </div>
+        <div class="vadm-btn-row">
+            <button type="button" class="vadm-btn ghost" id="vadmDViewTx">View transactions</button>
+            <button type="button" class="vadm-btn solid" id="vadmDAddBalance">Add balance</button>
+            <button type="button" class="vadm-btn danger" id="vadmDDelete">Delete user</button>
+        </div>
     </div>
 </div>
 
@@ -9209,7 +9307,8 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
         </div>
         <p class="vadm-delete-warn">
             Permanently delete <b id="vadmDeleteEmail">—</b> and everything attached to it
-            (trades, deposits, swaps, messages, transfer history). This cannot be undone.
+            (trades, deposits, swaps, messages, transfer history) from PostgreSQL.
+            This cannot be undone.
         </p>
         <div class="vadm-btn-row">
             <button type="button" id="vadmDeleteCancel" class="vadm-btn ghost">Cancel</button>
@@ -9272,6 +9371,7 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 .vadm-act-row .kind-deposit .vadm-act-icon{background:linear-gradient(135deg,#2dd4a8,#0d8a3c)}
 .vadm-act-row .kind-swap .vadm-act-icon{background:linear-gradient(135deg,#a855f7,#6d28d9)}
 .vadm-act-row .kind-transfer .vadm-act-icon{background:linear-gradient(135deg,#ff9f43,#d97706)}
+.vadm-act-row .kind-credit .vadm-act-icon{background:linear-gradient(135deg,#10b981,#059669)}
 .vadm-act-body{min-width:0}
 .vadm-act-title{font-size:12.5px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .vadm-act-title .t-dir.up{color:#0d8a3c}
@@ -9315,7 +9415,7 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 .vadm-users{display:flex;flex-direction:column;gap:10px}
 .vadm-empty{padding:26px;text-align:center;color:var(--muted);font-size:13px;font-weight:700}
 .vadm-user{
-  display:grid;grid-template-columns:minmax(0,1fr) 118px 118px 84px auto;gap:10px;align-items:center;
+  display:grid;grid-template-columns:minmax(0,1.2fr) 96px 88px 72px auto;gap:10px;align-items:center;
   padding:13px 15px;border:1px solid var(--line);border-radius:15px;background:var(--panel-2);
 }
 .vadm-u-main{min-width:0}
@@ -9330,7 +9430,7 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 .vadm-u-role .admin{background:rgba(184,134,11,.15);color:#b8860b;border:1px solid rgba(184,134,11,.3)}
 .vadm-u-role .user{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
 .vadm-u-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
-.vadm-btn-sm{padding:8px 12px;border-radius:11px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:11.5px;font-weight:900;cursor:pointer;white-space:nowrap}
+.vadm-btn-sm{padding:7px 9px;border-radius:11px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:11px;font-weight:900;cursor:pointer;white-space:nowrap}
 .vadm-btn-sm:active{transform:scale(.96)}
 .vadm-btn-sm.role{border-color:var(--line);background:var(--panel-2);color:var(--muted)}
 .vadm-btn-sm.act{border-color:rgba(168,85,247,.35);background:rgba(168,85,247,.08);color:#a855f7}
@@ -9349,128 +9449,84 @@ body.vanta-admin [data-page="admin"]{display:flex!important}
 body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
 </style>
 
+<style id="vanta-admin2-css">
+/* ---- Tabs ---- */
+.vadm-tabs{display:flex;gap:8px;border-bottom:1px solid var(--line)}
+.vadm-tab{
+  padding:10px 16px;border:0;border-bottom:2px solid transparent;background:none;
+  color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.vadm-tab.active{color:#2563eb;border-bottom-color:#2563eb}
+.vadm-tab:active{opacity:.7}
+
+/* ---- Panes ---- */
+.vadm-pane{display:block}
+.vadm-pane.active{display:block}
+.vadm-pane[style*="display:none"]{display:none}
+
+/* ---- Second stat row ---- */
+.vadm-stats2{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
+.vadm-stats2 .vadm-stat{padding:12px 14px}
+
+/* ---- Toolbars / filters ---- */
+.vadm-toolbar{gap:10px}
+.vadm-toolbar .vadm-search{min-width:200px}
+.vadm-toolbar-tx{justify-content:flex-start}
+.vadm-select-sm,.vadm-date{
+  padding:9px 12px;border-radius:11px;border:1px solid var(--line);
+  background:var(--panel-2);color:var(--text);font-size:12px;font-weight:700;
+  outline:none;box-sizing:border-box;
+}
+.vadm-select-sm:focus,.vadm-date:focus{border-color:rgba(37,99,235,.6)}
+.vadm-count{color:var(--muted);font-size:12px;font-weight:700;margin-left:4px}
+.vadm-link{background:none;border:0;color:#2563eb;font-size:12px;font-weight:900;cursor:pointer;padding:4px 6px}
+
+/* ---- Pagination ---- */
+.vadm-pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px}
+.vadm-pageinfo{font-size:11.5px;color:var(--muted);font-weight:800}
+
+/* ---- Loading / empty / error states ---- */
+.vadm-state{padding:30px 16px;text-align:center;color:var(--muted);font-size:12.5px;font-weight:700}
+.vadm-error{
+  padding:14px 16px;border:1px solid rgba(225,29,72,.3);border-radius:14px;
+  background:rgba(225,29,72,.07);color:#e11d48;font-size:12px;font-weight:800;
+  margin-top:10px;word-break:break-word;
+}
+
+/* ---- User rows are clickable (open details) ---- */
+.vadm-user{cursor:pointer;transition:border-color .15s}
+.vadm-user:hover{border-color:rgba(37,99,235,.45)}
+.vadm-user .vadm-btn-sm{cursor:pointer}
+
+/* ---- User details modal ---- */
+#vadmDetailsBody{display:flex;flex-direction:column;gap:4px}
+.vadm-detail-h{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:14px 0 2px}
+.vadm-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
+.vadm-detail-item label{display:block;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.vadm-detail-item b{font-size:13px;font-weight:800;color:var(--text);word-break:break-all}
+.vadm-detail-item b.ok{color:#0d8a3c}
+.vadm-detail-id{font-size:11px;color:var(--muted2);word-break:break-all}
+.vadm-bal-list{display:flex;flex-wrap:wrap;gap:7px}
+.vadm-bal-chip{padding:6px 11px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);font-size:11.5px;font-weight:800}
+.vadm-bal-chip span{color:var(--muted);font-weight:700}
+.vadm-bal-chip b{color:var(--text)}
+@media(max-width:480px){.vadm-detail-grid{grid-template-columns:1fr}}
+#vadmModal{z-index:502}
+</style>
+
 <script id="vanta-admin-js">
 (function(){
+  'use strict';
   const COINS=['USDT','GOLF','USDC','BTC','ETH','SOL','TRX','BNB','XRP','DOGE','ADA','LINK','LTC'];
-
-  function vantaIsAdmin(){
-    try{ const u=JSON.parse(localStorage.getItem('vanta_user')||'null'); return !!(u&&u.is_admin); }catch(e){ return false; }
-  }
-  function vantaApplyAdminUI(){
-    const isAdmin=vantaIsAdmin();
-    document.body.classList.toggle('vanta-admin',isAdmin);
-    return isAdmin;
-  }
+  const PAGE_SIZE=25;
 
   const $=id=>document.getElementById(id);
   const money=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmt=v=>Number(v||0).toLocaleString('en-US',{maximumFractionDigits:4,minimumFractionDigits:2});
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const toast=msg=>{ if(typeof showToast==='function') showToast(msg); else if(typeof alert==='function') alert(msg); };
 
-  let usersCache=[];
-  let modalUserEmail=null;
-
-  function renderUsers(){
-    const list=$('vadmUsers'), empty=$('vadmUsersEmpty');
-    if(!list) return;
-    const q=($('vadmSearch').value||'').trim().toLowerCase();
-    const rows=usersCache.filter(u=>!q||u.email.toLowerCase().includes(q));
-    empty.style.display=rows.length?'none':'block';
-    if(!rows.length){ list.innerHTML=''; return; }
-    list.innerHTML=rows.map(u=>{
-      const created=new Date(String(u.created_at).endsWith('Z')?u.created_at:u.created_at+'Z').toLocaleDateString();
-      const other=Object.keys(u.balances||{}).filter(s=>s!=='USDT'&&s!=='GOLF').length;
-      return '<div class="vadm-user">'
-        +'<div class="vadm-u-main">'
-        +'<div class="vadm-u-email">'+esc(u.email)+'</div>'
-        +'<div class="vadm-u-meta">'+(u.label?esc(u.label)+' · ':'')+'Joined '+created
-          +(other>0?' · '+other+' coins':'')+'</div>'
-        +'</div>'
-        +'<div class="vadm-u-bal"><label>USDT</label><b '+classFor(u.usdt_balance)+'>'+fmt(u.usdt_balance)+'</b></div>'
-        +'<div class="vadm-u-bal"><label>GOLF</label><b>'+fmt(u.golf_balance)+'</b></div>'
-        +'<div class="vadm-u-role">'+(u.is_admin?'<span class="admin">ADMIN</span>':'<span class="user">USER</span>')+'</div>'
-        +'<div class="vadm-u-actions">'
-        +'<button type="button" class="vadm-btn-sm" data-credit="'+esc(u.email)+'">+ Add balance</button>'
-        +'<button type="button" class="vadm-btn-sm act" data-activity="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Activity</button>'
-        +'<button type="button" class="vadm-btn-sm role" data-role="'+esc(u.id)+'" data-make="'+(u.is_admin?'0':'1')+'">'
-          +(u.is_admin?'Remove admin':'Make admin')+'</button>'
-        +'<button type="button" class="vadm-btn-sm danger" data-del="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Delete</button>'
-        +'</div></div>';
-    }).join('');
-
-    function classFor(v){ return v>0?'class="up"':''; }
-    list.querySelectorAll('[data-credit]').forEach(b=>b.addEventListener('click',()=>openCredit(b.dataset.credit)));
-    list.querySelectorAll('[data-activity]').forEach(b=>b.addEventListener('click',()=>openActivity(b.dataset.activity,b.dataset.email)));
-    list.querySelectorAll('[data-role]').forEach(b=>b.addEventListener('click',()=>toggleRole(b.dataset.role,b.dataset.make==='1')));
-    list.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>askDelete(b.dataset.del,b.dataset.email)));
-  }
-
-  async function refreshAdmin(){
-    if(!vantaApplyAdminUI()) return; // logged out → nothing visible anyway
-    try{
-      const stats=await vantaApi('/api/admin/stats');
-      const users=await vantaApi('/api/admin/users');
-      $('vadmCountUsers').textContent=stats.users;
-      $('vadmCountAdmins').textContent=stats.admins;
-      $('vadmUsdtTotal').textContent=money(stats.usdt_total);
-      $('vadmGolfTotal').textContent=fmt(stats.golf_total);
-      $('vadmTradeCount').textContent=stats.trades;
-      usersCache=users||[];
-      renderUsers();
-    }catch(e){
-      if(String(e.message||'').indexOf('Admin access required')>=0){
-        vantaApplyAdminUI();
-        showToast('Admin access required');
-      }
-    }
-  }
-  window.vantaAdminRefresh=refreshAdmin;
-
-  function openCredit(email){
-    modalUserEmail=email;
-    $('vadmTarget').textContent=email;
-    $('vadmAmount').value='';
-    const sel=$('vadmCoin');
-    sel.innerHTML=COINS.map(c=>'<option value="'+c+'">'+c+'</option>').join('');
-    sel.value='USDT';
-    $('vadmModal').classList.add('open');
-    $('vadmModal').setAttribute('aria-hidden','false');
-    setTimeout(()=>$('vadmAmount').focus({preventScroll:true}),80);
-  }
-  function closeModal(){
-    $('vadmModal').classList.remove('open');
-    $('vadmModal').setAttribute('aria-hidden','true');
-    modalUserEmail=null;
-  }
-
-  $('vadmChips').addEventListener('click',e=>{
-    const b=e.target.closest('[data-amt]');
-    if(!b)return;
-    const cur=Number($('vadmAmount').value||0);
-    $('vadmAmount').value=String(Number((cur+Number(b.dataset.amt)).toFixed(6)));
-  });
-  $('vadmConfirm').addEventListener('click',async()=>{
-    const amt=Number($('vadmAmount').value);
-    if(!(amt>0)){ showToast('Enter an amount greater than 0'); return; }
-    const btn=$('vadmConfirm');
-    btn.disabled=true; btn.textContent='Adding…';
-    try{
-      await vantaApi('/api/admin/users/credit',{method:'POST',body:JSON.stringify({email:modalUserEmail,symbol:$('vadmCoin').value,amount:amt})});
-      showToast('Balance credited to '+modalUserEmail);
-      closeModal();
-      refreshAdmin();
-    }catch(e){ showToast(e.message||'Could not credit balance'); }
-    finally{ btn.disabled=false; btn.textContent='Add balance'; }
-  });
-  async function toggleRole(userId,make){
-    try{
-      await vantaApi('/api/admin/users/'+encodeURIComponent(userId)+'/set-admin',{method:'POST',body:JSON.stringify({is_admin:make})});
-      showToast(make?'Admin role granted':'Admin role removed');
-      refreshAdmin();
-    }catch(e){ showToast(e.message||'Could not update role'); }
-  }
-
-  /* ---------------- Activity (per-user transactions) ---------------- */
   function tAgo(ts){
     try{
       const d=Date.parse(String(ts).endsWith('Z')?ts:ts+'Z');
@@ -9482,24 +9538,96 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
     }catch(e){ return ''; }
   }
   function pill(status){
-    if(status==='WON'||status==='CONFIRMED'||status==='COMPLETED') return '<span class="vadm-pill ok">'+status+'</span>';
-    if(status==='LOST'||status==='FAILED') return '<span class="vadm-pill bad">'+status+'</span>';
-    return '<span class="vadm-pill wait">'+status+'</span>';
+    if(status==='WON'||status==='CONFIRMED'||status==='COMPLETED') return '<span class="vadm-pill ok">'+esc(status)+'</span>';
+    if(status==='LOST'||status==='FAILED') return '<span class="vadm-pill bad">'+esc(status)+'</span>';
+    return '<span class="vadm-pill wait">'+esc(status)+'</span>';
   }
+
+  /* ---------------- Role detection (server truth first) ---------------- */
+  function vantaIsAdmin(){
+    try{ const u=JSON.parse(localStorage.getItem('vanta_user')||'null'); return !!(u&&u.is_admin); }catch(e){ return false; }
+  }
+  function vantaApplyAdminUI(ok){
+    document.body.classList.toggle('vanta-admin',!!ok);
+    return !!ok;
+  }
+  /* Ask the backend who we are. Fixes the common "account promoted to admin
+     but localStorage still says user" case that left the panel unlit/empty. */
+  async function vantaSyncRole(){
+    try{
+      const me=await vantaApi('/api/auth/me');
+      if(me && !!(me.is_admin)){
+        try{ const u=JSON.parse(localStorage.getItem('vanta_user')||'null'); if(u){ u.is_admin=true; localStorage.setItem('vanta_user',JSON.stringify(u)); } }catch(e){}
+        return true;
+      }
+      return false;
+    }catch(e){
+      return vantaIsAdmin();
+    }
+  }
+
+  /* ---------------- Tabs ---------------- */
+  let activeTab='dash';
+  function setTab(t){
+    activeTab=t;
+    document.querySelectorAll('.vadm-tab').forEach(b=>{
+      const on=b.dataset.atab===t;
+      b.classList.toggle('active',on);
+      b.setAttribute('aria-selected',on?'true':'false');
+    });
+    document.querySelectorAll('.vadm-pane').forEach(p=>{ p.style.display=(p.dataset.apane===t)?'block':'none'; });
+    if(t==='dash') loadStats();
+    if(t==='users') loadUsers();
+    if(t==='txs') loadTxs();
+  }
+
+  /* ---------------- Dashboard / statistics ---------------- */
+  async function loadStats(){
+    ['vadmCountUsers','vadmCountAdmins','vadmUsdtTotal','vadmGolfTotal','vadmUsdTotal','vadmTxnCount','vadmNew7','vadmTradeCount','vadmDepCount','vadmDepTotal','vadmAdjCount'].forEach(id=>{
+      const n=$(id); if(n) n.textContent='…';
+    });
+    const err=$('vadmDashError'), recent=$('vadmDashRecent'), empty=$('vadmDashEmpty');
+    err.style.display='none';
+    recent.innerHTML='<div class="vadm-act-loading">Loading statistics…</div>';
+    try{
+      const s=await vantaApi('/api/admin/stats');
+      $('vadmCountUsers').textContent=s.users;
+      $('vadmCountAdmins').textContent=s.admins;
+      $('vadmUsdtTotal').textContent=money(s.usdt_total);
+      $('vadmGolfTotal').textContent=fmt(s.golf_total);
+      $('vadmUsdTotal').textContent=money(s.total_balance_usd);
+      $('vadmTxnCount').textContent=s.transactions;
+      $('vadmNew7').textContent='+'+s.new_users_7d;
+      $('vadmTradeCount').textContent=s.trades;
+      $('vadmDepCount').textContent=s.deposits;
+      $('vadmDepTotal').textContent=money(s.deposit_total);
+      $('vadmAdjCount').textContent=s.balance_adjustments;
+      const items=s.recent_transactions||[];
+      if(!items.length){ empty.style.display='block'; recent.innerHTML=''; }
+      else{ empty.style.display='none'; recent.innerHTML=items.map(renderActItem).join(''); }
+    }catch(e){
+      err.style.display='block';
+      err.textContent='Failed to load statistics: '+esc(e.message||'Unknown error');
+      recent.innerHTML='';
+    }
+  }
+
+  /* ---------------- Shared transaction-feed renderer ---------------- */
   function renderActItem(it){
     const kind=String(it.type||'').toLowerCase().replace(/[^a-z]/g,'');
     const dir=it.direction?String(it.direction).toLowerCase():'';
+    const who=(it.user_email&&it.user_email!=='—')?esc(it.user_email)+' · ':'';
     let icon,title,meta,amtHtml,amtCls='';
     if(it.type==='TRADE'){
       icon=it.direction==='UP'?'▲':'▼';
       title='Trading <span class="t-symbol">USDT</span> <span class="t-dir '+esc(dir)+'">'+esc(it.direction)+'</span>';
-      meta='Entry '+fmt(it.meta&&it.meta.entry)+' · Exit '+(it.meta&&it.meta.exit?fmt(it.meta.exit):'—')
+      meta=who+'Entry '+fmt(it.meta&&it.meta.entry)+' · Exit '+(it.meta&&it.meta.exit?fmt(it.meta.exit):'—')
         +(it.meta&&it.meta.profit!=null?' · P/L '+fmt(it.meta.profit):'');
       amtHtml=fmt(it.amount)+' <span class="t-symbol">USDT</span>';
     } else if(it.type==='DEPOSIT'){
       icon='⤓';
       title='Deposit <span class="t-symbol">'+esc(it.symbol)+'</span>';
-      meta=(it.meta&&it.meta.tx?esc(String(it.meta.tx).slice(0,20))+'… · ':'')+(it.meta&&it.meta.network?esc(it.meta.network):'');
+      meta=who+(it.meta&&it.meta.tx?esc(String(it.meta.tx).slice(0,20))+'… · ':'')+(it.meta&&it.meta.network?esc(it.meta.network):'');
       amtHtml=fmt(it.amount)+' <span class="t-symbol">USDT</span>';
     } else if(it.type==='SWAP'){
       icon='⇄';
@@ -9507,12 +9635,18 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
       const from=parts[0]||'';
       const to=parts[1]||'';
       title='Swap <span class="t-symbol">'+esc(from)+' → '+esc(to)+'</span>';
-      meta='Rate '+fmt(it.meta&&it.meta.rate)+' · Got '+fmt(it.meta&&it.meta.to_amount)+' '+esc(to);
+      meta=who+'Rate '+fmt(it.meta&&it.meta.rate)+' · Got '+fmt(it.meta&&it.meta.to_amount)+' '+esc(to);
       amtHtml=fmt(it.amount)+' <span class="t-symbol">'+esc(from)+'</span>';
+    } else if(it.type==='CREDIT'){
+      icon='⊕';
+      title='Balance credit <span class="t-symbol">'+esc(it.symbol)+'</span>';
+      meta=who+'ledger #'+esc(String(it.id||'').slice(0,8));
+      amtCls='in';
+      amtHtml='+ '+fmt(it.amount)+' <span class="t-symbol">'+esc(it.symbol)+'</span>';
     } else {
       icon=it.direction==='RECEIVED'?'←':'→';
       title='Transfer <span class="t-dir '+esc(dir)+'">'+esc(it.direction)+'</span>';
-      meta=''+(it.meta&&it.meta.with?'with '+esc(it.meta.with)+' ':'')+(it.meta&&it.meta.note?'· "'+esc(it.meta.note)+'"':'').trim();
+      meta=who+(it.meta&&it.meta.with?'with '+esc(it.meta.with)+' ':'')+(it.meta&&it.meta.note?'· "'+esc(it.meta.note)+'"':'').trim();
       amtCls=it.direction==='RECEIVED'?'in':'out';
       amtHtml=(it.direction==='RECEIVED'?'+ ':'− ')+fmt(it.amount)+' <span class="t-symbol">'+esc(it.symbol)+'</span>';
     }
@@ -9523,23 +9657,234 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
       +'<div class="vadm-act-side"><div class="vadm-act-amt '+amtCls+'">'+amtHtml+'</div>'
       +'<div class="vadm-act-time">'+tAgo(it.created_at)+'</div></div></div>';
   }
-  async function openActivity(userId,email){
+
+  /* ---------------- Users tab ---------------- */
+  const uState={page:1,q:'',role:'all',sort:'created_at',order:'desc'};
+  function setUState(p){ Object.assign(uState,p); }
+  function setUsersState(html){
+    const st=$('vadmUsersState');
+    st.style.display=html?'block':'none';
+    st.innerHTML=html||'';
+  }
+  function showUsersError(msg){ setUsersState('<div class="vadm-error">'+esc(msg)+'</div>'); }
+  function renderUsers(d){
+    $('vadmUserTotal').textContent=d.total>0?'· '+d.total:'';
+    const pages=Math.max(1,Math.ceil(d.total/d.page_size));
+    const list=$('vadmUsers');
+    if(d.items.length) list.innerHTML=d.items.map(userRowHtml).join('');
+    else{ list.innerHTML=''; }
+    setUsersState(d.items.length?'':'<div class="vadm-state">No users found.</div>');
+    $('vadmUPager').style.display=d.total>d.page_size?'flex':'none';
+    if(d.total>d.page_size){
+      $('vadmUPageInfo').textContent='Page '+d.page+' of '+pages+' · '+d.total+' users';
+      $('vadmUPrev').disabled=d.page<=1;
+      $('vadmUNext').disabled=d.page>=pages;
+    }
+    list.querySelectorAll('.vadm-user').forEach(r=>{
+      r.addEventListener('click',e=>{ if(e.target.closest('.vadm-btn-sm')) return; openDetails(r.dataset.uid); });
+    });
+    list.querySelectorAll('[data-credit]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); openCredit(b.dataset.uid,b.dataset.email); }));
+    list.querySelectorAll('[data-detail]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); openDetails(b.dataset.uid); }));
+    list.querySelectorAll('[data-act]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); openTxModal(b.dataset.uid,b.dataset.email); }));
+    list.querySelectorAll('[data-role]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); toggleRole(b.dataset.uid,b.dataset.make==='1'); }));
+    list.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); askDelete(b.dataset.del,b.dataset.email); }));
+  }
+  function userRowHtml(u){
+    const created=new Date(String(u.created_at).endsWith('Z')?u.created_at:u.created_at+'Z').toLocaleDateString();
+    const other=Object.keys(u.balances||{}).filter(s=>s!=='USDT'&&s!=='GOLF'&&(u.balances[s]||0)>0).length;
+    return '<div class="vadm-user" data-uid="'+esc(u.id)+'">'
+      +'<div class="vadm-u-main">'
+      +'<div class="vadm-u-email">'+esc(u.email)+(u.is_admin?' <span class="vadm-pill mut">ADMIN</span>':'')+'</div>'
+      +'<div class="vadm-u-meta">'+(u.label?esc(u.label)+' · ':'')+'Joined '+created
+        +(u.last_activity?' · active '+tAgo(u.last_activity):'')
+        +((u.trades>0||u.deposits>0)?' · '+u.trades+' trades · '+u.deposits+' deposits':'')
+        +(other>0?' · '+other+' more coins':'')+'</div>'
+      +'</div>'
+      +'<div class="vadm-u-bal"><label>USDT</label><b '+(u.usdt_balance>0?'class="up"':'')+'>'+fmt(u.usdt_balance)+'</b></div>'
+      +'<div class="vadm-u-bal"><label>GOLF</label><b>'+fmt(u.golf_balance)+'</b></div>'
+      +'<div class="vadm-u-role">'+(u.is_admin?'<span class="admin">ADMIN</span>':'<span class="user">USER</span>')+'</div>'
+      +'<div class="vadm-u-actions">'
+      +'<button type="button" class="vadm-btn-sm" data-credit="'+esc(u.id)+'" data-email="'+esc(u.email)+'">+ Add</button>'
+      +'<button type="button" class="vadm-btn-sm" data-detail="'+esc(u.id)+'">Details</button>'
+      +'<button type="button" class="vadm-btn-sm act" data-act="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Tx</button>'
+      +'<button type="button" class="vadm-btn-sm role" data-role="'+esc(u.id)+'" data-make="'+(u.is_admin?'0':'1')+'">'
+        +(u.is_admin?'Remove admin':'Make admin')+'</button>'
+      +'<button type="button" class="vadm-btn-sm danger" data-del="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Delete</button>'
+      +'</div></div>';
+  }
+  async function loadUsers(){
+    setUsersState('Loading users…');
+    try{
+      const qs='page='+uState.page+'&page_size='+PAGE_SIZE
+        +(uState.q?'&q='+encodeURIComponent(uState.q):'')
+        +'&role='+uState.role+'&sort='+uState.sort+'&order='+uState.order;
+      const d=await vantaApi('/api/admin/users?'+qs);
+      renderUsers(d);
+    }catch(e){
+      showUsersError(String(e.message||'Could not load users.'));
+      if(String(e.message||'').indexOf('Admin access required')>=0) document.body.classList.remove('vanta-admin');
+    }
+  }
+
+  /* ---------------- Transactions tab ---------------- */
+  const tState={page:1,q:'',type:'',status:'',from:'',to:'',newest:true};
+  function setTState(html){
+    const st=$('vadmTState');
+    st.style.display=html?'block':'none';
+    st.innerHTML=html||'';
+  }
+  function showTError(msg){ setTState('<div class="vadm-error">'+esc(msg)+'</div>'); }
+  function renderTxs(d){
+    $('vadmTxTotal').textContent=d.total?('· '+d.total):'';
+    const pages=Math.max(1,Math.ceil(d.total/d.page_size));
+    const list=$('vadmTList');
+    if(d.items.length) list.innerHTML=d.items.map(renderActItem).join('');
+    else list.innerHTML='';
+    setTState(d.items.length?'':'<div class="vadm-state">No transactions found.</div>');
+    $('vadmTPager').style.display=d.total?'flex':'none';
+    if(d.total){
+      $('vadmTPageInfo').textContent='Page '+d.page+' of '+pages+' · '+d.total+' transactions';
+      $('vadmTPrev').disabled=d.page<=1;
+      $('vadmTNext').disabled=d.page>=pages;
+    }
+  }
+  async function loadTxs(){
+    setTState('Loading transactions…');
+    try{
+      const qs='page='+tState.page+'&page_size='+PAGE_SIZE
+        +(tState.q?'&q='+encodeURIComponent(tState.q):'')
+        +(tState.type?'&type='+encodeURIComponent(tState.type):'')
+        +(tState.status?'&status='+encodeURIComponent(tState.status):'')
+        +(tState.from?'&from_date='+encodeURIComponent(tState.from):'')
+        +(tState.to?'&to_date='+encodeURIComponent(tState.to+'T23:59:59'):'')
+        +'&sort='+(tState.newest?'newest':'oldest');
+      const d=await vantaApi('/api/admin/transactions?'+qs);
+      renderTxs(d);
+    }catch(e){
+      showTError(String(e.message||'Could not load transactions.'));
+      $('vadmTList').innerHTML='';
+      $('vadmTPager').style.display='none';
+    }
+  }
+
+  /* ---------------- User details ---------------- */
+  let detailId=null, detailEmail='';
+  async function openDetails(userId){
+    detailId=userId;
+    const body=$('vadmDetailsBody');
+    body.innerHTML='<div class="vadm-state">Loading user…</div>';
+    $('vadmDetailsModal').classList.add('open');
+    $('vadmDetailsModal').setAttribute('aria-hidden','false');
+    try{
+      const u=await vantaApi('/api/admin/users/'+encodeURIComponent(userId));
+      detailEmail=u.email;
+      body.innerHTML=detailsHtml(u);
+    }catch(e){
+      body.innerHTML='<div class="vadm-error">'+esc(e.message||'Could not load user')+'</div>';
+    }
+  }
+  function detailsHtml(u){
+    const created=new Date(String(u.created_at).endsWith('Z')?u.created_at:u.created_at+'Z').toLocaleString();
+    const bal=u.balances||{};
+    const keys=Object.keys(bal);
+    const coins=keys.filter(s=>(bal[s]||0)!==0);
+    const zeros=keys.filter(s=>(bal[s]||0)===0);
+    return '<div class="vadm-detail-h">Account</div>'
+      +'<div class="vadm-detail-grid">'
+      +'<div class="vadm-detail-item"><label>ID</label><div class="vadm-detail-id">'+esc(u.id)+'</div></div>'
+      +'<div class="vadm-detail-item"><label>Email</label><b>'+esc(u.email)+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Name / label</label><b>'+esc(u.label||'—')+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Role</label><b '+(u.is_admin?'class="ok"':'')+'>'+(u.is_admin?'ADMIN':'USER')+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Joined</label><b>'+created+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Last activity</label><b>'+(u.last_activity?tAgo(u.last_activity):'—')+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Total value</label><b>'+money(u.usd_total)+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Deposit address</label><b class="vadm-detail-id">'+esc(u.deposit_address||'—')+'</b></div>'
+      +'</div>'
+      +'<div class="vadm-detail-h">Held coins</div>'
+      +'<div class="vadm-bal-list">'
+      +(coins.length?coins.map(s=>'<span class="vadm-bal-chip"><span>'+esc(s)+'</span> <b>'+fmt(bal[s])+'</b></span>').join(''):'<span class="vadm-detail-item"><b>—</b></span>')
+      +'</div>'
+      +'<div class="vadm-detail-h">Activity</div>'
+      +'<div class="vadm-detail-grid">'
+      +'<div class="vadm-detail-item"><label>Trades</label><b>'+u.trades+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Deposits</label><b>'+u.deposits+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Swaps</label><b>'+u.swaps+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Transfers sent</label><b>'+u.transfers_sent+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Transfers received</label><b>'+u.transfers_received+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Balance adjustments</label><b>'+u.balance_transactions+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Messages sent</label><b>'+u.messages_sent+'</b></div>'
+      +'<div class="vadm-detail-item"><label>Messages received</label><b>'+u.messages_received+'</b></div>'
+      +'</div>'
+      +(zeros.length?'<div class="vadm-detail-item"><label>Zero balances</label><b>'+esc(zeros.join(', '))+'</b></div>':'');
+  }
+  function closeDetails(){ $('vadmDetailsModal').classList.remove('open'); $('vadmDetailsModal').setAttribute('aria-hidden','true'); detailId=null; }
+
+  /* ---------------- Per-user transactions ---------------- */
+  async function openTxModal(userId,email){
     $('vadmActivityTarget').textContent=email;
     const list=$('vadmActivityList'), empty=$('vadmActivityEmpty');
-    list.innerHTML='<div class="vadm-act-loading">Loading activity…</div>';
     empty.style.display='none';
+    list.innerHTML='<div class="vadm-act-loading">Loading transactions…</div>';
     $('vadmActivityModal').classList.add('open');
     $('vadmActivityModal').setAttribute('aria-hidden','false');
     try{
-      const items=await vantaApi('/api/admin/users/'+encodeURIComponent(userId)+'/activity');
-      empty.style.display=items.length?'none':'block';
-      list.innerHTML=items.map(renderActItem).join('');
+      const d=await vantaApi('/api/admin/users/'+encodeURIComponent(userId)+'/transactions?page=1&page_size=100');
+      if(!d.items.length){ empty.style.display='block'; list.innerHTML=''; return; }
+      list.innerHTML=d.items.map(renderActItem).join('');
     }catch(e){
       empty.style.display='none';
-      list.innerHTML='<div class="vadm-act-loading">'+esc(e.message||'Could not load activity')+'</div>';
+      list.innerHTML='<div class="vadm-act-loading">'+esc(e.message||'Could not load transactions')+'</div>';
     }
   }
   function closeActivity(){ $('vadmActivityModal').classList.remove('open'); $('vadmActivityModal').setAttribute('aria-hidden','true'); }
+
+  /* ---------------- Add balance ---------------- */
+  let modalUser={id:null,email:null};
+  function openCredit(userId,email){
+    modalUser={id:userId,email:email};
+    $('vadmTarget').textContent=email;
+    $('vadmAmount').value='';
+    const sel=$('vadmCoin');
+    sel.innerHTML=COINS.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
+    sel.value='USDT';
+    $('vadmModal').classList.add('open');
+    $('vadmModal').setAttribute('aria-hidden','false');
+    setTimeout(()=>$('vadmAmount').focus({preventScroll:true}),80);
+  }
+  function closeModal(){
+    $('vadmModal').classList.remove('open');
+    $('vadmModal').setAttribute('aria-hidden','true');
+    modalUser={id:null,email:null};
+  }
+  async function confirmCredit(){
+    if(!modalUser.id){ toast('Select a user first'); return; }
+    const amt=($('vadmAmount').value||'').trim();
+    const num=Number(amt);
+    if(amt===''||!Number.isFinite(num)||num<=0){ toast('Enter an amount greater than 0'); return; }
+    const btn=$('vadmConfirm');
+    btn.disabled=true; btn.textContent='Adding…';
+    try{
+      const r=await vantaApi('/api/admin/users/'+encodeURIComponent(modalUser.id)+'/balance',{method:'POST',body:JSON.stringify({symbol:$('vadmCoin').value,amount:amt})});
+      const after=r.balance_after||{};
+      toast('Added '+amt+' '+r.symbol+' → new balance '+fmt(after[r.symbol]||0)+' '+r.symbol);
+      closeModal();
+      if(detailId) openDetails(detailId);
+      if(activeTab==='users') loadUsers();
+      if(activeTab==='dash') loadStats();
+    }catch(e){ toast(String(e.message||'Could not add balance')); }
+    finally{ btn.disabled=false; btn.textContent='Add balance'; }
+  }
+
+  /* ---------------- Role toggle ---------------- */
+  async function toggleRole(userId,make){
+    try{
+      await vantaApi('/api/admin/users/'+encodeURIComponent(userId)+'/set-admin',{method:'POST',body:JSON.stringify({is_admin:make})});
+      toast(make?'Admin role granted':'Admin role removed');
+      if(detailId) openDetails(detailId);
+      if(activeTab==='users') loadUsers();
+      if(activeTab==='dash') loadStats();
+    }catch(e){ toast(String(e.message||'Could not update role')); }
+  }
 
   /* ---------------- Delete user ---------------- */
   let delUserId=null;
@@ -9550,56 +9895,99 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
     $('vadmDeleteModal').setAttribute('aria-hidden','false');
   }
   function closeDelete(){ $('vadmDeleteModal').classList.remove('open'); $('vadmDeleteModal').setAttribute('aria-hidden','true'); delUserId=null; }
-  $('vadmDeleteConfirm').addEventListener('click',async()=>{
+  async function confirmDelete(){
     if(!delUserId)return;
     const btn=$('vadmDeleteConfirm');
     btn.disabled=true; btn.textContent='Deleting…';
     try{
-      await vantaApi('/api/admin/users/'+encodeURIComponent(delUserId),{method:'DELETE'});
-      showToast('User deleted');
+      const r=await vantaApi('/api/admin/users/'+encodeURIComponent(delUserId),{method:'DELETE'});
+      toast('Deleted '+(r.email||'user'));
       closeDelete();
-      refreshAdmin();
-    }catch(e){ showToast(e.message||'Could not delete user'); }
+      if(detailId) closeDetails();
+      if(activeTab==='users') loadUsers();
+      if(activeTab==='dash') loadStats();
+    }catch(e){ toast(String(e.message||'Could not delete user')); }
     finally{ btn.disabled=false; btn.textContent='Delete account'; }
-  });
-
-  /* ---------------- Modal open/close wiring ---------------- */
-  function modalClose(id){ const m=$(id); m.classList.remove('open'); m.setAttribute('aria-hidden','true'); }
-  function closeModalById(id){
-    modalClose(id);
-    if(id==='vadmModal') modalUserEmail=null;
-    if(id==='vadmDeleteModal') delUserId=null;
   }
-  $('vadmActivityClose').addEventListener('click',closeActivity);
-  $('vadmDeleteClose').addEventListener('click',closeDelete);
-  $('vadmDeleteCancel').addEventListener('click',closeDelete);
-  $('vadmActivityModal').addEventListener('click',e=>{ if(e.target===$('vadmActivityModal')) closeActivity(); });
-  $('vadmDeleteModal').addEventListener('click',e=>{ if(e.target===$('vadmDeleteModal')) closeDelete(); });
-  document.addEventListener('keydown',e=>{
-    if(e.key!=='Escape')return;
-    ['vadmModal','vadmActivityModal','vadmDeleteModal'].forEach(id=>{
-      const m=$(id); if(m&&m.classList.contains('open')) closeModalById(id);
-    });
-  });
 
+  /* ---------------- Wiring ---------------- */
+  function debounce(fn,ms){ let t; return function(){ const a=arguments,self=this; clearTimeout(t); t=setTimeout(()=>fn.apply(self,a),ms); }; }
+
+  document.querySelectorAll('.vadm-tab').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.atab)));
+  $('vadmGoTxs').addEventListener('click',()=>setTab('txs'));
+
+  $('vadmSearch').addEventListener('input',debounce(e=>{ setUState({q:e.target.value.trim(),page:1}); loadUsers(); },350));
+  $('vadmRole').addEventListener('change',e=>{ setUState({role:e.target.value,page:1}); loadUsers(); });
+  $('vadmSort').addEventListener('change',e=>{ const p=e.target.value.split('|'); setUState({sort:p[0],order:p[1],page:1}); loadUsers(); });
+  $('vadmUPrev').addEventListener('click',()=>{ if(uState.page>1){ setUState({page:uState.page-1}); loadUsers(); } });
+  $('vadmUNext').addEventListener('click',()=>{ setUState({page:uState.page+1}); loadUsers(); });
+
+  $('vadmTSearch').addEventListener('input',debounce(e=>{ tState.q=e.target.value.trim(); tState.page=1; loadTxs(); },350));
+  $('vadmTType').addEventListener('change',e=>{ tState.type=e.target.value; tState.page=1; loadTxs(); });
+  $('vadmTStatus').addEventListener('change',e=>{ tState.status=e.target.value; tState.page=1; loadTxs(); });
+  $('vadmTFrom').addEventListener('change',e=>{ tState.from=e.target.value; tState.page=1; loadTxs(); });
+  $('vadmTTo').addEventListener('change',e=>{ tState.to=e.target.value; tState.page=1; loadTxs(); });
+  $('vadmTSort').addEventListener('click',()=>{ tState.newest=!tState.newest; tState.page=1; $('vadmTSort').textContent=tState.newest?'Newest first':'Oldest first'; loadTxs(); });
+  $('vadmTPrev').addEventListener('click',()=>{ if(tState.page>1){ tState.page-=1; loadTxs(); } });
+  $('vadmTNext').addEventListener('click',()=>{ tState.page+=1; loadTxs(); });
+
+  $('vadmChips').addEventListener('click',e=>{
+    const b=e.target.closest('[data-amt]');
+    if(!b)return;
+    const cur=Number($('vadmAmount').value||0);
+    $('vadmAmount').value=String(Number((cur+Number(b.dataset.amt)).toFixed(6)));
+  });
+  $('vadmConfirm').addEventListener('click',confirmCredit);
   $('vadmClose').addEventListener('click',closeModal);
   $('vadmCancel').addEventListener('click',closeModal);
   $('vadmModal').addEventListener('click',e=>{ if(e.target===$('vadmModal')) closeModal(); });
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('vadmModal').classList.contains('open')) closeModal(); });
-  $('vadmSearch').addEventListener('input',renderUsers);
 
-  /* Apply admin UI on load and keep it fresh when the session is set
-     (enter/login/signup). The dashboard router calls vantaAdminRefresh each
-     time the admin page is opened. */
-  vantaApplyAdminUI();
+  $('vadmDetailsClose').addEventListener('click',closeDetails);
+  $('vadmDetailsModal').addEventListener('click',e=>{ if(e.target===$('vadmDetailsModal')) closeDetails(); });
+  $('vadmDViewTx').addEventListener('click',()=>{ if(detailId){ const em=detailEmail; closeDetails(); openTxModal(detailId,em); } });
+  $('vadmDAddBalance').addEventListener('click',()=>{ if(detailId) openCredit(detailId,detailEmail); });
+  $('vadmDDelete').addEventListener('click',()=>{ if(detailId){ const em=detailEmail; closeDetails(); askDelete(detailId,em); } });
+
+  $('vadmActivityClose').addEventListener('click',closeActivity);
+  $('vadmActivityModal').addEventListener('click',e=>{ if(e.target===$('vadmActivityModal')) closeActivity(); });
+
+  $('vadmDeleteClose').addEventListener('click',closeDelete);
+  $('vadmDeleteCancel').addEventListener('click',closeDelete);
+  $('vadmDeleteConfirm').addEventListener('click',confirmDelete);
+  $('vadmDeleteModal').addEventListener('click',e=>{ if(e.target===$('vadmDeleteModal')) closeDelete(); });
+
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape')return;
+    ['vadmModal','vadmActivityModal','vadmDetailsModal','vadmDeleteModal'].forEach(id=>{
+      const m=$(id); if(m&&m.classList.contains('open')){ m.classList.remove('open'); m.setAttribute('aria-hidden','true'); }
+    });
+    modalUser={id:null,email:null}; delUserId=null; detailId=null;
+  });
+
+  /* ---------------- Entry point ---------------- */
+  window.vantaAdminRefresh=async function(){
+    const ok=await vantaSyncRole();
+    vantaApplyAdminUI(ok);
+    if(!ok) return;
+    setTab(activeTab);
+  };
+
+  vantaApplyAdminUI(vantaIsAdmin());
   if(window.vantaEnterApp){
     const orig=window.vantaEnterApp;
     window.vantaEnterApp=async function(){
-      vantaApplyAdminUI();
+      const ok=await vantaSyncRole();
+      vantaApplyAdminUI(ok);
       await orig.apply(this,arguments);
     };
   }
-  setInterval(()=>{ if($('vantaAdminPage')?.classList.contains('vw-active')) refreshAdmin(); },15000);
+  /* Keep the active tab's data fresh while the admin page is visible. */
+  setInterval(()=>{
+    if(!$('vantaAdminPage')?.classList.contains('vw-active')) return;
+    if(activeTab==='dash') loadStats();
+    if(activeTab==='users') loadUsers();
+    if(activeTab==='txs') loadTxs();
+  },20000);
 })();
 </script>
 

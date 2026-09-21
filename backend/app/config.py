@@ -6,6 +6,10 @@ import os
 # =============================================================================
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./vanta.db")
+# Render/Heroku-style URLs are postgres:// — SQLAlchemy requires postgresql://.
+# Normalize in place so no caller has to think about it.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 
 APP_SECRET_KEY = os.environ.get("APP_SECRET_KEY", "dev-secret-change-me")
 JWT_ALGORITHM = "HS256"

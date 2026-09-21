@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -215,12 +216,79 @@ class AdminUserOut(BaseModel):
     balances: dict = Field(default_factory=dict)
 
 
+class AdminUserListItem(BaseModel):
+    """One row of the paginated admin users list — includes lightweight
+    activity counters so the table is useful without a click."""
+    id: str
+    email: str
+    label: Optional[str] = None
+    is_admin: bool
+    usdt_balance: float
+    golf_balance: float
+    created_at: datetime
+    balances: dict = Field(default_factory=dict)
+    trades: int = 0
+    deposits: int = 0
+    last_activity: Optional[datetime] = None
+
+
+class AdminUserPageOut(BaseModel):
+    items: list[AdminUserListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminUserDetailOut(AdminUserListItem):
+    """Full detail view for a single user: identity + live balances for every
+    listed coin + activity counters + the watch-only deposit address."""
+    swaps: int = 0
+    transfers_sent: int = 0
+    transfers_received: int = 0
+    balance_transactions: int = 0
+    messages_sent: int = 0
+    messages_received: int = 0
+    deposit_address: Optional[str] = None
+    usd_total: float = 0.0
+
+
+class AdminTransactionItem(BaseModel):
+    """One row of the merged admin transactions feed. Every entity that moves
+    money in this platform is flattened into this shape: trades, verified
+    deposits, swaps, internal transfers and admin balance adjustments."""
+    id: str
+    user_id: str
+    user_email: str = ""
+    type: str  # TRADE / DEPOSIT / SWAP / TRANSFER / CREDIT
+    symbol: str
+    amount: float
+    direction: Optional[str] = None  # TRADE: UP/DOWN, TRANSFER: SENT/RECEIVED, CREDIT: IN
+    status: str
+    created_at: datetime
+    note: Optional[str] = None
+    meta: dict = Field(default_factory=dict)
+
+
+class AdminTransactionPageOut(BaseModel):
+    items: list[AdminTransactionItem]
+    total: int
+    page: int
+    page_size: int
+
+
 class AdminStatsOut(BaseModel):
     users: int
     admins: int
     usdt_total: float
     golf_total: float
     trades: int
+    deposits: int
+    deposit_total: float
+    balance_adjustments: int
+    transactions: int
+    new_users_7d: int
+    total_balance_usd: float
+    recent_transactions: list[AdminTransactionItem] = Field(default_factory=list)
 
 
 class AdminCreditRequest(BaseModel):
@@ -228,6 +296,24 @@ class AdminCreditRequest(BaseModel):
     user_id: Optional[str] = None
     symbol: str = "USDT"
     amount: float = Field(gt=0)
+
+
+class BalanceAddRequest(BaseModel):
+    """Add funds to a user's LIVE balance. amount is Decimal so money never
+    round-trips through binary float before validation. Zero/negative values
+    are accepted here and rejected with a clean 400 in the route — so the
+    frontend can surface a readable message instead of an opaque 422."""
+    symbol: str = Field(default="USDT", examples=["USDT", "GOLF"])
+    amount: Decimal = Field(examples=["50.00"])
+
+
+class BalanceAddOut(BaseModel):
+    ok: bool = True
+    tx_id: str
+    symbol: str
+    amount: str               # decimal string, e.g. "50.00"
+    balance_after: dict
+    user: AdminUserDetailOut
 
 
 class AdminSetAdminRequest(BaseModel):

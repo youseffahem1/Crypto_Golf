@@ -2769,16 +2769,6 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
         </div>
         <div class="nav-label">Messages</div>
     </button>
-
-    <button class="nav-item" data-page="admin" data-admin>
-        <div class="nav-icon">
-            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                <path d="M12 3l7 3v5c0 4.5-2.9 8.2-7 10-4.1-1.8-7-5.5-7-10V6z"/>
-                <path d="M9.5 12l1.7 1.7 3.3-3.4"/>
-            </svg>
-        </div>
-        <div class="nav-label">Admin</div>
-    </button>
 </nav>
 
 <div class="vanta-nav-overlay" id="vantaNavOverlay" aria-hidden="true"></div>
@@ -10393,7 +10383,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
       const pctOfMax=inv>0?(inv/maxInv*100):0;
       return '<div class="vtp-coin" data-sym="'+esc(c.symbol)+'" data-invest>'
         +'<div class="vtp-coin-icon">'+esc(c.symbol[0])+'</div>'
-        +'<div class="vtp-coin-names"><div class="vtp-coin-sym">'+esc(c.symbol)+ (c.tradeable===false?' <span class="vtp-coin-badge">Hold only</span>':'')+'</div><div class="vtp-coin-name">'+esc(c.name)+'</div></div>'
+        +'<div class="vtp-coin-names"><div class="vtp-coin-sym">'+esc(c.symbol)+ (c.tradeable===false?' <span class="vtp-coin-badge">Hold only</span>':' <span class="vtp-live">LIVE</span>')+'</div><div class="vtp-coin-name">'+esc(c.name)+'</div></div>'
         +'<div class="vtp-coin-center">'
           +'<div class="vtp-coin-bar"><i style="width:'+Math.round(pctOfMax)+'%"></i></div>'
           +'<div class="vtp-coin-meta"><span>Held <b>'+coinFmt(bal)+'</b></span><span>· '+ (ch>=0?'+':'') +ch.toFixed(2)+'%</span><span>· Invested '+money(inv)+'</span></div>'
@@ -10419,14 +10409,14 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
     if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT',sym);
     else toast('Please open the Wallet page to convert.');
   }
-  async function openAddresses(sym){
+  async function openAddresses(sym,mode){
     let layout=window.vantaWalletLayout;
     if(!layout){
       try{ layout=await vantaApi('/api/wallet/layout'); window.vantaWalletLayout=layout; }catch(e){ layout=null; }
     }
     const dep=(layout&&layout.deposit_addresses)||{};
     const wd=(layout&&layout.withdraw_addresses)||{};
-    vantaShowAddress(sym,'deposit',dep,wd);
+    vantaShowAddress(sym,mode||'deposit',dep,wd);
   }
   window.vantaShowCoinAddress=openAddresses;
   function fillPick(){
@@ -10599,6 +10589,763 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
     if(tradingPage&&tradingPage.classList.contains('vw-active')) vantaRefreshOverview(true);
     if(historyPage&&historyPage.classList.contains('vw-active')&&vhpTab==='trading') renderHistoryTab('trading');
   },8000);
+})();
+</script>
+
+<!-- =========================================================
+     UI/UX REDESIGN — Premium dark trading app layer (mobile-first)
+     Pure presentation + live-data wiring. No business logic changed.
+========================================================== -->
+<style id="vanta-ux-redesign-css">
+/* ---------- Design tokens: force premium dark on every theme ---------- */
+html[data-theme="dark"], html[data-theme="light"], html:not([data-theme]), :root{
+  --bg:#07080c !important;
+  --panel:#0e1016 !important;
+  --panel-2:#13161e !important;
+  --panel-3:#1a1e29 !important;
+  --text:#e7eaf2 !important;
+  --muted:#8b94a8 !important;
+  --muted2:#565e70 !important;
+  --line:#1f2531 !important;
+  --border:#202734 !important;
+  --up:#0ecb81 !important; --up2:#00b26b !important;
+  --down:#f6465d !important;
+  --green:#0ecb81 !important; --green2:#00b26b !important;
+  --red:#f6465d !important; --red2:#e0364f !important;
+  --gold:#7287ff !important;
+  --purple:#7287ff !important;
+  --vanta-purple:#7287ff !important;
+  --vanta-purple2:#5563ff !important;
+  --shadow:rgba(0,0,0,.45) !important;
+  --nav-height:62px;
+  color-scheme:dark;
+}
+body, .app, #vantaLanding{background:var(--bg) !important;color:var(--text) !important}
+.app{overflow-x:hidden}
+body{
+  font-family:'Inter','SF Pro Display',-apple-system,'Segoe UI',Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
+button, input, select, textarea{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#232936;border-radius:9px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- Header ---------- */
+.header{
+  height:60px !important;
+  padding:0 14px !important;
+  background:rgba(7,8,12,.82) !important;
+  -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
+  border-bottom:1px solid var(--line) !important;
+  z-index:60;
+}
+.header-left{gap:9px}
+.vanta-nav-toggle, .profile, .icon-btn{
+  width:37px;height:37px;border-radius:12px !important;
+  background:var(--panel-2) !important;border:1px solid var(--line) !important;
+  color:var(--muted) !important;display:grid;place-items:center;cursor:pointer;
+  transition:background .18s ease,color .18s ease;
+}
+.vanta-nav-toggle:active, .profile:active, .icon-btn:active{background:var(--panel-3) !important;color:var(--text) !important}
+.icon-btn svg{width:19px;height:19px}
+.header .wallet{
+  height:37px;padding:0 14px;border-radius:999px !important;
+  background:linear-gradient(180deg,#5563ff,#7287ff) !important;color:#fff !important;
+  border:0;font-size:12px;font-weight:800;cursor:pointer;display:grid;place-items:center;
+}
+.header .account{
+  border:1px solid var(--line);background:var(--panel-2) !important;border-radius:13px !important;
+  padding:6px 12px !important;display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+}
+.header .account .balance{font-size:13px !important;font-weight:800;color:var(--text) !important;letter-spacing:-.01em}
+.vanta-mode-tag{
+  display:inline-grid;place-items:center;min-width:44px;height:17px;padding:0 7px;
+  border-radius:99px;font-size:9px;font-weight:900 !important;letter-spacing:.1em;
+  background:rgba(14,203,129,.15) !important;color:var(--up) !important;
+}
+.vanta-mode-tag.demo{background:rgba(114,135,255,.16) !important;color:#a9b5ff !important}
+/* hide/show balance */
+body.vanta-hide-balance #balance,
+body.vanta-hide-balance .side-balance-value,
+body.vanta-hide-balance .vd-balance-value,
+body.vanta-hide-balance .vtp-balance-value,
+body.vanta-hide-balance .vfx-usdt-balance,
+body.vanta-hide-balance .vw-balance-num,
+body.vanta-hide-balance #vtaBalance,
+body.vanta-hide-balance #vdaTotal{filter:blur(7px);user-select:none;pointer-events:none}
+
+/* ---------- Account panel ---------- */
+.vanta-account-panel{
+  background:rgba(13,15,21,.96) !important;border:1px solid var(--line) !important;
+  border-radius:18px !important;box-shadow:0 24px 60px rgba(0,0,0,.55) !important;
+  -webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
+}
+.vap-option{border:1px solid var(--line) !important;border-radius:14px !important;background:var(--panel) !important}
+.vap-option:hover{border-color:rgba(114,135,255,.5) !important}
+.vap-check{color:var(--up) !important}
+
+/* ---------- Sidebar / drawer ---------- */
+.desktop-sidebar{
+  width:246px !important;background:#090a0f !important;border-right:1px solid var(--line) !important;
+}
+.desktop-sidebar .brand{color:var(--text) !important}
+.desktop-sidebar .brand span{color:var(--gold) !important}
+.side-balance{background:var(--panel-2) !important;border:1px solid var(--line) !important;border-radius:14px !important;margin:0 12px}
+.side-balance-value{color:var(--text) !important;font-weight:800}
+.side-item{
+  height:46px;border-radius:12px;margin:1px 10px;color:var(--muted) !important;font-size:13px;
+  transition:background .16s ease,color .16s ease;font-weight:700;
+}
+.side-item:hover{background:rgba(255,255,255,.045) !important;color:var(--text) !important}
+.side-item.active{
+  background:rgba(114,135,255,.16) !important;color:#d3daff !important;font-weight:800;
+  box-shadow:inset 0 0 0 1px rgba(114,135,255,.28);
+}
+.side-item.active svg{color:var(--gold) !important}
+.vanta-nav-overlay{background:rgba(0,0,0,.55) !important}
+.drawer .desktop-sidebar{border-right:0 !important}
+
+/* ---------- Bottom navigation (4) ---------- */
+.bottom-nav{
+  grid-template-columns:repeat(4,1fr);height:var(--nav-height);
+  background:rgba(7,8,12,.92) !important;-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
+  border-top:1px solid var(--line) !important;
+  padding-bottom:env(safe-area-inset-bottom) !important;
+}
+.nav-item{
+  position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  color:var(--muted) !important;background:none !important;border:0;cursor:pointer;
+  font-size:10px;font-weight:700;letter-spacing:.02em;
+}
+.nav-item .nav-icon{
+  position:relative;display:grid;place-items:center;width:34px;height:24px;border-radius:10px;
+  transition:color .18s ease,background .18s ease,transform .18s ease;
+}
+.nav-item .nav-icon svg{width:21px;height:21px}
+.nav-item.active{color:var(--text) !important}
+.nav-item.active .nav-icon{color:var(--gold);transform:translateY(-1px)}
+.nav-item.active .nav-icon::after{
+  content:"";position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);
+  width:4px;height:4px;border-radius:99px;background:var(--gold);
+}
+.nav-item:active .nav-icon{transform:scale(.9)}
+
+/* ---------- Shared page containers ---------- */
+.vd-wrap,.vw-container,.vhp-inner,.vtp-inner{max-width:1080px;margin:0 auto}
+.vd-head,.vw-page-head,.vhp-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.vd-title,.vw-page-title,.vhp-title,.vadm-title{font-size:20px;font-weight:900;letter-spacing:-.02em;color:var(--text)}
+.vd-sub,.vw-page-sub{color:var(--muted);font-size:12px;margin-top:3px}
+.vd-live,.vw-market-status{
+  display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;border-radius:99px;
+  background:rgba(14,203,129,.12) !important;color:var(--up) !important;font-size:11px;font-weight:800;letter-spacing:.04em;
+}
+.vd-live i,.vw-market-status i,.vta-live-dot{
+  width:7px;height:7px;border-radius:99px;background:var(--up);position:relative;flex-shrink:0;
+}
+.vd-live i::after,.vw-market-status i::after,.vta-live-dot::after{
+  content:"";position:absolute;inset:-4px;border-radius:99px;background:var(--up);opacity:.25;animation:vtaPulse 2s infinite;
+}
+@keyframes vtaPulse{0%{transform:scale(.6);opacity:.4}70%{transform:scale(1.5);opacity:0}100%{opacity:0}}
+
+/* ---------- HOME / Dashboard ---------- */
+.vd-balance{
+  position:relative;overflow:hidden;border:1px solid var(--line);border-radius:22px;
+  background:
+    radial-gradient(120% 130% at 8% 0%,rgba(114,135,255,.14),transparent 44%),
+    radial-gradient(120% 120% at 100% 100%,rgba(14,203,129,.07),transparent 46%),
+    var(--panel) !important;
+  box-shadow:var(--shadow);
+}
+.vd-balance-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.vd-balance-label{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);font-weight:800}
+.vd-balance-value{font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;margin-top:4px}
+.vd-balance-value small{font-size:13px;color:var(--muted);font-weight:700}
+.vd-cap{
+  height:24px;padding:0 10px;border-radius:99px;font-size:9px;font-weight:900;letter-spacing:.12em;
+  background:rgba(255,255,255,.05) !important;color:var(--muted) !important;
+  border:1px solid var(--line);display:grid;place-items:center;
+}
+.vda-stats{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px;
+}
+.vda-stat{border:1px solid var(--line);background:rgba(255,255,255,.02) !important;border-radius:14px;padding:11px 13px}
+.vda-stat b{display:block;font-size:16px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.vda-stat span{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.vda-balctrl{display:flex;align-items:center;gap:7px;justify-content:flex-end;margin-top:12px}
+.vda-eye,.vda-cur{height:32px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2) !important;color:var(--muted) !important;font-size:12px;cursor:pointer;font-weight:700}
+.vda-eye{width:40px;display:grid;place-items:center}
+.vda-cur{padding:0 8px;max-width:150px}
+.vd-options{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.vd-option{
+  min-height:66px;border:1px solid var(--line);border-radius:15px;background:var(--panel-2) !important;
+  color:var(--text) !important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  font-size:11px;font-weight:800;cursor:pointer;transition:transform .13s ease,border-color .15s ease;
+}
+.vd-option:hover{border-color:rgba(114,135,255,.45);transform:translateY(-1px)}
+.vd-oicon{
+  width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:14px;font-weight:900;
+}
+.vd-option.dep .vd-oicon{background:rgba(14,203,129,.14);color:var(--up)}
+.vd-option.wd .vd-oicon{background:rgba(246,70,93,.13);color:var(--down)}
+.vd-option.swap .vd-oicon{background:rgba(114,135,255,.14);color:#aab6ff}
+.vd-option.trade .vd-oicon{background:rgba(114,135,255,.14);color:#aab6ff}
+.vd-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.vd-card{border:1px solid var(--line);border-radius:18px;background:var(--panel) !important;padding:16px;box-shadow:var(--shadow)}
+.vd-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.vd-card-title{font-size:13px;font-weight:900;color:var(--text)}
+.vd-link{font-size:11px;font-weight:800;color:var(--gold);background:none;border:0;cursor:pointer;padding:2px}
+.vd-golf-price{font-size:24px;font-weight:900;font-variant-numeric:tabular-nums}
+.vd-golf-change{font-size:11px;font-weight:700;margin-top:4px}
+.vd-golf-change.up{color:var(--up)}.vd-golf-change.down{color:var(--down)}
+.vd-kpi{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.vd-kpi:last-child{border-bottom:0}
+.vd-kpi span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vd-kpi b{font-variant-numeric:tabular-nums}
+.vd-empty,.vm-empty{color:var(--muted);font-size:12px;text-align:center;padding:16px}
+/* markets strip */
+.vta-markets{margin-top:4px}
+.vta-mscroll{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:none}
+.vta-mscroll::-webkit-scrollbar{display:none}
+.vta-ms{flex:0 0 128px;border:1px solid var(--line);border-radius:16px;background:var(--panel) !important;padding:12px;cursor:pointer;transition:transform .13s ease,border-color .15s ease}
+.vta-ms:hover{transform:translateY(-1px);border-color:rgba(114,135,255,.4)}
+.vta-ms-top{display:flex;align-items:center;justify-content:space-between}
+.vta-ms-sym{font-size:13px;font-weight:900}
+.vta-ms-name{font-size:10px;color:var(--muted);margin-top:1px}
+.vta-ms-price{font-size:16px;font-weight:900;font-variant-numeric:tabular-nums;margin-top:8px}
+.vta-ms-chg{font-size:11px;font-weight:800;margin-top:2px}
+.vta-ms-chg.up{color:var(--up)}.vta-ms-chg.down{color:var(--down)}
+.vta-ms-live{font-size:8px;font-weight:900;letter-spacing:.1em;padding:3px 6px;border-radius:99px;background:rgba(14,203,129,.13);color:var(--up)}
+.vta-recent .vhm{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px dashed var(--line);font-size:12px}
+.vta-recent .vhmm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vta-recent .vhmc{font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap}
+#vtaMarkets,#vtaRecent{grid-column:1 / -1}
+
+/* ---------- Trading overview ---------- */
+.vtp-hero{border-radius:22px;background:radial-gradient(120% 150% at 0% 0%,rgba(114,135,255,.13),transparent 46%),var(--panel) !important;box-shadow:var(--shadow)}
+.vtp-eyebrow{color:var(--gold) !important}
+.vtp-title{font-size:24px;font-weight:900;letter-spacing:-.02em}
+.vtp-cards{grid-template-columns:repeat(3,1fr);gap:11px}
+.vtp-card{border-radius:18px;padding:15px;background:var(--panel) !important;box-shadow:var(--shadow)}
+button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
+.vtp-card-value{font-variant-numeric:tabular-nums}
+.vtp-invest-bar{border-radius:16px;border-color:var(--line);background:var(--panel-2) !important}
+.vtp-invest-btn{background:linear-gradient(180deg,#5563ff,#5563ff);box-shadow:0 10px 24px rgba(85,99,255,.28)}
+.vtp-coin{border-radius:17px;background:var(--panel) !important}
+.vtp-coin-icon{border-radius:12px;background:rgba(114,135,255,.12);border-color:rgba(114,135,255,.25);color:#aab6ff}
+.vtp-coin-sym{font-weight:900}
+.vtp-coin-price b{font-variant-numeric:tabular-nums}
+.vtp-coin-badge{background:rgba(246,70,93,.13);color:var(--down)}
+.vtp-live{font-size:9px;font-weight:900;letter-spacing:.1em;padding:2px 7px;border-radius:99px;background:rgba(14,203,129,.13);color:var(--up);margin-left:6px}
+.vtp-dw{border-color:rgba(114,135,255,.35);color:#aab6ff}
+.vtp-inv{background:linear-gradient(180deg,#0ecb81,#00b26b);box-shadow:0 8px 20px rgba(14,203,129,.25)}
+
+/* ---------- Trading screen ---------- */
+.main{max-width:1120px}
+.asset-bar{
+  border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.02) !important;
+  margin-bottom:10px;box-shadow:var(--shadow);
+}
+.gold-icon{border-radius:13px;background:rgba(114,135,255,.12);border-color:rgba(114,135,255,.28);color:#aab6ff}
+.asset-name{font-size:16px;font-weight:900;letter-spacing:-.01em}
+.asset-name .payout{color:var(--gold);font-weight:900}
+.asset-meta{font-size:10px;letter-spacing:.02em}
+/* market live chip next to asset */
+.vta-livechip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:99px;background:rgba(14,203,129,.12);color:var(--up);font-size:9px;font-weight:900;letter-spacing:.1em}
+.asset-actions .asset-action{
+  width:36px;height:36px;border-radius:11px;border:1px solid var(--line);background:var(--panel-2) !important;color:var(--muted) !important;
+  display:grid;place-items:center;cursor:pointer;
+}
+.chart-card{
+  border:1px solid var(--line);border-radius:20px !important;background:var(--panel) !important;
+  box-shadow:none !important;padding:12px 12px 10px;
+}
+.timeframes{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2) !important}
+.tf{
+  height:30px;min-width:38px;padding:0 10px;border:0;border-radius:9px;background:transparent;
+  color:var(--muted) !important;font-size:11px;font-weight:800;cursor:pointer;transition:background .15s ease,color .15s ease;
+}
+.tf:hover{color:var(--text) !important}
+.tf.active{background:linear-gradient(180deg,#5563ff,#5563ff) !important;color:#fff !important;box-shadow:0 6px 14px rgba(85,99,255,.3)}
+.chart-tool{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2) !important;color:var(--muted) !important;cursor:pointer;display:grid;place-items:center}
+.chart-card canvas{border-radius:10px}
+#pricePill{
+  background:rgba(9,11,16,.92) !important;border:1px solid var(--line) !important;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+}
+.controls{max-width:560px !important;border:1px solid var(--line);border-radius:20px !important;background:var(--panel) !important;box-shadow:var(--shadow);padding:16px}
+.controls-head,.control-row{display:flex;align-items:center;justify-content:space-between}
+.amount-input,.small-control,.vw-input{background:var(--panel-2) !important;border:1px solid var(--line) !important;border-radius:13px !important;color:var(--text) !important}
+.quick-amount{
+  border:1px solid var(--line) !important;border-radius:10px !important;background:var(--panel-2) !important;
+  color:var(--text) !important;font-size:11px;font-weight:800;
+}
+.quick-amount.active{background:rgba(114,135,255,.18) !important;border-color:rgba(114,135,255,.5) !important;color:#cdd5ff !important}
+.payout-chip,.payout-value{color:var(--gold) !important;font-weight:900}
+.payout-note, .controls-note, .field-label, .controls-label{color:var(--muted) !important}
+.trade-buttons{gap:9px;margin-top:12px}
+.trade-btn{min-height:56px;border-radius:15px !important;font-size:14px;letter-spacing:.04em}
+.up-btn{background:linear-gradient(180deg,#0ecb81,#00b26b) !important;box-shadow:0 10px 22px rgba(14,203,129,.22) !important}
+.down-btn{background:linear-gradient(180deg,#f6465d,#e0364f) !important;box-shadow:0 10px 22px rgba(246,70,93,.2) !important}
+.clock-btn{border-radius:15px !important;background:var(--panel-2) !important;border:1px solid var(--line) !important;color:var(--muted) !important}
+
+/* Position / P&L card */
+.vta-pos{border:1px solid var(--line);border-radius:20px;background:var(--panel) !important;padding:16px;margin-top:13px;box-shadow:var(--shadow)}
+.vta-pos-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.vta-pos-title{font-size:13px;font-weight:900;display:flex;align-items:center;gap:7px}
+.vta-pos-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.vta-pos-cell{border:1px solid var(--line);background:var(--panel-2) !important;border-radius:13px;padding:10px 11px;min-width:0}
+.vta-pos-cell b{display:block;font-size:14px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vta-pos-cell span{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.vta-pos-rows{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.vta-pos-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel-2) !important;border-radius:13px;padding:10px 13px;font-size:12px}
+.vta-pos-row .vtag{font-weight:900;width:40px}
+.vta-pos-row .vtag.buy{color:var(--up)}.vta-pos-row .vtag.sell{color:var(--down)}
+.vta-pos-row .vmid{flex:1;min-width:0;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vta-pos-row .vval{font-weight:900;font-variant-numeric:tabular-nums;color:var(--text)}
+.vta-pos-row .vpl{font-weight:900;font-variant-numeric:tabular-nums}
+.vta-pos-row .vpl.up{color:var(--up)}.vta-pos-row .vpl.down{color:var(--down)}
+.vta-pos-note{font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+/* Open trades + history lists (trading screen, dark premium) */
+.open-section,.history-section{max-width:560px !important}
+.section-title{font-size:12px;font-weight:900;letter-spacing:.03em;color:var(--text)}
+.section-count{min-width:22px;height:22px;border-radius:99px;background:rgba(114,135,255,.15);color:#aab6ff;font-size:11px;font-weight:900;display:grid;place-items:center}
+.open-trade,.history-item{border:1px solid var(--line);border-radius:15px;background:var(--panel) !important;box-shadow:var(--shadow)}
+.direction-badge.up{background:rgba(14,203,129,.15);color:var(--up)}
+.direction-badge.down{background:rgba(246,70,93,.14);color:var(--down)}
+.open-direction{color:var(--text)}
+.trade-action{font-size:11px;font-weight:900;border-radius:99px;padding:5px 11px}
+.trade-action.win{color:var(--up) !important;background:rgba(14,203,129,.12) !important;border:1px solid rgba(14,203,129,.3) !important}
+.trade-action.loss{color:var(--down) !important;background:rgba(246,70,93,.11) !important;border:1px solid rgba(246,70,93,.3) !important}
+.trade-action.cancel{color:var(--muted2) !important;background:rgba(255,255,255,.05) !important;border:1px solid var(--line) !important}
+
+/* ---------- Wallet ---------- */
+.vanta-wallet-page{background:var(--bg) !important}
+.vw-options-actions{display:flex;gap:8px;flex-wrap:wrap;padding-top:6px}
+.vw-quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.vw-action{
+  min-height:56px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2) !important;
+  color:var(--text) !important;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;
+  transition:border-color .15s ease,transform .13s ease;
+}
+.vw-action:hover{border-color:rgba(114,135,255,.45);transform:translateY(-1px)}
+.vw-market-card,.vw-card,.vfx-wallet-col{
+  border:1px solid var(--line) !important;border-radius:20px !important;background:var(--panel) !important;box-shadow:var(--shadow) !important;
+}
+.vw-coin{
+  border:1px solid var(--line) !important;border-radius:16px !important;background:var(--panel-2) !important;
+  transition:transform .13s ease,border-color .15s ease;
+}
+.vw-coin:hover{border-color:rgba(114,135,255,.4);transform:translateY(-1px)}
+.vw-coin-logo{background:rgba(114,135,255,.12) !important;color:#aab6ff !important}
+.vw-coin-action{
+  border-radius:11px !important;background:linear-gradient(180deg,#5563ff,#5563ff) !important;color:#fff !important;
+  font-weight:800 !important;border:0 !important;
+}
+.vw-coin-action.dep{background:linear-gradient(180deg,#0ecb81,#00b26b) !important}
+.vw-change.up{color:var(--up) !important}.vw-change.down{color:var(--down) !important}
+.vw-dw-row{grid-column:1 / -1;display:flex;gap:7px;margin-top:7px}
+.vw-dw-btn{
+  flex:1;height:30px;border-radius:9px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);font-size:10px;font-weight:800;cursor:pointer;
+}
+.vw-dw-btn:hover{color:var(--gold);border-color:rgba(114,135,255,.4)}
+/* two wallets */
+.vfx-wallet-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vfx-w-col-head strong{color:var(--text)}
+.vfx-tag.plat{background:rgba(114,135,255,.14);color:#aab6ff}
+.vfx-tag.norm{background:rgba(14,203,129,.13);color:var(--up)}
+.vfx-hold{border:1px solid var(--line);background:var(--panel-2) !important;border-radius:12px}
+.vfx-w-link{color:var(--gold);font-weight:800}
+.vfx-usdt-hero{
+  border-radius:22px;border:1px solid var(--line) !important;box-shadow:var(--shadow) !important;
+  background:radial-gradient(120% 150% at 0% 0%,rgba(114,135,255,.14),transparent 46%),var(--panel) !important;
+}
+.vfx-usdt-balance{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.vfx-action{height:42px !important;border-radius:13px !important;font-weight:800 !important;font-size:12px !important}
+.vfx-action.primary{background:linear-gradient(180deg,#5563ff,#5563ff) !important}
+.vfx-action.green{background:linear-gradient(180deg,#0ecb81,#00b26b) !important;color:#fff !important}
+.vfx-cap{border-color:var(--line) !important;color:var(--muted) !important}
+
+/* ---------- Messages ---------- */
+.vm-box,.vm-thread,.vm-comp,.vm-convo{border-color:var(--line) !important;background:var(--panel) !important}
+.vm-convo{border-radius:14px !important;box-shadow:var(--shadow)}
+.vm-convo.unread{background:rgba(114,135,255,.07) !important}
+.vm-avatar{background:rgba(114,135,255,.16) !important;color:#aab6ff !important}
+.vm-badge{background:var(--down) !important}
+.vm-msg{border-radius:14px !important}
+.vm-msg.me{background:rgba(85,99,255,.9) !important}
+.vm-search-res{background:var(--panel-2) !important;border-color:var(--line) !important}
+
+/* ---------- History page ---------- */
+.vhp-tab{border-radius:12px;background:var(--panel-2) !important;color:var(--muted)}
+.vhp-tab.active{background:linear-gradient(180deg,#5563ff,#5563ff) !important;color:#fff !important;box-shadow:0 8px 18px rgba(85,99,255,.28)}
+.vh-item{border-radius:15px;background:var(--panel) !important;box-shadow:var(--shadow)}
+.vh-badge.up{background:rgba(14,203,129,.14);color:var(--up)}
+.vh-badge.down{background:rgba(246,70,93,.13);color:var(--down)}
+.vh-badge.mid{background:rgba(114,135,255,.14);color:#aab6ff}
+
+/* ---------- Modals / toasts / notifications ---------- */
+.vw-modal-box,.vfx-modal-box,.vadm-modal-box,.vtp-modal-card,.vl-auth-card{
+  background:rgba(13,15,21,.97) !important;border:1px solid var(--line) !important;border-radius:22px !important;
+  -webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);box-shadow:0 30px 80px rgba(0,0,0,.6) !important;
+}
+.vw-modal-title,.vfx-modal-title,.vtp-modal-title{color:var(--text);font-weight:900}
+.vw-input,.vfx-input{border-radius:12px !important;background:var(--panel-2) !important;border:1px solid var(--line) !important;color:var(--text) !important}
+.vw-btn,.vfx-btn,button.vadm-btn{border-radius:12px !important;font-weight:800 !important}
+.toast{
+  background:rgba(13,15,21,.96) !important;border:1px solid var(--line) !important;border-radius:14px !important;
+  color:var(--text) !important;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  box-shadow:0 18px 44px rgba(0,0,0,.5) !important;
+}
+.vanta-notif-item{border:1px solid var(--line) !important;border-radius:15px !important;background:rgba(13,15,21,.97) !important;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+
+/* ---------- Landing + auth ---------- */
+#vantaLanding{background:radial-gradient(120% 140% at 50% -10%,rgba(85,99,255,.14),transparent 46%),var(--bg) !important}
+.vl-brand-new b,.vl-live-pill b{color:#cdd5ff !important}
+.vl-primary,.vw-btn-primary{background:linear-gradient(180deg,#5563ff,#5563ff) !important;box-shadow:0 14px 34px rgba(85,99,255,.3) !important;border:0}
+.vl-secondary{background:var(--panel-2) !important;color:var(--text) !important;border:1px solid var(--line) !important}
+.vl-auth-card{border-radius:22px !important}
+
+/* ---------- Micro transitions ---------- */
+.vd-card,.vw-coin,.vtp-coin,.vh-item,.open-trade,.history-item,.vw-action,.vta-ms,.vtp-card{transition:transform .13s ease,border-color .15s ease,box-shadow .15s ease}
+button{cursor:pointer}
+
+/* ---------- Responsive (320-430 + desktop) ---------- */
+@media (max-width:760px){
+  .vd-grid{grid-template-columns:1fr}
+  .vtp-cards{grid-template-columns:1fr}
+  .vfx-wallet-row{grid-template-columns:1fr}
+  .vta-pos-grid{grid-template-columns:repeat(3,1fr)}
+}
+@media (max-width:430px){
+  .header{height:56px !important;padding:0 12px !important}
+  .header .account{padding:5px 9px !important}
+  .vd-balance-value{font-size:26px}
+  .vd-options{grid-template-columns:repeat(4,1fr);gap:6px}
+  .vd-option{min-height:58px;font-size:10px}
+  .vw-quick{grid-template-columns:repeat(2,1fr)}
+  .chart-card{padding:8px}
+  .timeframes{gap:0}
+  .tf{min-width:32px;padding:0 7px;font-size:10px}
+  .asset-bar{padding:0 10px!important}
+  .vta-pos-grid{grid-template-columns:repeat(2,1fr)}
+  .vta-ms{flex-basis:112px}
+}
+@media (max-width:360px){
+  .header .account{display:none}
+  .vda-stat b{font-size:14px}
+  .vda-stats{grid-template-columns:1fr 1fr}
+  .vda-stat:last-child{grid-column:1 / -1}
+  .trade-buttons{grid-template-columns:1fr 50px 1fr;gap:6px}
+  .asset-actions{display:none}
+}
+@media (min-width:901px){
+  .bottom-nav{display:none}
+  .vw-container,.vd-wrap{max-width:1120px}
+}
+@media (max-height:640px) and (orientation:landscape){
+  .header{height:52px !important}
+}
+</style>
+
+<script id="vanta-ux-redesign-js">
+(function(){
+  const $=id=>document.getElementById(id);
+  const q=s=>document.querySelector(s);
+  const qa=s=>document.querySelectorAll(s);
+  const toast=msg=>{ if(typeof showToast==='function') showToast(msg); else alert(msg); };
+  const money=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const coinFmt=n=>{
+    const v=Number(n||0);
+    if(!Number.isFinite(v)||v===0)return'0';
+    if(v>=1000)return v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if(v>=1)return v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4});
+    return v.toLocaleString('en-US',{maximumFractionDigits:8});
+  };
+  const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const mainEl=q('.main');
+  const liveChip=sym=>'<span class="vta-livechip"><i class="vta-live-dot"></i>LIVE</span>';
+
+  /* LIVE chip in the trading-screen asset bar */
+  function ensureLiveChip(){
+    try{
+      const bar=q('.asset-bar'); if(!bar)return;
+      const name=q('.asset-name');
+      if(window.vantaActiveCoin && name && !$('vtaLiveChip')){
+        const span=document.createElement('span'); span.id='vtaLiveChip';
+        span.className='vta-livechip'; span.innerHTML='<i class="vta-live-dot"></i>LIVE';
+        name.after(span);
+      } else if(!window.vantaActiveCoin && $('vtaLiveChip')){
+        $('vtaLiveChip').remove();
+      }
+    }catch(e){}
+  }
+
+  /* ---------- HOME: balance stats row, currency, eye, quick actions, markets, recent trades ---------- */
+  function vantaRenderHomeExtra(){
+    const dash=$('vantaDashPage'); if(!dash||!dash.classList.contains('vw-active')) return;
+    try{
+      const balCard=q('.vd-balance');
+      if(!balCard) return;
+      if(!$('vdaStats')){
+        const s=document.createElement('div'); s.id='vdaStats'; s.className='vda-stats';
+        s.innerHTML='<div class="vda-stat"><span>Total Balance</span><b id="vdaTotal">$0.00</b></div>'
+          +'<div class="vda-stat"><span>Available</span><b id="vdaAvail">$0.00</b></div>'
+          +'<div class="vda-stat"><span>P/L Today</span><b id="vdaToday">$0.00</b></div>';
+        balCard.appendChild(s);
+        const ctrl=document.createElement('div'); ctrl.className='vda-balctrl';
+        ctrl.innerHTML='<button class="vda-eye" id="vdaEye" type="button" title="Hide / show balance">'
+          +'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>'
+          +'<select class="vda-cur" id="vdaCur" title="Display currency"><option value="USDT">USDT</option><option value="GOLF">GOLF</option><option value="NOVA">NOVA</option><option value="ABC">ABC</option><option value="BTC">BTC</option><option value="ETH">ETH</option><option value="SOL">SOL</option></select>';
+        balCard.appendChild(ctrl);
+        $('vdaEye').addEventListener('click',()=>{
+          const on=document.body.classList.toggle('vanta-hide-balance');
+          const eyeOff='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+          const eyeOn='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+          $('vdaEye').innerHTML=on?eyeOff:eyeOn;
+        });
+        // Withdraw quick action inside vd-options (adds 4th tile)
+        const opts=q('.vd-options');
+        if(opts && !$('vdWdBtn')){
+          const w=document.createElement('button'); w.id='vdWdBtn'; w.className='vd-option wd'; w.type='button';
+          w.innerHTML='<div class="vd-oicon">↑</div>Withdraw';
+          opts.appendChild(w);
+          w.addEventListener('click',()=>{
+            if(window.vantaShowCoinAddress) window.vantaShowCoinAddress('USDT','withdraw',{},{});
+          });
+        }
+        // Invest action
+        const inv=document.createElement('button'); inv.id='vdInvestBtn'; inv.className='vd-option invest'; inv.type='button';
+        inv.innerHTML='<div class="vd-oicon">↗</div>Invest';
+        opts.appendChild(inv);
+        inv.addEventListener('click',()=>{
+          if(typeof vantaOpenConvert==='function') vantaOpenConvert('USDT','GOLF');
+          else if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT','GOLF');
+          else toast('Open the Wallet page to invest.');
+        });
+      }
+      const prices=window.vantaServerPrices||{};
+      let usdt=0, plat=0;
+      try{ usdt=Number(typeof balance!=='undefined'?balance:0)||0; }catch(e){}
+      vantaApi('/api/platform/coins').then(d=>{
+        if(!d)return;
+        plat=Number(d.total_platform_value||0);
+        let today=0;
+        const hist=(d.trades_today&&d.trades_today.length)?d.trades_today:[];
+        for(let k in hist){ today+=Number(hist[k].profit||0); }
+        const total=usdt+plat;
+        const setTxt=(id,val)=>{const el=$(id); if(el) el.textContent=val;};
+        const cur=$('vdaCur'); const conv=v=>{
+          const sym=cur&&cur.value?cur.value:'USDT';
+          if(sym==='USDT') return money(v);
+          const p=Number(prices[sym])||0;
+          return p>0? coinFmt(v/p)+' '+sym : money(v);
+        };
+        setTxt('vdaTotal',conv(total));
+        setTxt('vdaAvail',conv(usdt));
+        const realToday=_todayRealized();
+        const todayEl=$('vdaToday');
+        if(todayEl){ todayEl.textContent=(realToday>=0?'+':'')+conv(realToday); todayEl.style.color=realToday>=0?'var(--up)':'var(--down)'; }
+      }).catch(()=>{});
+      // Markets strip
+      if(!$('vtaMarkets')){
+        const sec=document.createElement('section'); sec.id='vtaMarkets'; sec.className='vta-markets vd-card';
+        sec.innerHTML='<div class="vd-card-head"><div class="vd-card-title">Popular Markets</div><button class="vd-link" id="vtaMarketsAll" type="button">See all →</button></div><div class="vta-mscroll" id="vtaMarketsScroll"><div class="vd-empty">Loading…</div></div>';
+        const grid=q('.vd-grid');
+        if(grid) grid.prepend(sec);
+        else balCard.after(sec);
+        $('vtaMarketsAll')?.addEventListener('click',()=>{ if(window.vantaSetPage) window.vantaSetPage('trading'); });
+      }
+      vantaApi('/api/platform/coins').then(d=>{
+        const sc=$('vtaMarketsScroll'); if(!sc)return;
+        const coins=d&&d.coins?d.coins:[];
+        if(!coins.length){ sc.innerHTML='<div class="vd-empty">Markets loading…</div>'; return; }
+        sc.innerHTML=coins.map(c=>{
+          const ch=Number(c.change_pct||0);
+          return '<div class="vta-ms" data-sym="'+esc(c.symbol)+'"><div class="vta-ms-top"><span class="vta-ms-sym">'+esc(c.symbol)+'</span>'+(c.tradeable!==false?'<span class="vta-ms-live">LIVE</span>':'')+'</div>'
+            +'<div class="vta-ms-name">'+esc(c.name)+'</div>'
+            +'<div class="vta-ms-price">'+coinFmt(Number(c.price||0))+'</div>'
+            +'<div class="vta-ms-chg '+(ch>=0?'up':'down')+'">'+(ch>=0?'+':'')+ch.toFixed(2)+'%</div></div>';
+        }).join('');
+        sc.querySelectorAll('.vta-ms').forEach(b=>b.addEventListener('click',()=>{
+          if(window.vantaOpenCoinScreen) window.vantaOpenCoinScreen(b.dataset.sym);
+        }));
+      }).catch(()=>{});
+      // Recent trading activity card
+      if(!$('vtaRecent')){
+        const sec=document.createElement('section'); sec.id='vtaRecent'; sec.className='vta-recent vd-card';
+        sec.innerHTML='<div class="vd-card-head"><div class="vd-card-title">Recent Trading Activity</div><button class="vd-link" id="vtaRecentLink" type="button">History →</button></div><div id="vtaRecentBody"><div class="vd-empty">Loading…</div></div>';
+        const grid2=q('.vd-grid');
+        if(grid2) grid2.appendChild(sec);
+        $('vtaRecentLink')?.addEventListener('click',()=>{ if(window.vantaSetPage) window.vantaSetPage('history'); });
+      }
+      vantaApi('/api/trade/history').then(h=>{
+        const body=$('vtaRecentBody'); if(!body)return;
+        const rows=(h||[]).slice(0,6);
+        if(!rows.length){ body.innerHTML='<div class="vd-empty">No trades yet — open the Trading page to start.</div>'; return; }
+        body.innerHTML=rows.map(t=>{
+          const p=Number(t.profit||0), won=t.status==='WON', los=t.status==='LOST';
+          return '<div class="vhmm-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:12px">'
+            +'<b style="min-width:34px">'+esc(t.symbol||'GOLF')+'</b>'
+            +'<span style="color:var(--muted)">'+(t.direction==='UP'?'BUY':'SELL')+'</span>'
+            +'<span style="font-weight:800;font-variant-numeric:tabular-nums">'+money(t.amount)+'</span>'
+            +'<span style="flex:1;text-align:right;font-weight:900;font-variant-numeric:tabular-nums;color:'+(won?'var(--up)':los?'var(--down)':'var(--muted)')+'">'+(won?'+':los?'−':'')+money(Math.abs(p))+'</span></div>';
+        }).join('');
+      }).catch(()=>{ body&&(body.innerHTML='<div class="vd-empty">Activity loading…</div>'); });
+    }catch(e){}
+  }
+
+  function _todayRealized(){
+    let total=0;
+    try{
+      const hist=window.__vantaHomeHist||[];
+      for(const t of hist){
+        const at=t.opened_at?Date.parse(String(t.opened_at).endsWith('Z')?t.opened_at:t.opened_at+'Z'):0;
+        if(at && new Date(at).toDateString()===new Date().toDateString()) total+=Number(t.profit||0);
+      }
+    }catch(e){}
+    return total;
+  }
+
+  /* Keep home data warm */
+  function vantaRefreshHomeData(){
+    if(!$('vantaDashPage')||!$('vantaDashPage').classList.contains('vw-active'))return;
+    vantaApi('/api/trade/history').then(h=>{ window.__vantaHomeHist=(h||[]); }).catch(()=>{});
+    if(window.vantaRenderTradingPage) vantaRenderTradingPage('trading');
+  }
+  if(window.vantaRefreshDashboard){
+    const _orig=window.vantaRefreshDashboard;
+    window.vantaRefreshDashboard=function(){ try{ if(_orig)_orig(); }catch(e){} vantaRenderHomeExtra(); };
+  }
+
+  /* ---------- Trading screen: Position / P&L card (real live data) ---------- */
+  function ensurePosCard(){
+    if(!mainEl) return;
+    let pos=$('vtaPosCard');
+    if(!pos){
+      pos=document.createElement('section'); pos.id='vtaPosCard'; pos.className='vta-pos';
+      pos.innerHTML='<div class="vta-pos-head"><div class="vta-pos-title">Position</div><span class="vta-livechip"><i class="vta-live-dot"></i>LIVE</span></div>'
+        +'<div class="vta-pos-grid">'
+        +'<div class="vta-pos-cell"><span>Invested</span><b id="vtaPInv">$0.00</b></div>'
+        +'<div class="vta-pos-cell"><span>Current Value</span><b id="vtaPVal">$0.00</b></div>'
+        +'<div class="vta-pos-cell"><span>Profit / Loss</span><b id="vtaPPnl">+$0.00</b></div>'
+        +'<div class="vta-pos-cell"><span>Percentage</span><b id="vtaPPct">+0.00%</b></div>'
+        +'<div class="vta-pos-cell"><span>Open Trades</span><b id="vtaPOpn">0</b></div>'
+        +'</div>'
+        +'<div class="vta-pos-rows" id="vtaPosRows"></div>'
+        +'<div class="vta-pos-note" id="vtaPosNote">Open positions settle automatically at the next market tick by the server — live P/L below tracks the real market price.</div>';
+      const openSection=q('.open-section');
+      if(openSection && openSection.parentNode) mainEl.insertBefore(pos, openSection);
+      else mainEl.appendChild(pos);
+    }
+  }
+  function updatePosCard(){
+    if(!mainEl || mainEl.style.display==='none') return;
+    ensurePosCard();
+    const sym=window.vantaActiveCoin||'GOLF';
+    const tradesArr=(typeof trades!=='undefined'?trades:[]).filter(t=>(t.symbol||'GOLF')===sym);
+    const price=(typeof currentPrice!=='undefined'&&!isNaN(currentPrice))?Number(currentPrice):0;
+    let invested=0, value=0, pl=0, pct=0;
+    const rows=[]; let rowsHtml='';
+    tradesArr.forEach(t=>{
+      const amt=Number(t.amount||0);
+      const entry=Number(t.entryPrice||0);
+      if(!entry||!amt)return;
+      const dir=t.direction==='UP'?1:-1;
+      const est=(price/entry)*amt;
+      invested+=amt;
+      const pnl=(dir*(price-entry)/entry)*amt;
+      const val=amt+pnl;
+      value+=val; pl+=pnl;
+      rows.push({dir:dir>0?'BUY':'SELL', id:t.id, entry, amt, pnl, val});
+    });
+    pct=invested>0?(value/invested-1)*100:0;
+    const setN=(id,v)=>{const el=$(id); if(el) el.textContent=v;};
+    setN('vtaPInv',money(invested));
+    setN('vtaPVal',money(value));
+    setN('vtaPPnl',(pl>=0?'+':'')+money(pl));
+    const pnlEl=$('vtaPPnl'); if(pnlEl) pnlEl.style.color=pl>=0?'var(--up)':'var(--down)';
+    setN('vtaPPct',(pct>=0?'+':'')+pct.toFixed(2)+'%');
+    const pctEl=$('vtaPPct'); if(pctEl) pctEl.style.color=pct>=0?'var(--up)':'var(--down)';
+    setN('vtaPOpn',String(tradesArr.length));
+    const rowsBox=$('vtaPosRows');
+    if(rowsBox){
+      if(!rows.length){ rowsBox.innerHTML='<div class="vd-empty">No open position on '+esc(sym)+'. Use BUY or SELL below to open one.</div>'; }
+      else{
+        rowsBox.innerHTML=rows.map(r=>
+          '<div class="vta-pos-row"><span class="vtag '+(r.dir==='BUY'?'buy':'sell')+'">'+r.dir+'</span>'
+          +'<span class="vmid">'+esc(r.id)+' · entry '+coinFmt(r.entry)+' · mark '+coinFmt(price)+'</span>'
+          +'<span class="vval">'+money(r.val)+'</span>'
+          +'<span class="vpl '+(r.pnl>=0?'up':'down')+'">'+(r.pnl>=0?'+':'')+money(r.pnl)+'</span></div>'
+        ).join('');
+      }
+    }
+    const note=$('vtaPosNote');
+    if(note) note.textContent=rows.length
+      ? 'Live unrealized P/L from the real server price. Positions settle automatically by the engine — loss is shown in red so you can act before it hits zero.'
+      : 'Open positions settle automatically at the next market tick by the server — P/L below tracks the real market price.';
+  }
+
+  /* ---------- Wallet: per-coin deposit/withdraw (real config or Not Provided Yet) ---------- */
+  function vantaPostProcessWallet(){
+    const list=$('vwCoinList'); if(!list) return;
+    qa('.vw-coin[data-coin]',list).forEach(row=>{
+      if(row.querySelector('.vw-dw-row')) return;
+      const sym=(row.getAttribute('data-symbol')||'').toUpperCase();
+      if(!sym) return;
+      const dw=document.createElement('div'); dw.className='vw-dw-row';
+      dw.innerHTML='<button class="vw-dw-btn" type="button" data-dw="deposit">Deposit</button><button class="vw-dw-btn" type="button" data-dw="withdraw">Withdraw</button>';
+      row.appendChild(dw);
+      dw.querySelector('[data-dw="deposit"]').addEventListener('click',e=>{ e.stopPropagation(); vantaCoinAddr(sym,'deposit'); });
+      dw.querySelector('[data-dw="withdraw"]').addEventListener('click',e=>{ e.stopPropagation(); vantaCoinAddr(sym,'withdraw'); });
+    });
+    // address line under each standard coin (real address or Not Provided Yet)
+    qa('.vw-coin[data-coin]',list).forEach(row=>{
+      if(row.querySelector('.vw-addr-line')) return;
+      const sym=(row.getAttribute('data-symbol')||'').toUpperCase(); if(!sym) return;
+      const line=document.createElement('div'); line.className='vw-addr-line';
+      line.style.cssText='grid-column:1 / -1;font-size:9px;color:var(--muted);margin-top:4px;text-align:center';
+      line.textContent='Not Provided Yet';
+      row.appendChild(line);
+    });
+  }
+  async function vantaCoinAddr(sym,mode){
+    let layout=window.vantaWalletLayout;
+    if(!layout){
+      try{ layout=await vantaApi('/api/wallet/layout'); window.vantaWalletLayout=layout; }catch(e){ layout=null; }
+    }
+    const dep=(layout&&layout.deposit_addresses)||{};
+    const wd=(layout&&layout.withdraw_addresses)||{};
+    if(window.vantaShowCoinAddress) window.vantaShowCoinAddress(sym,mode,dep,wd);
+    else toast('Address service is loading — try again.');
+  }
+  if(window.vantaRefreshWalletSplit){
+    const _ow=window.vantaRefreshWalletSplit;
+    window.vantaRefreshWalletSplit=function(){ try{ _ow.apply(this,arguments); }catch(e){} setTimeout(vantaPostProcessWallet,150); };
+  }
+
+  /* ---------- Wiring hooks & poll ---------- */
+  function vantaUxLoop(){
+    ensureLiveChip();
+    ensurePosCard();
+    updatePosCard();
+    if(mainEl && mainEl.style.display!=='none'){
+      // keep switch clearing stale rows
+    }
+  }
+  setInterval(vantaUxLoop, 2000);
+
+  /* Re-run home render whenever dashboard becomes active */
+  if(window.vantaSetPage){
+    const _sp=window.vantaSetPage;
+    window.vantaSetPage=function(page){
+      _sp.apply(this,arguments);
+      if(page==='dashboard'){ setTimeout(()=>{ vantaRenderHomeExtra(); },60); }
+      if(page==='wallet'){ setTimeout(()=>{ vantaPostProcessWallet(); },250); }
+    };
+  }
 })();
 </script>
 

@@ -3353,19 +3353,22 @@ function buildDemoCandles(count, step, volatility, fromPrice) {
         }
         regime--;
         const open = price;
-        const pull = (anchor - open) * 0.004;
+        const pull = (anchor - open) * 0.009;
         const noise = random(-1, 1) * price * vol * 0.9;
         /* Momentum builds across a streak, then decays — long green / red
            runs alternate with pauses instead of a straight marching line. */
         momentum += (dir - momentum) * 0.25 + random(-1, 1) * 0.18;
-        let bodyDir = momentum * price * vol * random(1.1, 3.2);
+        /* FAT, KuCoin-style bodies: each candle carries a real multi-percent
+           move (roughly 4–9% of price) so the tape looks alive, with short
+           wicks so the visible rectangle dominates the bar. */
+        let bodyDir = momentum * price * vol * random(3.0, 7.2);
         const roll = random(0, 100);
-        if (roll < 7) bodyDir = -Math.sign(momentum || 1) * price * vol * random(0.5, 1.4);
+        if (roll < 7) bodyDir = -Math.sign(momentum || 1) * price * vol * random(1.0, 2.4);
         const gap = random(0, 100) >= 92 ? random(-1, 1) * price * vol * random(1, 2) : 0;
         const openEff = clamp(open + gap, floor, bandMax);
         let close = clamp(openEff + pull + noise + bodyDir, bandMin, bandMax);
         if (random(0, 100) >= 98) close = openEff + pull * 0.4;
-        const wick = price * Math.abs(random(0, vol * 0.7));
+        const wick = price * Math.abs(random(0, vol * 0.3));
         const high = Math.max(openEff, close) + wick;
         const low = Math.min(openEff, close) - wick;
         series.push({ open: openEff, high, low, close, timestamp: now - i * step });
@@ -3453,12 +3456,15 @@ async function vantaPollPrice() {
             if (dm.regimeLeft <= 0) {
                 const r = random(0, 100);
                 dm.dir = r < 46 ? 1 : (r < 92 ? -1 : 0);
-                dm.impulse = random(1, 3);
+                dm.impulse = random(1.2, 4);
                 dm.regimeLeft = 8000 + random(0, 22000);
             }
-            const drift = dm.dir * currentPrice * (0.00045 * dm.impulse) * (dt / 1000);
-            const shake = (Math.random() - 0.5) * currentPrice * 0.0022 * (dt / 1000);
-            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0016;
+            /* Noticeable per-tick moves so even a single new 1-minute candle
+               closes with a real multi-percent body — up too high and it
+               pins on the band, too low and bodies vanish again. */
+            const drift = dm.dir * currentPrice * (0.0008 * dm.impulse) * (dt / 1000);
+            const shake = (Math.random() - 0.5) * currentPrice * 0.004 * (dt / 1000);
+            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0032;
             next = clamp(currentPrice + drift + shake + pull, 0.08, VANTA_GOLF_OSC_HIGH - 0.02);
         } else {
             next = clamp(currentPrice + (Math.random() - 0.5) * currentPrice * 0.002, 0.02, currentPrice * 1.05);
@@ -3529,7 +3535,7 @@ function updateLiveCandle(now) {
            (that used to punch a fake giant jump into the newest candle). */
         const isGolf = !window.vantaActiveCoin || window.vantaActiveCoin === "GOLF";
         const floor = isGolf ? VANTA_GOLF_OSC_LOW : 0.02;
-        serverPrice = Math.max(floor, currentPrice + (Math.random() - 0.5) * currentPrice * 0.001);
+        serverPrice = Math.max(floor, currentPrice + (Math.random() - 0.5) * currentPrice * 0.003);
     }
 
     chartScaleNow = null;

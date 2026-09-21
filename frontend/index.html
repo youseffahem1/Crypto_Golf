@@ -2086,6 +2086,8 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
     ====================================================== -->
     <aside class="desktop-sidebar">
 
+        <button class="vanta-sidebar-close" id="vantaSidebarClose" type="button" aria-label="Close menu">×</button>
+
         <div class="brand">
             VANTA <span>TRADE</span>
         </div>
@@ -2138,6 +2140,12 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
     <header class="header">
 
         <div class="header-left">
+
+            <button class="vanta-nav-toggle" id="vantaNavToggle" type="button" aria-label="Open menu" aria-expanded="false">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M4 7h16M4 12h16M4 17h16"/>
+                </svg>
+            </button>
 
             <button class="profile" id="vantaAccountBtn" type="button" aria-haspopup="true" aria-expanded="false">
                 <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -2549,6 +2557,8 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
         <div class="nav-label">Messages</div>
     </button>
 </nav>
+
+<div class="vanta-nav-overlay" id="vantaNavOverlay" aria-hidden="true"></div>
 
 </div>
 
@@ -8839,6 +8849,182 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     if($('vantaMessagesPage')?.classList.contains('vw-active')) vantaRefreshMessages(false);
     if($('vantaDashPage')?.classList.contains('vw-active')){ if(typeof refreshBalance!=='function')return; refreshGolfCard(); }
   },15000);
+})();
+</script>
+
+<style id="vanta-mobile-responsive-css">
+/* =========================================================
+   VANTA TRADE — FULL MOBILE RESPONSIVE SYSTEM
+   Turns the desktop sidebar into a touch-friendly drawer on
+   phones/tablets, and tunes every size for small screens.
+   Keeps the desktop layout untouched.
+========================================================= */
+
+/* --- Hamburger toggle (mobile only) --- */
+.vanta-nav-toggle{
+  display:none;
+  width:40px;height:40px;flex:0 0 40px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--panel-2);
+  color:var(--muted);
+  place-items:center;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  padding:0;
+}
+.vanta-nav-toggle svg{width:20px;height:20px}
+
+/* --- Drawer close button (mobile only) --- */
+.vanta-sidebar-close{
+  display:none;
+  position:absolute;
+  top:max(15px,env(safe-area-inset-top));
+  right:14px;
+  width:34px;height:34px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:var(--panel-2);
+  color:var(--muted2);
+  font-size:19px;
+  line-height:1;
+  cursor:pointer;
+  z-index:2;
+  padding:0;
+  align-items:center;
+  justify-content:center;
+}
+.vanta-sidebar-close:active{transform:scale(.96)}
+
+/* --- Overlay --- */
+.vanta-nav-overlay{
+  position:fixed;inset:0;z-index:550;
+  background:rgba(3,6,14,.52);
+  -webkit-backdrop-filter:blur(3px);
+  backdrop-filter:blur(3px);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .24s ease;
+}
+.vanta-nav-overlay.open{opacity:1;pointer-events:auto}
+
+body.vanta-nav-lock{overflow:hidden}
+
+/* =========================================================
+   MOBILE / TABLET LAYOUT
+========================================================= */
+@media (max-width:899px){
+
+  .vanta-nav-toggle{display:grid}
+
+  .desktop-sidebar{
+    display:flex!important;
+    position:fixed!important;
+    top:0!important;left:0!important;bottom:0!important;
+    width:min(300px,86vw)!important;
+    padding:max(16px,env(safe-area-inset-top)) 15px max(20px,env(safe-area-inset-bottom))!important;
+    z-index:560;
+    transform:translateX(-104%);
+    transition:transform .26s cubic-bezier(.2,.8,.25,1);
+    box-shadow:26px 0 64px rgba(0,0,0,.45);
+    overflow-y:auto;
+  }
+  .desktop-sidebar.vanta-nav-open{transform:translateX(0)}
+  .vanta-sidebar-close{display:flex}
+
+  .side-balance{margin-bottom:14px}
+  .side-item{height:52px;font-size:13px;border-radius:13px}
+  .side-item svg{width:20px}
+  .brand{padding-right:44px}
+
+  /* Bottom nav: one full row of 4, comfy tap targets */
+  .bottom-nav{
+    grid-template-columns:repeat(4,1fr)!important;
+    padding-left:calc(6px + env(safe-area-inset-left));
+    padding-right:calc(6px + env(safe-area-inset-right));
+  }
+  .bottom-nav .nav-item{
+    max-width:none!important;
+    justify-self:stretch!important;
+    width:100%!important;
+  }
+  .nav-icon{width:38px;height:30px;border-radius:11px}
+  .nav-label{font-size:8px}
+
+  /* Page shells must sit below the compact header */
+  .vanta-wallet-page,.vanta-dash-page,.vanta-msg-page{top:66px!important}
+
+  /* Comfortable mobile paddings + sizes */
+  .main{padding:10px 10px 0}
+  .asset-bar{padding:0 10px}
+  .controls{padding:14px}
+  .open-section,.history-section{padding:16px 16px 18px!important}
+  .toast{top:74px!important;min-width:0}
+  .toast.result{min-width:240px}
+}
+
+@media (min-width:900px){
+  .vanta-nav-toggle{display:none}
+  .vanta-sidebar-close{display:none}
+  .vanta-nav-overlay{display:none}
+  body.vanta-nav-lock{overflow:auto}
+}
+
+/* Timeframe buttons never squeeze the chart tools row */
+@media (max-width:640px){
+  .timeframes .tf:nth-child(n+6){display:none}
+  .chart-tools{gap:4px}
+  .chart-tool{width:28px;height:28px}
+  .current-price{left:8px;bottom:8px;font-size:9px}
+}
+
+/* Keep the header tidy on small phones with the new hamburger */
+@media (max-width:430px){
+  .header{padding-left:10px;padding-right:10px;gap:0}
+  .header-left{gap:6px}
+  .header-right{gap:5px}
+  .wallet{display:none}
+  .header .icon-btn{width:34px;height:34px}
+  .vanta-nav-toggle{width:36px;height:36px;flex-basis:36px}
+  .header .profile{width:36px;height:36px}
+  .balance{font-size:14px}
+}
+</style>
+
+<script id="vanta-mobile-nav-js">
+(function(){
+  const sidebar=document.querySelector('.desktop-sidebar');
+  const overlay=document.getElementById('vantaNavOverlay');
+  const toggle=document.getElementById('vantaNavToggle');
+  const closeBtn=document.getElementById('vantaSidebarClose');
+  if(!sidebar)return;
+
+  const isOpen=()=>sidebar.classList.contains('vanta-nav-open');
+  function openNav(){
+    sidebar.classList.add('vanta-nav-open');
+    if(overlay) overlay.classList.add('open');
+    document.body.classList.add('vanta-nav-lock');
+    if(toggle) toggle.setAttribute('aria-expanded','true');
+  }
+  function closeNav(){
+    sidebar.classList.remove('vanta-nav-open');
+    if(overlay) overlay.classList.remove('open');
+    document.body.classList.remove('vanta-nav-lock');
+    if(toggle) toggle.setAttribute('aria-expanded','false');
+  }
+
+  if(toggle) toggle.addEventListener('click',()=> isOpen()?closeNav():openNav());
+  if(closeBtn) closeBtn.addEventListener('click',closeNav);
+  if(overlay) overlay.addEventListener('click',closeNav);
+
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeNav(); });
+
+  /* Selecting a page from the drawer closes it on mobile */
+  document.querySelectorAll('.side-item').forEach(it=>{
+    it.addEventListener('click',()=>{
+      if(window.innerWidth<900) closeNav();
+    });
+  });
 })();
 </script>
 

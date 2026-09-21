@@ -11864,7 +11864,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   .controls{padding:16px 14px 14px !important}
   .settings-row{grid-template-columns:1fr 1fr;gap:8px}
   .setting-box{height:58px}
-  .setting-box:last-of-type{grid-column:1 / -1;height:52px}
+  .controls .setting-box:last-of-type{grid-column:1 / -1;height:52px}
   .small-control{width:28px;height:32px}
   .trade-btn{min-height:58px}
   .mode-value{font-size:10.5px}
@@ -12379,111 +12379,161 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 .controls .setting-box:last-of-type{grid-column:auto !important}
 
 /* ==========================================================
-   RESPONSIVE — INFO CARDS ALWAYS STAY 3-UP (never stack)
-   PROFIT | INVESTED | MARKET CAP side-by-side at every width.
-   Charts-first: sections shrink, chart keeps the height.
+   FINAL RESPONSIVE — CHARTS-FIRST TRADING SCREEN
+   PROFIT | INVESTED | MARKET CAP stay side-by-side (never stack).
+   Everything above the chart stays compact; the chart is large.
 ========================================================== */
-@media (max-width:900px){
-  /* Three compact cards, side-by-side — denser on small screens. */
+html,body{overflow-x:hidden;max-width:100%}
+
+/* ---------- 1. Mobile shell: full width, no desktop max-width ---------- */
+@media (max-width:899px){
+  .main{width:100% !important;max-width:none !important}
+  .mobile-layout{width:100% !important;max-width:none !important}
+
+  /* Compact header — the chart must start as high as possible */
+  .header{height:54px !important;padding:0 10px !important}
+  .header-left{gap:6px}
+  .header-right{gap:4px}
+  .header .profile,.header .icon-btn{width:32px;height:32px;border-radius:10px !important}
+  .header .icon-btn svg{width:16px;height:16px}
+  .header .account{padding:3px 8px !important}
+  .header .account .balance{font-size:11px !important}
+  .vanta-mode-tag{min-width:34px;height:15px;font-size:8px;padding:0 6px}
+  .toast{top:68px !important}
+
+  /* Page shells track the shorter header */
+  .vanta-wallet-page,.vanta-dash-page,.vanta-msg-page,.vanta-admin-page{top:54px !important}
+
+  /* ---------- 2. Info cards: 3-up, flat, NEVER stack ---------- */
   .info-cards{
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:clamp(4px,1vw,12px);
-    margin-bottom:8px;
+    margin:0 0 6px;
   }
-  .info-card{padding:13px 12px 12px;gap:7px;border-radius:18px}
-  .ic-chip{width:26px;height:26px;border-radius:8px}
-  .ic-chip svg{width:13px;height:13px}
-  .ic-label{font-size:8px;letter-spacing:.11em}
-  .ic-badge{font-size:7.5px;padding:2px 7px;letter-spacing:.08em}
-  .ic-value{font-size:20px}
-  .ic-total,.ic-msg,.ic-sub{font-size:9.5px}
-  .ic-actions{gap:6px;margin-top:0}
-  .ic-btn{padding:8px 6px;font-size:9.5px;border-radius:10px;white-space:nowrap}
+  .info-card{padding:9px 8px 8px;gap:4px;border-radius:14px;min-height:0}
+  .ic-top{gap:4px}
+  .ic-top-left{gap:5px}
+  .ic-chip{width:20px;height:20px;border-radius:6px}
+  .ic-chip svg{width:10px;height:10px}
+  .ic-label{font-size:6.5px;letter-spacing:.06em}
+  .ic-badge{font-size:6.5px;padding:2px 5px}
+  .ic-value{font-size:17px}
+  .ic-total,.ic-msg,.ic-sub{font-size:8px}
+  .ic-actions{gap:4px;margin-top:0}
+  .ic-btn{padding:6px 3px;font-size:8px;border-radius:7px;white-space:nowrap}
 
-  /* Trade strip: Balance | Amount | Trade stays horizontal + compact. */
+  /* ---------- 3. Trade strip: BALANCE | AMOUNT | TRADE ---------- */
   .trade-strip{
-    grid-template-columns:minmax(0,1fr) minmax(130px,1.5fr) auto;
-    gap:8px;
-    margin-bottom:8px;
-  }
-  .ts-balance{padding:10px 12px;gap:4px}
-  .ts-label{font-size:8px}
-  .ts-value{font-size:16px}
-  .ts-trade{padding:0 15px}
-  .trade-strip .setting-box{min-height:58px;min-width:0}
-  .trade-strip .small-control{width:32px;height:36px;flex:0 0 32px}
-
-  .asset-bar{min-height:52px;margin-bottom:6px}
-}
-@media (max-width:560px){
-  .info-card{
-    padding:11px 10px 11px;
-    border-radius:15px;
+    grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) minmax(96px,auto);
     gap:6px;
+    margin-bottom:6px;
   }
-  .ic-label{font-size:7px}
-  .ic-chip{width:24px;height:24px;border-radius:7px}
-  .ic-chip svg{width:12px;height:12px}
-  .ic-value{font-size:18px}
-  .ic-total,.ic-msg,.ic-sub{font-size:9px}
-  .ic-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}
-  .ic-btn{font-size:8.5px;padding:7px 2px;letter-spacing:0;border-radius:9px;white-space:normal}
+  .ts-balance{padding:7px 9px;gap:2px;border-radius:12px;min-width:0}
+  .ts-label{font-size:7px;letter-spacing:.06em}
+  .ts-value{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ts-trade{min-height:46px;border-radius:13px;padding:0 8px;font-size:12px;min-width:0}
+  .ts-trade svg{width:14px;height:14px}
+  .trade-strip .setting-box{min-height:46px;min-width:0;border-radius:11px;padding:6px 3px}
+  .trade-strip .small-control{width:28px;height:34px;flex:0 0 28px;border-radius:8px}
+  .trade-strip .setting-label{font-size:6.5px;letter-spacing:.05em}
+  .trade-strip #amountInput{font-size:14px !important}
 
-  .trade-strip{grid-template-columns:minmax(0,1fr) minmax(118px,1.5fr) auto;gap:6px}
-  .ts-balance{padding:8px 9px}
-  .ts-label{font-size:7px;letter-spacing:.12em}
-  .ts-value{font-size:14px}
-  .ts-trade{padding:0 11px;font-size:12px}
-  .ts-trade svg{width:13px;height:13px}
-  .trade-strip .small-control{width:28px;height:34px;flex:0 0 28px}
-  .trade-strip .setting-label{font-size:7.5px}
+  /* ---------- 4. CHART: largest element on screen ---------- */
+  .chart-card{
+    height:clamp(320px,56dvh,640px);
+    min-height:320px;
+    padding:8px 8px 6px;
+    border-radius:16px !important;
+  }
 
-  .controls{padding:12px !important}
-  .mode-row{margin-bottom:10px}
-  .trade-buttons{grid-template-columns:1fr 46px 1fr;gap:6px}
-  .trade-btn{min-height:54px !important}
-}
-@media (max-width:420px){
-  .info-card{padding:10px 8px 10px}
-  .ic-badge{display:none}
-  .ic-sub{display:none}
-  .ic-value{font-size:16px}
-  .ic-actions{display:grid;grid-template-columns:1fr;gap:0}
-  .ic-btn.ic-btn-ghost{display:none}
-  .ic-total{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ic-msg{font-size:9px}
+  /* ---------- Asset bar (below the chart) ---------- */
+  .asset-bar{min-height:44px;margin-bottom:6px;padding:0 8px;gap:6px}
+  .gold-icon{width:30px;height:30px;border-radius:9px}
+  .gold-icon svg{width:15px}
+  .asset-name{font-size:14px}
+  .asset-meta{font-size:8.5px}
+  .asset-action{width:28px;height:28px}
 
-  .trade-strip{grid-template-columns:minmax(0,1fr) minmax(106px,1.5fr) auto;gap:5px}
-  .ts-balance{padding:7px 8px}
-  .ts-value{font-size:13px}
-  .ts-label{font-size:7px}
-  .ts-trade{padding:0 10px;font-size:11.5px}
-  .ts-trade svg{width:12px;height:12px}
-  .trade-strip .small-control{width:27px;height:32px;flex:0 0 27px}
+  /* ---------- 5. Timeframes + tools: one tidy top row ---------- */
+  .timeframes .tf:nth-child(n+6){display:none} /* keep 1m .. 1H only */
+  .timeframes{gap:2px;padding:3px;border-radius:10px;flex-wrap:nowrap}
+  .timeframes .tf{height:27px;min-width:0;padding:0 6px;font-size:9px;border-radius:8px}
+  .chart-tools{gap:3px}
+  .chart-tool{width:26px;height:26px;border-radius:8px}
+  .chart-tool svg{width:12px;height:12px}
 
-  .asset-actions .asset-action:nth-child(n+2){display:none}
-}
+  /* ---------- 6. Controls: compact order pad ---------- */
+  .controls{padding:12px 12px 10px !important;border-radius:16px !important}
+  .mode-row{padding:7px 10px;margin-bottom:8px;border-radius:12px}
+  .mode-title{font-size:9px}
+  .mode-value{font-size:10px;padding:4px 9px}
+  .settings-row{gap:6px}
+  .setting-box{height:50px;border-radius:11px;padding:0 6px}
+  .setting-label{font-size:8px}
+  .setting-value{font-size:14px !important}
+  .small-control{width:28px;height:30px;border-radius:8px !important;font-size:14px}
+  .profit-row{margin-top:6px;margin-bottom:5px;padding:8px 11px;border-radius:12px}
+  .profit-label{font-size:9px}
+  .profit-value{font-size:13px !important}
+  .trade-buttons{grid-template-columns:1fr 46px 1fr;gap:6px;margin-top:8px}
+  .trade-btn{min-height:54px !important;border-radius:13px !important;font-size:13px}
 
-/* ---- Full-width fixed bottom navigation (mobile app style) ---- */
-html{overflow-x:hidden}
-@media (max-width:899px){
+  /* ---------- 8. Bottom nav: full width, slim ---------- */
+  :root{--nav-height:56px}
   .bottom-nav{
-    left:0 !important;
-    right:0 !important;
-    bottom:0 !important;
-    width:100% !important;
-    max-width:none !important;
+    left:0 !important;right:0 !important;bottom:0 !important;
+    width:100% !important;max-width:none !important;
     grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+    height:calc(var(--nav-height) + env(safe-area-inset-bottom)) !important;
+    padding-top:4px;
+    padding-bottom:calc(4px + env(safe-area-inset-bottom));
     padding-left:calc(6px + env(safe-area-inset-left));
     padding-right:calc(6px + env(safe-area-inset-right));
   }
-  .bottom-nav .nav-item{
-    max-width:none !important;
-    width:100% !important;
-    justify-self:stretch !important;
-  }
+  .bottom-nav .nav-item{gap:1px}
+  .bottom-nav .nav-icon{width:30px !important;height:24px !important;border-radius:9px !important}
+  .bottom-nav .nav-icon svg{width:18px !important;height:18px !important}
+  .bottom-nav .nav-label{font-size:8px !important}
 }
 body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !important}
+
+/* ---------- 9. Small phones: tighter, still 3-up + horizontal strip ---------- */
+@media (max-width:400px){
+  .info-card{padding:8px 6px 7px}
+  .ic-label{font-size:6px}
+  .ic-value{font-size:15.5px}
+  .ic-badge{display:none}
+  .ic-sub{display:none}
+  .ic-actions{display:grid;grid-template-columns:1fr}
+  .ic-btn.ic-btn-ghost{display:none}
+  .ic-total{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ic-msg{font-size:7.5px}
+
+  .trade-strip{grid-template-columns:minmax(0,1fr) minmax(0,1.35fr) minmax(88px,auto);gap:4px}
+  .ts-balance{padding:6px 7px}
+  .ts-value{font-size:12.5px}
+  .ts-label{font-size:6.5px}
+  .ts-trade{min-height:44px;font-size:11.5px;padding:0 5px}
+  .trade-strip .small-control{width:26px;height:32px;flex:0 0 26px}
+  .trade-strip .setting-label{font-size:6px}
+
+  .chart-card{height:clamp(300px,54dvh,620px);min-height:300px}
+
+  .asset-actions .asset-action:nth-child(n+2){display:none}
+  .asset-action{width:26px;height:26px}
+  .controls{padding:10px 10px 8px !important}
+  .trade-btn{min-height:52px !important}
+}
+
+/* ---------- 10. Short / landscape screens stay usable ---------- */
+@media (max-height:560px) and (orientation:landscape) and (max-width:899px){
+  .chart-card{height:clamp(180px,62dvh,420px);min-height:180px}
+  .candle-timer{display:none}
+}
+
+/* prevent horizontal overflow; grid/flex children compressible */
+.main,.mobile-layout,.info-cards,.info-card,.ic-top,.trade-strip,.ts-balance,
+.ts-trade,.trade-strip .setting-box,.controls,.mode-row,.profit-row,.chart-card{min-width:0}
 </style>
 
 <script id="vanta-info-cards-js">

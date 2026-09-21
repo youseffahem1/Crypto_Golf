@@ -11050,6 +11050,198 @@ button{cursor:pointer}
 }
 </style>
 
+<!-- =========================================================
+     SPACING & LAYOUT OVERHAUL — airy, modern trading-app rhythm
+========================================================== -->
+<style id="vanta-ux-layout-css">
+
+/* ---------- Page shells: breathing room & safe edges ---------- */
+.vanta-dash-page,.vanta-msg-page{padding:20px 16px 38px !important}
+.vanta-wallet-page{padding:20px 16px 38px !important}
+.vd-wrap{width:min(1000px,100%) !important;gap:22px}
+.vw-container{width:min(1140px,100%) !important}
+.vtp-inner,.vhp-inner{gap:22px !important}
+.vhp-inner,.vtp-inner{padding:0 16px !important}
+.vw-page-head,.vd-head,.vhp-head{margin-bottom:8px;gap:14px}
+.vw-page-title{font-size:26px !important}
+.vw-page-sub{font-size:13px;margin-top:6px}
+.vd-title{font-size:26px}
+.vd-sub{font-size:12.5px;margin-top:6px}
+.vd-live,.vw-market-status{height:32px;padding:0 15px !important;font-size:11px}
+.main{padding:18px 16px 40px;max-width:1200px}
+
+/* ---------- Cards: bigger padding, softer radius, premium shadow ---------- */
+.vd-grid{gap:18px}
+.vd-card{padding:24px 24px 22px !important;border-radius:22px !important}
+.vd-card-head{margin-bottom:18px}
+.vd-card-title{font-size:14px}
+.vd-golf-price{font-size:36px;margin-top:8px}
+.vd-golf-change{font-size:12.5px;margin-top:6px}
+.vd-kpi{padding:13px 0}
+.vd-kpi span{font-size:12.5px}
+.vd-kpi b{font-size:14.5px}
+.vd-empty{padding:26px 8px;font-size:13px}
+.vw-market-card,.vw-card{padding:26px 24px !important;border-radius:22px !important}
+.vw-market-title{font-size:16px}
+.vw-market-note{font-size:12.5px}
+.vw-card-title{font-size:14.5px}
+.vw-lower{gap:20px}
+#vtaMarkets,#vtaRecent{grid-column:1 / -1}
+
+/* ---------- Home balance ---------- */
+.vd-balance{padding:32px 28px !important;border-radius:26px !important}
+.vd-balance-value{font-size:48px;margin-top:16px}
+.vd-balance-value small{font-size:16px;margin-left:3px}
+.vd-balance-note{margin-top:16px;font-size:12px;line-height:1.65}
+.vd-cap{height:28px;padding:0 14px;font-size:10.5px}
+.vda-stats{gap:14px;margin-top:26px;padding-top:20px;border-top:1px dashed var(--line)}
+.vda-stat{padding:16px 18px;border-radius:18px}
+.vda-stat b{font-size:19px}
+.vda-stat span{font-size:10.5px;letter-spacing:.1em;margin-top:3px}
+.vda-balctrl{margin-top:18px;gap:10px}
+.vda-eye,.vda-cur{height:36px;border-radius:11px;font-size:12.5px}
+.vd-options{gap:12px;margin-top:24px}
+.vd-option{min-height:88px;border-radius:18px;padding:16px 14px;gap:10px;font-size:12.5px}
+.vd-option.invest{grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:center;gap:12px;min-height:64px;font-size:13.5px;margin-top:2px}
+.vd-oicon{width:38px;height:38px;border-radius:12px}
+
+/* ---------- Markets strip ---------- */
+.vta-markets .vd-card-head{margin-bottom:14px}
+.vta-mscroll{gap:12px;padding:4px 2px 10px}
+.vta-ms{flex-basis:152px;padding:16px;border-radius:18px}
+.vta-ms-sym{font-size:14px}
+.vta-ms-price{font-size:17px;margin-top:12px}
+
+/* ---------- Coin rows: taller, airy, touch-friendly ---------- */
+.vw-coins{padding:6px 0 2px}
+.vw-coin{
+  grid-template-columns:minmax(190px,1.35fr) minmax(105px,.55fr) minmax(100px,.45fr) auto;
+  gap:18px;padding:19px 22px !important;border-radius:18px !important;margin-bottom:2px;
+}
+.vw-coin-logo{width:46px;height:46px;flex:0 0 46px;border-radius:15px;font-size:17px}
+.vw-coin-symbol{font-size:14px;letter-spacing:.01em}
+.vw-coin-name{font-size:11px;margin-top:4px}
+.vw-price{font-size:15px}
+.vw-price small{font-size:10px;margin-top:4px}
+.vw-change{font-size:12.5px}
+.vw-trend{padding:4px 7px;font-size:8px;border-radius:7px}
+.vw-coin-action{height:42px;padding:0 20px;border-radius:12px !important;font-size:11px}
+.vw-dw-row{gap:10px;margin-top:12px}
+.vw-dw-btn{height:40px;border-radius:11px;font-size:11.5px}
+.vw-addr-line{margin-top:4px !important;font-size:11px !important}
+
+/* ---------- Mobile coin rows: stacked, spacious, no crowding ---------- */
+@media (max-width:600px){
+  .vw-coin{
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:"main main" "price change" "acts acts";
+    row-gap:14px;column-gap:14px;padding:18px 18px !important;
+  }
+  .vw-coin-main{grid-area:main}
+  .vw-price{grid-area:price}
+  .vw-change{grid-area:change;align-self:center}
+  .vw-coin-action{grid-area:acts;width:100%;height:44px}
+  .vw-dw-row{width:100%}
+}
+
+/* ---------- Trading screen ---------- */
+.asset-bar{padding:14px 20px !important;border-radius:20px !important;gap:12px;margin-bottom:14px}
+.asset-name{font-size:19px}
+.asset-name .payout{font-size:14px;margin-left:8px}
+.asset-meta{font-size:11.5px;margin-top:4px}
+.asset-info{gap:4px}
+.gold-icon{width:46px;height:46px;border-radius:15px;font-size:19px}
+.chart-card{padding:18px 20px 14px !important;border-radius:22px !important}
+.chart-tool{width:38px;height:38px;border-radius:11px}
+.timeframes{gap:6px;padding:5px;border-radius:14px}
+.tf{height:36px;min-width:46px;padding:0 15px;border-radius:10px;font-size:12.5px}
+.controls{
+  max-width:640px !important;padding:26px 24px !important;border-radius:22px !important;
+}
+.controls-head{font-size:14px}
+.controls-note,.payout-note{font-size:12px}
+.amount-input{height:56px;font-size:20px;border-radius:15px !important}
+.quick-amount{height:44px;padding:0 16px;border-radius:12px !important;font-size:12.5px}
+.small-control{height:50px;border-radius:12px !important}
+.trade-buttons{gap:10px;margin-top:16px}
+.trade-btn{min-height:58px;font-size:15px;border-radius:16px !important}
+.vta-pos{padding:24px;border-radius:22px;margin-top:20px}
+.vta-pos-title{font-size:14px}
+.vta-pos-grid{gap:10px;margin-top:4px}
+.vta-pos-cell{padding:15px 16px;border-radius:16px}
+.vta-pos-cell b{font-size:16px}
+.vta-pos-cell span{font-size:9.5px;margin-bottom:3px}
+.vta-pos-row{padding:15px 16px;border-radius:14px;font-size:13px}
+.open-section,.history-section{margin-top:2px}
+.section-title{font-size:13.5px}
+.open-trade,.history-item{border-radius:18px !important}
+.global-pnl,.section-count{border-radius:99px}
+
+/* ---------- Wallet extra ---------- */
+.vw-page-head{margin-bottom:10px}
+.vw-quick{gap:10px}
+.vw-action{min-height:66px;border-radius:16px;font-size:13px}
+.vfx-wallet-row{gap:16px}
+.vfx-usdt-balance{font-size:34px}
+.vfx-hold{padding:16px;border-radius:14px}
+.vfx-w-col-head strong{font-size:14px}
+.vfx-action{height:46px !important;border-radius:14px !important;font-size:13px !important}
+
+/* ---------- Modals / inputs / buttons: roomier ---------- */
+.vw-modal-box,.vfx-modal-box,.vadm-modal-box,.vtp-modal-card,.vl-auth-card{
+  padding:28px !important;border-radius:26px !important;max-width:430px !important;
+}
+.vw-modal-title,.vfx-modal-title{font-size:18px;margin-bottom:6px}
+.vw-input,.vfx-input{height:48px;border-radius:13px !important;font-size:13.5px}
+.vw-btn,.vfx-btn{height:50px;border-radius:14px !important;font-size:13.5px}
+.vw-modal-actions,.vfx-modal-actions{gap:12px;margin-top:18px}
+
+/* ---------- Messages ---------- */
+.vm-pane{border-radius:22px}
+.vm-pane-head{padding:20px 22px}
+.vm-title{font-size:17px}
+.vm-sub{font-size:11.5px;margin-top:5px}
+.vm-search input{height:46px;border-radius:13px;font-size:13px}
+.vm-convo{padding:15px 18px;gap:14px}
+.vm-avatar{width:44px;height:44px;border-radius:14px;font-size:16px}
+.vm-empty{padding:30px;font-size:13px}
+.vh-item{padding:14px 16px}
+.vh-item .vhm,.vta-recent .vhm{padding:11px 2px;font-size:12.5px}
+.vhp-tabs{gap:8px;padding:4px}
+.vhp-tab{height:38px;padding:0 18px;font-size:12.5px}
+
+/* ---------- Bottom nav ---------- */
+.nav-item{gap:5px;font-size:10.5px}
+.nav-icon{width:38px;height:26px}
+
+/* ---------- Premium hover lift (subtle) ---------- */
+.vd-card,.vw-market-card,.vw-card,.vtp-card,.vta-ms{box-shadow:0 14px 34px rgba(0,0,0,.28)}
+.vd-card:hover,.vw-coin:hover,.vtp-coin:hover{transform:translateY(-2px)}
+.vda-stat b{font-variant-numeric:tabular-nums}
+
+/* ---------- Responsive tighten for tiny screens ---------- */
+@media (max-width:360px){
+  .vanta-dash-page,.vanta-wallet-page,.vanta-msg-page{padding:16px 12px 32px !important}
+  .vd-balance{padding:24px 20px !important}
+  .vd-balance-value{font-size:40px}
+  .vd-option{min-height:74px;padding:12px 10px;font-size:11px}
+  .vda-stat{padding:12px 13px}
+  .vda-stat b{font-size:16px}
+  .vw-coin{padding:16px 14px !important}
+  .vw-card{padding:20px 18px !important}
+}
+@media (max-width:430px){
+  .vd-option small{display:none !important}
+  .vd-options{grid-template-columns:repeat(4,1fr);gap:8px;margin-top:20px}
+  .vd-option{min-height:82px}
+}
+@media (min-width:900px){
+  .vanta-dash-page,.vanta-msg-page,.vanta-wallet-page{padding:36px 30px 52px !important}
+  .main{padding:28px 26px 48px}
+  .vd-wrap{width:min(1080px,100%) !important}
+}
+</style>
+
 <script id="vanta-ux-redesign-js">
 (function(){
   const $=id=>document.getElementById(id);

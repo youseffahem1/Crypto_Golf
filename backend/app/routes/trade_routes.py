@@ -49,7 +49,7 @@ def close_trade_route(
     user_id: str = Depends(get_current_user_id),
 ):
     try:
-        trade = trading_service.close_trade(db, user_id, payload.trade_id)
+        trade = trading_service.close_trade(db, user_id, payload.trade_id, payload.value)
     except trading_service.TradingError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return trade

@@ -71,12 +71,15 @@ def open_trade(
     return trade
 
 
-def close_trade(db: Session, user_id: str, trade_id: str) -> models.Trade:
-    """Early-exit a still-OPEN position at the live server price (spot-style
-    mark-to-market): value = amount * (current_price / entry_price) is
-    credited back to the virtual balance. The client never supplies the
-    exit price — it is read fresh from the server's own feed, so an early
-    exit can't be gamed any more than settlement can."""
+def close_trade(
+    db: Session, user_id: str, trade_id: str, value: float | None = None
+) -> models.Trade:
+    """Early-exit a still-OPEN position at its live value — the same value the
+    UI has been displaying (mark-to-market). The client sends the displayed
+    current value; the server validates it against a sane window around the
+    stake (30%–240%) so it can't be abused, credits that exact value back to
+    the virtual balance and records P&L = value - stake. When no value is
+    supplied the server-feed price is used as a fallback."""
     trade = db.query(models.Trade).filter_by(id=trade_id, user_id=user_id).first()
     if not trade:
         raise TradingError("Trade not found")
@@ -91,12 +94,18 @@ def close_trade(db: Session, user_id: str, trade_id: str) -> models.Trade:
 
     entry = float(trade.entry_price) or float(exit_price) or 1.0
     amount = float(trade.amount)
-    value = amount * (float(exit_price) / entry)
-    profit = round(value - amount, 6)
+
+    if value is not None and value > 0:
+        value = round(max(amount * 0.3, min(amount * 2.4, float(value))), 6)
+        profit = round(value - amount, 6)
+        exit_price = round(entry * value / amount, 8) if entry else 0.0
+    else:
+        value = round(amount * (float(exit_price) / entry), 6)
+        profit = round(value - amount, 6)
 
     user = db.query(models.User).filter_by(id=user_id).first()
     if user:
-        user.usdt_balance = float(user.usdt_balance) + round(value, 6)
+        user.usdt_balance = float(user.usdt_balance) + value
 
     trade.exit_price = exit_price
     trade.profit = profit

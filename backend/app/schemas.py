@@ -68,6 +68,11 @@ class TradeOpenRequest(BaseModel):
 
 class TradeCloseRequest(BaseModel):
     trade_id: str
+    # Optional live value at the moment of the early exit. When supplied, the
+    # server settles at exactly this figure (the same mark-to-market number the
+    # UI has been showing) so display, wallet credit, P&L and history always
+    # agree. It is still validated/clamped server-side — never trusted blindly.
+    value: Optional[float] = Field(default=None, gt=0)
 
 
 class TradeOut(BaseModel):

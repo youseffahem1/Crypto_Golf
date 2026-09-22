@@ -3532,12 +3532,12 @@ async function vantaPollPrice() {
             /* Noticeable per-tick moves so even a single new 1-minute candle
                closes with a real multi-percent body — up too high and it
                pins on the band, too low and bodies vanish again. */
-            const drift = dm.dir * currentPrice * (0.0008 * dm.impulse) * (dt / 1000);
-            const shake = (Math.random() - 0.5) * currentPrice * 0.004 * (dt / 1000);
-            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0042;
+            const drift = dm.dir * currentPrice * (0.0017 * dm.impulse) * (dt / 1000);
+            const shake = (Math.random() - 0.5) * currentPrice * 0.006 * (dt / 1000);
+            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0032;
             next = clamp(currentPrice + drift + shake + pull, 0.08, VANTA_GOLF_OSC_HIGH - 0.02);
         } else {
-            next = clamp(currentPrice + (Math.random() - 0.5) * currentPrice * 0.002, 0.02, currentPrice * 1.05);
+            next = clamp(currentPrice + (Math.random() - 0.5) * currentPrice * 0.004, 0.02, currentPrice * 1.05);
         }
         serverPrice = next;
     }
@@ -3608,7 +3608,7 @@ function updateLiveCandle(now) {
            (that used to punch a fake giant jump into the newest candle). */
         const isGolf = !window.vantaActiveCoin || window.vantaActiveCoin === "GOLF";
         const floor = isGolf ? VANTA_GOLF_OSC_LOW : 0.02;
-        serverPrice = Math.max(floor, currentPrice + (Math.random() - 0.5) * currentPrice * 0.003);
+        serverPrice = Math.max(floor, currentPrice + (Math.random() - 0.5) * currentPrice * 0.006);
     }
 
     chartScaleNow = null;
@@ -3650,7 +3650,7 @@ function updateLiveCandle(now) {
     lastFrameTime = now;
 
     previousPrice = currentPrice;
-    currentPrice += (serverPrice - currentPrice) * Math.min(1, dt / 650);
+    currentPrice += (serverPrice - currentPrice) * Math.min(1, dt / 420);
 
     candle.close = currentPrice;
     candle.high = Math.max(candle.high, currentPrice);
@@ -4576,17 +4576,22 @@ async function createTrade(direction) {
 
 function vantaInitValueWalk(amount) {
     const base = Number(amount) || 0;
-    const bias = (Math.random() * 2 - 1) * 0.08;
+    const bias = (Math.random() * 2 - 1) * 0.04;
     return {
         base,
         value: base,
         bias,
         dir: Math.random() < 0.5 ? 1 : -1,
-        impulse: 1.6 + Math.random() * 2.8,
-        regimeLeft: 2000 + Math.random() * 5000,
+        impulse: vantaPickImpulse(),
+        regimeLeft: 3000 + Math.random() * 7000,
         lastAt: performance.now(),
         seeded: false
     };
+}
+
+function vantaPickImpulse() {
+    const roll = Math.random();
+    return roll < 0.4 ? 1.6 + Math.random() * 2.4 : 0.4 + Math.random() * 0.8;
 }
 
 function vantaWalkValue(trade) {
@@ -4611,15 +4616,15 @@ function vantaStepTradesValues() {
         if (w.regimeLeft <= 0) {
             const r = Math.random() * 100;
             w.dir = r < (47 + w.bias * 100) ? 1 : (r < (94 + w.bias * 100) ? -1 : 0);
-            w.impulse = 1.6 + Math.random() * 2.8;
-            w.regimeLeft = 2000 + Math.random() * 5000;
+            w.impulse = vantaPickImpulse();
+            w.regimeLeft = 3000 + Math.random() * 7000;
         }
 
-        const drift = w.dir * w.value * w.impulse * 0.010 * (dt / 1000);
-        const noise = (Math.random() - 0.5) * w.value * (0.006 + w.impulse * 0.0025) * (dt / 1000);
-        const pull = (w.base - w.value) * 0.006 * (dt / 1000);
+        const drift = w.dir * w.value * w.impulse * 0.004 * (dt / 1000);
+        const noise = (Math.random() - 0.5) * w.value * (0.002 + w.impulse * 0.001) * (dt / 1000);
+        const pull = (w.base - w.value) * 0.012 * (dt / 1000);
         let next = w.value + drift + noise + pull;
-        next = Math.max(Math.min(next, w.base * 2.5), w.base * 0.25);
+        next = Math.max(Math.min(next, w.base * 2.2), w.base * 0.35);
         w.value = next;
     }
 }
@@ -4693,7 +4698,7 @@ async function closePositions(list) {
         try {
             sold = await vantaApi("/api/trade/close", {
                 method: "POST",
-                body: JSON.stringify({ trade_id: t.id })
+                body: JSON.stringify({ trade_id: t.id, value: closeValueFor(t) })
             });
         } catch (e) {
             __vantaClosing.delete(t.id);

@@ -816,6 +816,28 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+.open-live {
+    margin-top: 5px;
+    font-size: 16px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    color: var(--green);
+    text-align: center;
+}
+
+.open-sell {
+    display: block;
+    margin: 8px auto 0;
+    padding: 7px 26px;
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(180deg, #f6465d, #e0364f);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
 /* =========================================================
    HISTORY
 ========================================================= */
@@ -2476,8 +2498,8 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                     <div class="setting-box">
 
                         <div class="setting-content">
-                            <div class="setting-label">Potential Return</div>
-                            <div class="setting-value" id="potentialReturn">$182</div>
+                            <div class="setting-label">Live Value</div>
+                            <div class="setting-value" id="potentialReturn">$100</div>
                         </div>
 
                     </div>
@@ -3269,13 +3291,12 @@ function updateProfit() {
 
     const amount = getAmount();
 
-    const profit = amount * payout;
+    /* In exit trading the "value" of a stake starts at the stake and
+       only moves once a position is open (SELL returns stake × price/entry).
+       No fixed payout is promised anymore. */
+    if (profitAmount) profitAmount.textContent = money(amount);
 
-    const total = amount + profit;
-
-    if (profitAmount) profitAmount.textContent = money(profit);
-
-    potentialReturn.textContent = money(total);
+    potentialReturn.textContent = money(amount);
 
 }
 
@@ -4532,6 +4553,108 @@ async function createTrade(direction) {
 
 
 /* =========================================================
+   SELL / EARLY EXIT
+   SELL closes your open position(s) at the live value —
+   value = stake * (currentPrice / entryPrice) — and credits
+   that value straight back to the balance. Selling while the
+   candle is green banks the gain; selling while it's red
+   salvages what's left. If the timer reaches zero first, the
+   whole stake is lost (see vantaSettleDemoTrades / server
+   settle_due_trades).
+========================================================= */
+
+function closeValueFor(trade) {
+    const entry = Number(trade.entryPrice) || 0;
+    const now = (typeof currentPrice !== "undefined" && !isNaN(currentPrice) && Number(currentPrice) > 0)
+        ? Number(currentPrice)
+        : entry;
+    if (!entry) return Number(trade.amount) || 0;
+    return (Number(trade.amount) || 0) * (now / entry);
+}
+
+function sellOpenPositionById(id) {
+    const list = trades.filter(t => t.id === id && !t.result && !__vantaClosing.has(t.id));
+    if (!list.length) {
+        showToast("No open position to sell");
+        return;
+    }
+    closePositions(list);
+}
+
+function sellOpenPositions() {
+    const sym = window.vantaActiveCoin || "GOLF";
+    const list = trades.filter(t => (t.symbol || "GOLF") === sym && !t.result && !__vantaClosing.has(t.id));
+    if (!list.length) {
+        showToast("No open position to sell");
+        return;
+    }
+    closePositions(list);
+}
+
+const __vantaClosing = new Set();
+
+async function closePositions(list) {
+    if (accountMode === "demo") {
+        list.forEach(t => {
+            const value = closeValueFor(t);
+            const profit = value - Number(t.amount);
+            demoBalance += value;
+            vantaSaveDemoBalance();
+
+            history.unshift({
+                id: t.id, symbol: t.symbol || "GOLF", direction: t.direction,
+                amount: t.amount, profit, result: profit >= 0 ? "WIN" : "LOSS"
+            });
+            if (history.length > 5) history.pop();
+
+            removeTradeMarker(t);
+            trades = trades.filter(x => x.id !== t.id);
+            showToast(
+                `SOLD (Practice) • ${money(value)} ` +
+                (profit >= 0 ? "+" : "−") + money(Math.abs(profit))
+            );
+        });
+
+        updateBalance();
+        vantaRenderAccountPanel();
+        renderOpenTrades();
+        positionAllTrades();
+        renderHistory();
+        return;
+    }
+
+    for (const t of list) {
+        if (__vantaClosing.has(t.id)) continue;
+        __vantaClosing.add(t.id);
+        let sold;
+        try {
+            sold = await vantaApi("/api/trade/close", {
+                method: "POST",
+                body: JSON.stringify({ trade_id: t.id })
+            });
+        } catch (e) {
+            __vantaClosing.delete(t.id);
+            showToast(e.message || "Could not sell position");
+            continue;
+        }
+        __vantaClosing.delete(t.id);
+
+        removeTradeMarker(t);
+        trades = trades.filter(x => x.id !== t.id);
+        if (historySeen) historySeen.add(t.id); // we toast it now; suppress the next sync's duplicate
+
+        renderOpenTrades();
+        positionAllTrades();
+        showResultToast(sold.status === "WON", sold.profit || 0, sold.direction);
+    }
+
+    renderOpenTrades();
+    positionAllTrades();
+    refreshBalance();
+}
+
+
+/* =========================================================
    TRADE BUTTONS
 ========================================================= */
 
@@ -4542,11 +4665,21 @@ document.getElementById("upBtn")
     );
 
 
+/* SELL exits the open position(s) at the live value — it does
+   not open an opposite trade anymore. */
 document.getElementById("downBtn")
     .addEventListener(
         "click",
-        () => createTrade("DOWN")
+        () => sellOpenPositions()
     );
+
+/* Per-position SELL buttons inside the Open Trades list. */
+openTradesEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-exit]");
+    if (!btn) return;
+    e.stopPropagation();
+    sellOpenPositionById(btn.getAttribute("data-exit"));
+});
 
 
 /* =========================================================
@@ -4700,6 +4833,8 @@ function renderOpenTrades() {
             <div class="open-right">
                 <div class="open-amount">${money(trade.amount)}</div>
                 <div class="open-countdown" data-countdown="${trade.id}">${formatTime(remaining)}</div>
+                <div class="open-value" data-openval="${trade.id}">${money(closeValueFor(trade))}</div>
+                <button type="button" class="open-sell" data-exit="${trade.id}">SELL</button>
             </div>
         `;
 
@@ -4715,6 +4850,23 @@ function updateTrades() {
 
     const now =
         Date.now();
+
+    /* Live Value box: total sell-value of open positions on the active
+       coin right now (falls back to the stake amount when none are open). */
+    const liveValEl = document.getElementById("potentialReturn");
+    if (liveValEl) {
+        const lvSym = window.vantaActiveCoin || "GOLF";
+        const lv = trades.filter(t => (t.symbol || "GOLF") === lvSym);
+        const lvTotal = lv.length
+            ? lv.reduce((s, t) => s + closeValueFor(t), 0)
+            : getAmount();
+        liveValEl.textContent = money(lvTotal);
+        liveValEl.style.color = lv.length
+            ? (lvTotal >= lv.reduce((s, t) => s + Number(t.amount), 0)
+                ? "var(--up)"
+                : "var(--down)")
+            : "";
+    }
 
 
     /*
@@ -4756,6 +4908,34 @@ function updateTrades() {
                 formatTime(
                     remaining
                 );
+
+        }
+
+
+        const oval =
+            document.querySelector(
+                `[data-openval="${trade.id}"]`
+            );
+
+
+        if (oval) {
+
+            const v =
+                closeValueFor(
+                    trade
+                );
+
+            oval.textContent =
+                money(
+                    v
+                );
+
+            oval.style.color =
+                v >= Number(
+                    trade.amount
+                )
+                ? "var(--up)"
+                : "var(--down)";
 
         }
 
@@ -5011,20 +5191,21 @@ function vantaSettleDemoTrades() {
     if (!due.length) return;
 
     due.forEach(t => {
-        const won = t.direction === "UP" ? currentPrice > t.entryPrice : currentPrice < t.entryPrice;
-        const profit = won ? t.amount * payout : -t.amount;
-        if (won) demoBalance += t.amount + profit;
+        /* At expiry there is NO payout — if you didn't SELL early, the
+           whole stake is gone. Selling is the only way to collect value
+           (see closePositions). */
+        const profit = -t.amount;
         vantaSaveDemoBalance();
 
         history.unshift({
-            id: t.id, direction: t.direction, amount: t.amount,
-            profit, result: won ? "WIN" : "LOSS"
+            id: t.id, symbol: t.symbol || "GOLF", direction: t.direction, amount: t.amount,
+            profit, result: "LOSS"
         });
         if (history.length > 5) history.pop();
 
         trades = trades.filter(x => x.id !== t.id);
         removeTradeMarker(t);
-        showResultToast(won, profit, t.direction);
+        showResultToast(false, profit, t.direction);
     });
 
     updateBalance();
@@ -8815,7 +8996,7 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
         <button class="vd-option trade" id="vdTradeBtn" type="button">
           <div class="vd-oicon">▲</div>
           <div>Trade</div>
-          <small>UP / DOWN binary markets on GOLF — up to +93% payout.</small>
+          <small>Buy GOLF on the live chart, watch the value change in real time, and SELL to bank it before the timer runs out.</small>
         </button>
       </div>
     </section>
@@ -12017,10 +12198,17 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         +'<div class="vta-pos-cell"><span>Open Trades</span><b id="vtaPOpn">0</b></div>'
         +'</div>'
         +'<div class="vta-pos-rows" id="vtaPosRows"></div>'
-        +'<div class="vta-pos-note" id="vtaPosNote">Open positions settle automatically at the next market tick by the server — live P/L below tracks the real market price.</div>';
+        +'<div class="vta-pos-note" id="vtaPosNote">Buy while the candle is green, then SELL before the timer runs out to collect the live value. If the timer hits zero, the stake is gone.</div>';
       const openSection=q('.open-section');
       if(openSection && openSection.parentNode) openSection.parentNode.insertBefore(pos, openSection);
       else mainEl.appendChild(pos);
+      /* One delegated handler for every per-position SELL button inside the card. */
+      pos.addEventListener('click', ev=>{
+        const btn=ev.target.closest('[data-exit]');
+        if(!btn||typeof sellOpenPositionById!=='function') return;
+        ev.stopPropagation();
+        sellOpenPositionById(btn.getAttribute('data-exit'));
+      });
     }
   }
   function updatePosCard(){
@@ -12047,6 +12235,8 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     const setN=(id,v)=>{const el=$(id); if(el) el.textContent=v;};
     setN('vtaPInv',money(invested));
     setN('vtaPVal',money(value));
+    const valEl=$('vtaPVal');
+    if(valEl) valEl.style.color=(invested>0)?((value>=invested)?'var(--up)':'var(--down)'):'';
     setN('vtaPPnl',(pl>=0?'+':'')+money(pl));
     const pnlEl=$('vtaPPnl'); if(pnlEl) pnlEl.style.color=pl>=0?'var(--up)':'var(--down)';
     setN('vtaPPct',(pct>=0?'+':'')+pct.toFixed(2)+'%');
@@ -12054,20 +12244,21 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     setN('vtaPOpn',String(tradesArr.length));
     const rowsBox=$('vtaPosRows');
     if(rowsBox){
-      if(!rows.length){ rowsBox.innerHTML='<div class="vd-empty">No open position on '+esc(sym)+'. Use BUY or SELL below to open one.</div>'; }
+      if(!rows.length){ rowsBox.innerHTML='<div class="vd-empty">No open position on '+esc(sym)+'. Use BUY to stake and SELL to collect the live value.</div>'; }
       else{
         rowsBox.innerHTML=rows.map(r=>
           '<div class="vta-pos-row"><span class="vtag '+(r.dir==='BUY'?'buy':'sell')+'">'+r.dir+'</span>'
           +'<span class="vmid">'+esc(r.id)+' • entry '+coinFmt(r.entry)+' • mark '+coinFmt(price)+'</span>'
-          +'<span class="vval">'+money(r.val)+'</span>'
-          +'<span class="vpl '+(r.pnl>=0?'up':'down')+'">'+(r.pnl>=0?'+':'')+money(r.pnl)+'</span></div>'
+          +'<span class="vval '+(r.pnl>=0?'upcolor':'downcolor')+'">'+money(r.val)+'</span>'
+          +'<span class="vpl '+(r.pnl>=0?'up':'down')+'">'+(r.pnl>=0?'+':'')+money(r.pnl)+'</span>'
+          +'<button type="button" class="vclose" data-exit="'+esc(r.id)+'">SELL</button></div>'
         ).join('');
       }
     }
     const note=$('vtaPosNote');
     if(note) note.textContent=rows.length
-      ? 'Live unrealized P/L from the real server price. Positions settle automatically by the engine — loss is shown in red so you can act before it hits zero.'
-      : 'Open positions settle automatically at the next market tick by the server — P/L below tracks the real market price.';
+      ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL to bank it before the timer ends; if the timer hits zero the stake is gone.'
+      : 'Buy while the candle is green, then SELL before the timer runs out to collect the live value. If the timer hits zero, the stake is gone.';
   }
 
   /* ---------- Wallet: per-coin deposit/withdraw (real config or Not Provided Yet) ---------- */
@@ -12477,6 +12668,23 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
 /* prevent horizontal overflow; grid/flex children compressible */
 .main,.mobile-layout,.info-cards,.info-card,.ic-top,.trade-strip,.ts-balance,
 .ts-trade,.trade-strip .setting-box,.controls,.mode-row,.profit-row,.chart-card{min-width:0}
+
+/* ---------- 11. SELL / live-value (momentum exit trading) ---------- */
+.open-value{
+  font-size:10px;font-weight:900;font-variant-numeric:tabular-nums;margin-top:3px;
+  color:var(--up);
+}
+.open-sell,.vclose{
+  font-size:9px;font-weight:900;letter-spacing:.05em;line-height:1.4;cursor:pointer;
+  border-radius:8px;border:1px solid rgba(246,70,93,.45);
+  background:rgba(246,70,93,.12);color:var(--red);padding:3px 10px;
+  transition:background .15s ease,transform .13s ease;
+}
+.open-sell:hover,.vclose:hover{background:rgba(246,70,93,.22);transform:translateY(-1px)}
+.open-sell{margin-top:5px}
+.vta-pos-row .vval.upcolor{color:var(--up)}
+.vta-pos-row .vval.downcolor{color:var(--down)}
+.vclose{margin-left:auto;flex:0 0 auto}
 </style>
 
 <script id="vanta-info-cards-js">

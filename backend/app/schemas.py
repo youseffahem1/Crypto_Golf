@@ -66,6 +66,10 @@ class TradeOpenRequest(BaseModel):
     symbol: str = Field(default="GOLF", max_length=20)
 
 
+class TradeCloseRequest(BaseModel):
+    trade_id: str
+
+
 class TradeOut(BaseModel):
     id: str
     symbol: str = "GOLF"

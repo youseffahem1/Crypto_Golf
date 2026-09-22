@@ -40,3 +40,16 @@ def trade_history(
     if symbol:
         q = q.filter(models.Trade.symbol == symbol.strip().upper())
     return q.order_by(models.Trade.settled_at.desc()).limit(100).all()
+
+
+@router.post("/close", response_model=schemas.TradeOut)
+def close_trade_route(
+    payload: schemas.TradeCloseRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        trade = trading_service.close_trade(db, user_id, payload.trade_id)
+    except trading_service.TradingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return trade

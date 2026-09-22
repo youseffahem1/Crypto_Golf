@@ -1,11 +1,22 @@
 """
-Opens and settles UP/DOWN binary trades against the server's OWN
+Opens live-value positions and settles them against the server's OWN
 authoritative price (market_service.get_current_price) — the client never
 supplies entry_price or exit_price, and settlement never trusts anything
-the client sends at close time. This is the piece that makes
-"UP + price rises = WIN" an enforced rule instead of a suggestion.
+the client sends at close time.
+
+Trade model (momentum/exit style):
+  * open_trade()    debits the stake and records the entry price.
+  * close_trade()   early-exits a still-OPEN position at the live price
+                    (value = amount * current_price / entry_price) and
+                    credits that value back to the balance. Selling while
+                    the price is up banks a gain; selling while it's down
+                    salvages what's left.
+  * settle_due_trades() settles OPEN positions whose closes_at has passed
+                    as a full LOSS (profit = -amount): if you don't sell
+                    before the timer hits zero, the stake is gone.
+
 Every platform coin (GOLF, NOVA, ABC, …) has its own authoritative walk
-and its own symbol on the trade; the win rule is identical for all of them.
+and its own symbol on the trade; the rules are identical for all of them.
 """
 from datetime import datetime, timedelta
 
@@ -60,11 +71,48 @@ def open_trade(
     return trade
 
 
+def close_trade(db: Session, user_id: str, trade_id: str) -> models.Trade:
+    """Early-exit a still-OPEN position at the live server price (spot-style
+    mark-to-market): value = amount * (current_price / entry_price) is
+    credited back to the virtual balance. The client never supplies the
+    exit price — it is read fresh from the server's own feed, so an early
+    exit can't be gamed any more than settlement can."""
+    trade = db.query(models.Trade).filter_by(id=trade_id, user_id=user_id).first()
+    if not trade:
+        raise TradingError("Trade not found")
+    if trade.status != models.TradeStatus.OPEN:
+        raise TradingError("Trade is not open")
+
+    symbol = (trade.symbol or "GOLF").strip().upper()
+    try:
+        exit_price = market_service.get_current_price(db, symbol)
+    except Exception:
+        exit_price = trade.entry_price
+
+    entry = float(trade.entry_price) or float(exit_price) or 1.0
+    amount = float(trade.amount)
+    value = amount * (float(exit_price) / entry)
+    profit = round(value - amount, 6)
+
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if user:
+        user.usdt_balance = float(user.usdt_balance) + round(value, 6)
+
+    trade.exit_price = exit_price
+    trade.profit = profit
+    trade.status = models.TradeStatus.WON if profit >= 0 else models.TradeStatus.LOST
+    trade.settled_at = datetime.utcnow()
+    db.commit()
+    db.refresh(trade)
+    return trade
+
+
 def settle_due_trades(db: Session):
     """Called periodically by the background loop — settles every OPEN
-    trade whose closes_at has passed, using the server's own current price
-    of THAT trade's platform coin as the exit price. Never called with
-    client-supplied data."""
+    position whose closes_at has passed. There is no payout at expiry: if
+    the user hasn't sold early, the whole staked amount is gone (LOST,
+    profit = -amount). Selling early via close_trade() is the only way to
+    collect value. Never called with client-supplied data."""
     now = datetime.utcnow()
     due = db.query(models.Trade).filter(
         models.Trade.status == models.TradeStatus.OPEN,
@@ -76,24 +124,10 @@ def settle_due_trades(db: Session):
     for trade in due:
         symbol = (trade.symbol or "GOLF").strip().upper()
         try:
-            exit_price = market_service.get_current_price(db, symbol)
+            trade.exit_price = market_service.get_current_price(db, symbol)
         except Exception:
-            exit_price = trade.entry_price
-        won = (
-            (trade.direction == models.TradeDirection.UP and exit_price > trade.entry_price)
-            or (trade.direction == models.TradeDirection.DOWN and exit_price < trade.entry_price)
-        )
-        trade.exit_price = exit_price
+            trade.exit_price = trade.entry_price
         trade.settled_at = now
-
-        user = db.query(models.User).filter_by(id=trade.user_id).first()
-        if won:
-            profit = trade.amount * trade.payout_rate
-            trade.status = models.TradeStatus.WON
-            trade.profit = profit
-            if user:
-                user.usdt_balance = float(user.usdt_balance) + float(trade.amount) + float(profit)
-        else:
-            trade.status = models.TradeStatus.LOST
-            trade.profit = -trade.amount
+        trade.status = models.TradeStatus.LOST
+        trade.profit = -trade.amount
         db.commit()

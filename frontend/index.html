@@ -4488,6 +4488,8 @@ async function createTrade(direction) {
             demo: true
         };
 
+        trade._vWalk = vantaInitValueWalk(trade.amount);
+
         demoBalance -= amount;
         vantaSaveDemoBalance();
 
@@ -4537,6 +4539,8 @@ async function createTrade(direction) {
         result: null
     };
 
+    trade._vWalk = vantaInitValueWalk(trade.amount);
+
     trades.push(trade);
 
     createMarker(trade);
@@ -4563,7 +4567,66 @@ async function createTrade(direction) {
    settle_due_trades).
 ========================================================= */
 
+/* VALUE WALK — each open trade carries its own live value that moves on
+   a semi-random momentum walk (direction regimes + noise + a gentle pull
+   back toward the stake). It can climb well above or drop well below the
+   stake, is not locked to the 9–10 band, never repeats a fixed sequence,
+   and is seeded independently per trade. vantaStepTradesValues() advances
+   every walker once per second. */
+
+function vantaInitValueWalk(amount) {
+    const base = Number(amount) || 0;
+    const bias = (Math.random() * 2 - 1) * 0.08;
+    return {
+        base,
+        value: base,
+        bias,
+        dir: Math.random() < 0.5 ? 1 : -1,
+        impulse: 1.6 + Math.random() * 2.8,
+        regimeLeft: 2000 + Math.random() * 5000,
+        lastAt: performance.now(),
+        seeded: false
+    };
+}
+
+function vantaWalkValue(trade) {
+    if (trade && trade._vWalk && typeof trade._vWalk.value === "number") {
+        return trade._vWalk.value;
+    }
+    return null;
+}
+
+function vantaStepTradesValues() {
+    const now = performance.now();
+    for (let i = 0; i < trades.length; i++) {
+        const t = trades[i];
+        const w = t._vWalk;
+        if (!w) continue;
+        let dt = w.seeded ? (now - w.lastAt) : 1000;
+        w.lastAt = now;
+        w.seeded = true;
+        dt = Math.min(dt, 6000);
+
+        w.regimeLeft -= dt;
+        if (w.regimeLeft <= 0) {
+            const r = Math.random() * 100;
+            w.dir = r < (47 + w.bias * 100) ? 1 : (r < (94 + w.bias * 100) ? -1 : 0);
+            w.impulse = 1.6 + Math.random() * 2.8;
+            w.regimeLeft = 2000 + Math.random() * 5000;
+        }
+
+        const drift = w.dir * w.value * w.impulse * 0.010 * (dt / 1000);
+        const noise = (Math.random() - 0.5) * w.value * (0.006 + w.impulse * 0.0025) * (dt / 1000);
+        const pull = (w.base - w.value) * 0.006 * (dt / 1000);
+        let next = w.value + drift + noise + pull;
+        next = Math.max(Math.min(next, w.base * 2.5), w.base * 0.25);
+        w.value = next;
+    }
+}
+
 function closeValueFor(trade) {
+    const walked = vantaWalkValue(trade);
+    if (walked != null) return walked;
     const entry = Number(trade.entryPrice) || 0;
     const now = (typeof currentPrice !== "undefined" && !isNaN(currentPrice) && Number(currentPrice) > 0)
         ? Number(currentPrice)
@@ -5027,6 +5090,7 @@ async function vantaSyncTrades() {
             endTime: vantaParseUTC(st.closes_at),
             result: null
         };
+        trade._vWalk = vantaInitValueWalk(trade.amount);
         trades.push(trade);
         createMarker(trade);
     });
@@ -5967,6 +6031,7 @@ async function vantaEnterApp() {
     if (accountMode === "live") vantaSyncTrades();
 
     setInterval(vantaPollPrice, 1000);
+    setInterval(vantaStepTradesValues, 1000);
     setInterval(vantaResyncCandles, 5000);
     setInterval(vantaSyncTrades, 2500);
     setInterval(refreshGolfStats, 20000);
@@ -9002,14 +9067,6 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     </section>
 
     <div class="vd-grid">
-      <section class="vd-card">
-        <div class="vd-card-head">
-          <div class="vd-card-title">GOLF / USDT</div>
-          <button class="vd-link" id="vdChartLink" type="button">Open chart →</button>
-        </div>
-        <div class="vd-golf-price" id="vdGolfPrice">$—</div>
-        <div class="vd-golf-change" id="vdGolfChange">—</div>
-      </section>
       <section class="vd-card">
         <div class="vd-card-head">
           <div class="vd-card-title">Recent Transfers</div>
@@ -12222,12 +12279,11 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     tradesArr.forEach(t=>{
       const amt=Number(t.amount||0);
       const entry=Number(t.entryPrice||0);
-      if(!entry||!amt)return;
+      if(!amt)return;
       const dir=t.direction==='UP'?1:-1;
-      const est=(price/entry)*amt;
+      const val=(typeof closeValueFor==='function')?closeValueFor(t):amt;
       invested+=amt;
-      const pnl=(dir*(price-entry)/entry)*amt;
-      const val=amt+pnl;
+      const pnl=val-amt;
       value+=val; pl+=pnl;
       rows.push({dir:dir>0?'BUY':'SELL', id:t.id, entry, amt, pnl, val});
     });

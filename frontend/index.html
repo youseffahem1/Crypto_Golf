@@ -2390,8 +2390,6 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                         <button class="tf" data-tf="15m">15m</button>
                         <button class="tf" data-tf="30m">30m</button>
                         <button class="tf" data-tf="1H">1H</button>
-                        <button class="tf" data-tf="4H">4H</button>
-                        <button class="tf" data-tf="1D">1D</button>
                     </div>
 
                     <div class="chart-tools">
@@ -2453,69 +2451,10 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 
             </section>
 
-            <!-- ASSET -->
-            <section class="asset-bar">
-
-                <div class="asset-info">
-
-                    <div class="gold-icon" id="assetIcon">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
-                            <path d="M7 17h10l2-7H5l2 7z"/>
-                            <path d="M9 10l1.7-5h2.6L15 10"/>
-                            <path d="M8 17v2M16 17v2"/>
-                        </svg>
-                    </div>
-
-                    <div>
-                        <div class="asset-name" id="assetName">
-                            GOLF <span style="color:#777c88">•</span> <span class="payout">93%</span>
-                        </div>
-
-                        <div class="asset-meta" id="assetMeta">
-                            <span class="market-dot"></span>
-                            OTC Market
-                            <span>•</span>
-                            <span id="marketTime">1m</span>
-                        </div>
-                    </div>
-
-                </div>
-
-                <div class="asset-actions">
-
-                    <button class="asset-action">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path d="M4 19V5M4 19h16"/>
-                            <path d="M7 15l4-5 3 3 5-7"/>
-                        </svg>
-                    </button>
-
-                    <button class="asset-action">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path d="M4 12h16M12 4v16"/>
-                            <circle cx="12" cy="12" r="8"/>
-                        </svg>
-                    </button>
-
-                    <button class="asset-action">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path d="M7 10l5 5 5-5"/>
-                        </svg>
-                    </button>
-
-                </div>
-
-            </section>
-
             <!-- =================================================
                  CONTROLS
             ================================================== -->
             <section class="controls">
-
-                <div class="mode-row">
-                    <span class="mode-title">Fixed Time Mode</span>
-                    <span class="mode-value">GOLF • OTC</span>
-                </div>
 
                 <div class="settings-row">
 
@@ -2543,11 +2482,6 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 
                     </div>
 
-                </div>
-
-                <div class="profit-row">
-                    <span class="profit-label">Profit</span>
-                    <span class="profit-value">+93% ≈ <span id="profitAmount">$93</span></span>
                 </div>
 
                 <!-- MAIN TRADE BUTTONS: BUY (green, left) / SELL (red, right) -->
@@ -3339,7 +3273,7 @@ function updateProfit() {
 
     const total = amount + profit;
 
-    profitAmount.textContent = money(profit);
+    if (profitAmount) profitAmount.textContent = money(profit);
 
     potentialReturn.textContent = money(total);
 
@@ -9032,9 +8966,8 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     historyPage?.classList.toggle('vw-active',page==='history');
     document.getElementById('vantaAdminPage')?.classList.toggle('vw-active',page==='admin');
     if(page==='trading'){
-      const coinOpen=!!window.vantaActiveCoin;
-      tradingPage?.classList.toggle('vw-active',!coinOpen);
-      if(mainEl) mainEl.style.display = coinOpen ? '' : 'none';
+      tradingPage?.classList.remove('vw-active');
+      if(mainEl) mainEl.style.display = '';
     }else{
       tradingPage?.classList.remove('vw-active');
       if(mainEl) mainEl.style.display = 'none';
@@ -10803,7 +10736,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
     if(nameEl) nameEl.innerHTML=esc(sym)+' <span style="color:#777c88">•</span> <span class="payout">93%</span>';
     const metaEl=$('assetMeta');
     if(metaEl) metaEl.innerHTML='<span class="market-dot"></span>'+esc(coinName(sym))+' • Buy-call / Sell-call <span>•</span> <span id="marketTime">1m</span>';
-    const bar=q('.asset-bar');
+    const bar=q('.chart-top');
     if(bar && !backBtn){
       backBtn=document.createElement('button');
       backBtn.id='vtpBack'; backBtn.type='button'; backBtn.className='vtp-back'; backBtn.innerHTML='‹';
@@ -12649,12 +12582,70 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
         setTimeout(function(){
           if (typeof updateBalance === 'function') updateBalance();
           refreshInfoCards();
+          if (typeof resizeCanvas === 'function') resizeCanvas();
+          if (typeof renderChart === 'function') renderChart();
+          if (typeof positionAllTrades === 'function') positionAllTrades();
         }, 120);
       }
     };
   }
 })();
 </script>
+
+<style id="vanta-compact-trading-layout">
+/* ==========================================================
+   COMPACT TRADING LAYOUT — everything on one screen
+   PROFIT | INVESTED | MARKET CAP  →  BALANCE | AMOUNT | TRADE
+   →  CHART (1m 5m 15m 30m 1H)  →  BUY | SELL
+   asset-bar and mode-row removed; fully responsive.
+========================================================== */
+.asset-bar,.mode-row,.profit-row{display:none!important}
+
+/* Back button now lives in the chart top bar (asset-bar is gone) */
+.vtp-back{flex:0 0 auto;pointer-events:auto!important;margin-right:6px;width:30px!important;height:30px!important;border-radius:9px!important}
+
+/* Trading stack fit without scrolling */
+@media (max-width:899px){
+  .main{padding-top:8px !important}
+  .controls{
+    padding:8px !important;
+    margin-top:6px !important;
+    border-radius:14px !important;
+    display:grid;
+    gap:6px;
+  }
+  .controls .settings-row{margin:0}
+  .controls .setting-box{height:42px !important}
+  .controls .trade-buttons{margin-top:0 !important}
+  .trade-btn{min-height:46px !important;border-radius:11px !important}
+  .trade-btn svg{width:20px !important;height:20px !important}
+  .clock-btn{width:40px !important;height:40px !important}
+  .chart-card{
+    height:clamp(220px,40dvh,450px) !important;
+    min-height:220px !important;
+  }
+}
+@media (max-width:400px){
+  .info-card{padding:7px 6px 6px !important}
+  .ic-chip{width:18px;height:18px}
+  .chart-card{
+    height:clamp(200px,38dvh,400px) !important;
+    min-height:200px !important;
+  }
+  .controls .setting-box{height:40px !important}
+  .setting-value{font-size:13px !important}
+  .trade-btn{min-height:44px !important}
+  .chart-tools{display:none}
+}
+@media (max-height:560px) and (orientation:landscape) and (max-width:899px){
+  .chart-card{
+    height:clamp(140px,52dvh,360px) !important;
+    min-height:140px !important;
+  }
+  .ic-sub,.ic-total,.ic-msg{display:none}
+  .timeframes .tf:nth-child(n+5){display:none}
+}
+</style>
 
 </body>
 </html>

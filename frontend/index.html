@@ -4611,6 +4611,20 @@ function sellOpenPositions() {
 
 const __vantaClosing = new Set();
 
+/* The last settled trade, kept on screen so the profit you banked does not
+   vanish the moment the position closes. The Position card keeps showing it
+   (Invested / Value / P/L / %) until you press Clear or the next trade
+   replaces it. reason: "SOLD" (manual sell) | "EXPIRED" (timer hit zero). */
+var __vantaLastSettled = null;
+
+function vantaSetLastSettled(info) {
+    __vantaLastSettled = info || null;
+}
+
+function vantaClearLastSettled() {
+    __vantaLastSettled = null;
+}
+
 async function closePositions(list) {
     if (accountMode === "demo") {
         list.forEach(t => {
@@ -4618,6 +4632,17 @@ async function closePositions(list) {
             const profit = value - Number(t.amount);
             demoBalance += value;
             vantaSaveDemoBalance();
+
+            vantaSetLastSettled({
+                symbol: t.symbol || "GOLF",
+                direction: t.direction,
+                invested: Number(t.amount),
+                value,
+                profit,
+                pct: (value / Number(t.amount) - 1) * 100,
+                won: profit >= 0,
+                reason: "SOLD"
+            });
 
             history.unshift({
                 id: t.id, symbol: t.symbol || "GOLF", direction: t.direction,
@@ -4627,10 +4652,7 @@ async function closePositions(list) {
 
             removeTradeMarker(t);
             trades = trades.filter(x => x.id !== t.id);
-            showToast(
-                `SOLD (Practice) • ${money(value)} ` +
-                (profit >= 0 ? "+" : "−") + money(Math.abs(profit))
-            );
+            showResultToast(profit >= 0, profit, t.direction);
         });
 
         updateBalance();
@@ -4656,6 +4678,18 @@ async function closePositions(list) {
             continue;
         }
         __vantaClosing.delete(t.id);
+
+        const soldProfit = Number(sold.profit || 0);
+        vantaSetLastSettled({
+            symbol: t.symbol || "GOLF",
+            direction: sold.direction || t.direction,
+            invested: Number(t.amount),
+            value: Number(t.amount) + soldProfit,
+            profit: soldProfit,
+            pct: Number(t.amount) ? (soldProfit / Number(t.amount)) * 100 : 0,
+            won: sold.status === "WON",
+            reason: "SOLD"
+        });
 
         removeTradeMarker(t);
         trades = trades.filter(x => x.id !== t.id);
@@ -5024,9 +5058,11 @@ async function vantaSyncTrades() {
     }
 
     const openIds = new Set(openList.map(t => t.id));
+    const settled = [];
 
     for (let i = trades.length - 1; i >= 0; i--) {
         if (!openIds.has(trades[i].id)) {
+            if (historySeen !== null && !historySeen.has(trades[i].id)) settled.push(trades[i]);
             removeTradeMarker(trades[i]);
             trades.splice(i, 1);
         }
@@ -5072,6 +5108,26 @@ async function vantaSyncTrades() {
         profit: h.profit || 0,
         result: h.status === "WON" ? "WIN" : (h.status === "LOST" ? "LOSS" : "CANCEL")
     }));
+
+    if (settled.length) {
+        const histById = new Map(hist.map(h => [h.id, h]));
+        settled.forEach(rt => {
+            const amt = Number(rt.amount) || 0;
+            const h = histById.get(rt.id);
+            const profit = h ? Number(h.profit || 0) : -amt;
+            const won = h ? h.status === "WON" : profit >= 0;
+            vantaSetLastSettled({
+                symbol: rt.symbol || "GOLF",
+                direction: rt.direction,
+                invested: amt,
+                value: h ? (amt + profit) : 0,
+                profit,
+                pct: amt ? (profit / amt) * 100 : 0,
+                won,
+                reason: "EXPIRED"
+            });
+        });
+    }
 
     renderHistory();
     refreshBalance();
@@ -5214,6 +5270,17 @@ function vantaSettleDemoTrades() {
            (see closePositions). */
         const profit = -t.amount;
         vantaSaveDemoBalance();
+
+        vantaSetLastSettled({
+            symbol: t.symbol || "GOLF",
+            direction: t.direction,
+            invested: Number(t.amount),
+            value: 0,
+            profit,
+            pct: -100,
+            won: false,
+            reason: "EXPIRED"
+        });
 
         history.unshift({
             id: t.id, symbol: t.symbol || "GOLF", direction: t.direction, amount: t.amount,
@@ -11393,6 +11460,7 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vta-pos-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel-2) !important;border-radius:13px;padding:10px 13px;font-size:12px}
 .vta-pos-row .vtag{font-weight:900;width:40px}
 .vta-pos-row .vtag.buy{color:var(--up)}.vta-pos-row .vtag.sell{color:var(--down)}
+.vta-pos-row .vtag.exp{color:var(--muted)}
 .vta-pos-row .vmid{flex:1;min-width:0;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vta-pos-row .vval{font-weight:900;font-variant-numeric:tabular-nums;color:var(--text)}
 .vta-pos-row .vpl{font-weight:900;font-variant-numeric:tabular-nums}
@@ -12212,8 +12280,11 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       const openSection=q('.open-section');
       if(openSection && openSection.parentNode) openSection.parentNode.insertBefore(pos, openSection);
       else mainEl.appendChild(pos);
-      /* One delegated handler for every per-position SELL button inside the card. */
+      /* One delegated handler for every per-position SELL button inside the card,
+         plus the Clear button on the saved last-trade result. */
       pos.addEventListener('click', ev=>{
+        const clr=ev.target.closest('[data-clear-last]');
+        if(clr){ ev.stopPropagation(); if(typeof vantaClearLastSettled==='function') vantaClearLastSettled(); updatePosCard(); return; }
         const btn=ev.target.closest('[data-exit]');
         if(!btn||typeof sellOpenPositionById!=='function') return;
         ev.stopPropagation();
@@ -12241,6 +12312,16 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       rows.push({dir:dir>0?'BUY':'SELL', id:t.id, entry, amt, pnl, val});
     });
     pct=invested>0?(value/invested-1)*100:0;
+    /* Nothing open anymore: keep the LAST settled trade on screen so the
+       profit you banked never silently wipes to $0.00. Clear it with the
+       button, or the next opened position replaces it. */
+    if(!tradesArr.length && __vantaLastSettled){
+      const ls=__vantaLastSettled;
+      invested=Number(ls.invested||0);
+      value=Number(ls.value||0);
+      pl=Number(ls.profit||0);
+      pct=Number(ls.pct||0);
+    }
     const setN=(id,v)=>{const el=$(id); if(el) el.textContent=v;};
     setN('vtaPInv',money(invested));
     setN('vtaPVal',money(value));
@@ -12253,9 +12334,21 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     setN('vtaPOpn',String(tradesArr.length));
     const rowsBox=$('vtaPosRows');
     if(rowsBox){
-      if(!rows.length){ rowsBox.innerHTML='<div class="vd-empty">No open position on '+esc(sym)+'. Use BUY to stake and SELL to collect the live value.</div>'; }
-      else{
-        rowsBox.innerHTML=rows.map(r=>
+      let out='';
+      if(__vantaLastSettled){
+        const ls=__vantaLastSettled;
+        const sold=ls.reason==='SOLD';
+        const tag=sold?(ls.direction==='UP'?'BUY':'SELL'):'EXPIRED';
+        out+='<div class="vta-pos-row"><span class="vtag '+(tag==='BUY'?'buy':tag==='SELL'?'sell':'exp')+'">'+tag+'</span>'
+          +'<span class="vmid">'+(sold?'Last sell closed':'Trade expired')+' • '+esc(ls.symbol||'GOLF')+' • '+(sold?'banked':'stake lost')+'</span>'
+          +'<span class="vval '+(ls.won?'upcolor':'downcolor')+'">'+money(ls.value)+'</span>'
+          +'<span class="vpl '+(ls.won?'up':'down')+'">'+(ls.won?'+':'−')+money(Math.abs(ls.profit))+' ('+(ls.won?'+':'−')+Math.abs(ls.pct||0).toFixed(2)+'%)</span>'
+          +'<button type="button" class="vclose" data-clear-last>Clear</button></div>';
+      }
+      if(!rows.length){
+        out+='<div class="vd-empty">No open position on '+esc(sym)+'. Use BUY to stake and SELL to collect the live value.</div>';
+      } else {
+        out+=rows.map(r=>
           '<div class="vta-pos-row"><span class="vtag '+(r.dir==='BUY'?'buy':'sell')+'">'+r.dir+'</span>'
           +'<span class="vmid">'+esc(r.id)+' • entry '+coinFmt(r.entry)+' • mark '+coinFmt(price)+'</span>'
           +'<span class="vval '+(r.pnl>=0?'upcolor':'downcolor')+'">'+money(r.val)+'</span>'
@@ -12263,11 +12356,16 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           +'<button type="button" class="vclose" data-exit="'+esc(r.id)+'">SELL</button></div>'
         ).join('');
       }
+      rowsBox.innerHTML=out;
     }
     const note=$('vtaPosNote');
     if(note) note.textContent=rows.length
       ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL to bank it before the timer ends; if the timer hits zero the stake is gone.'
-      : 'Buy while the candle is green, then SELL before the timer runs out to collect the live value. If the timer hits zero, the stake is gone.';
+      : (__vantaLastSettled
+        ? (__vantaLastSettled.reason==='EXPIRED'
+           ? 'This trade hit the timer and the stake was lost. Open a new trade to keep going — or press Clear to dismiss this result.'
+           : 'This result is saved with its profit banked in your balance — it stays until you press Clear or open a new trade.')
+        : 'Buy while the candle is green, then SELL before the timer runs out to collect the live value. If the timer hits zero, the stake is gone.');
   }
 
   /* ---------- Wallet: per-coin deposit/withdraw (real config or Not Provided Yet) ---------- */

@@ -329,7 +329,7 @@ def tick(db: Session):
     anchor = ceil * 0.98
     pull = (anchor - forming["close"]) * GOLF_REVERT
     noise = forming["close"] * random.uniform(-GOLF_VOL, GOLF_VOL)
-    impulse = forming["close"] * random.uniform(-GOLF_VOL * 6.0, GOLF_VOL * 6.0) if random.random() < 0.04 else 0.0
+    impulse = forming["close"] * random.uniform(-GOLF_VOL * 6.0, GOLF_VOL * 6.0) if random.random() < 0.08 else 0.0
     new_close = _clamp(forming["close"] + pull + noise + impulse, GOLF_FLOOR, min(ceil, PRICE_BAND_HIGH))
 
     if age >= CANDLE_INTERVAL_SECONDS:

@@ -3526,8 +3526,8 @@ async function vantaPollPrice() {
             if (dm.regimeLeft <= 0) {
                 const r = random(0, 100);
                 dm.dir = r < 46 ? 1 : (r < 92 ? -1 : 0);
-                dm.impulse = random(1.2, 4);
-                dm.regimeLeft = 8000 + random(0, 22000);
+                dm.impulse = random(1.5, 4.6);
+                dm.regimeLeft = 5000 + random(0, 14000);
             }
             /* Noticeable per-tick moves so even a single new 1-minute candle
                closes with a real multi-percent body — up too high and it
@@ -3536,9 +3536,9 @@ async function vantaPollPrice() {
                down) gets to travel a few percent before the market flips,
                which is what lets a live value move clearly above/below the
                stake instead of shivering on the spot. */
-            const drift = dm.dir * currentPrice * (0.0022 * dm.impulse) * (dt / 1000);
-            const shake = (Math.random() - 0.5) * currentPrice * 0.008 * (dt / 1000);
-            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0018;
+            const drift = dm.dir * currentPrice * (0.0045 * dm.impulse) * (dt / 1000);
+            const shake = (Math.random() - 0.5) * currentPrice * 0.012 * (dt / 1000);
+            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0008;
             next = clamp(currentPrice + drift + shake + pull, 0.08, VANTA_GOLF_OSC_HIGH - 0.02);
         } else {
             next = clamp(currentPrice + (Math.random() - 0.5) * currentPrice * 0.004, 0.02, currentPrice * 1.05);
@@ -3654,7 +3654,7 @@ function updateLiveCandle(now) {
     lastFrameTime = now;
 
     previousPrice = currentPrice;
-    currentPrice += (serverPrice - currentPrice) * Math.min(1, dt / 420);
+    currentPrice += (serverPrice - currentPrice) * Math.min(1, dt / 240);
 
     candle.close = currentPrice;
     candle.high = Math.max(candle.high, currentPrice);
@@ -4616,6 +4616,7 @@ const __vantaClosing = new Set();
    (Invested / Value / P/L / %) until you press Clear or the next trade
    replaces it. reason: "SOLD" (manual sell) | "EXPIRED" (timer hit zero). */
 var __vantaLastSettled = null;
+var __vantaSuppressLast = false;
 
 function vantaSetLastSettled(info) {
     __vantaLastSettled = info || null;
@@ -4633,16 +4634,18 @@ async function closePositions(list) {
             demoBalance += value;
             vantaSaveDemoBalance();
 
-            vantaSetLastSettled({
-                symbol: t.symbol || "GOLF",
-                direction: t.direction,
-                invested: Number(t.amount),
-                value,
-                profit,
-                pct: (value / Number(t.amount) - 1) * 100,
-                won: profit >= 0,
-                reason: "SOLD"
-            });
+            if (!__vantaSuppressLast) {
+                vantaSetLastSettled({
+                    symbol: t.symbol || "GOLF",
+                    direction: t.direction,
+                    invested: Number(t.amount),
+                    value,
+                    profit,
+                    pct: (value / Number(t.amount) - 1) * 100,
+                    won: profit >= 0,
+                    reason: "SOLD"
+                });
+            }
 
             history.unshift({
                 id: t.id, symbol: t.symbol || "GOLF", direction: t.direction,
@@ -4680,16 +4683,18 @@ async function closePositions(list) {
         __vantaClosing.delete(t.id);
 
         const soldProfit = Number(sold.profit || 0);
-        vantaSetLastSettled({
-            symbol: t.symbol || "GOLF",
-            direction: sold.direction || t.direction,
-            invested: Number(t.amount),
-            value: Number(t.amount) + soldProfit,
-            profit: soldProfit,
-            pct: Number(t.amount) ? (soldProfit / Number(t.amount)) * 100 : 0,
-            won: sold.status === "WON",
-            reason: "SOLD"
-        });
+        if (!__vantaSuppressLast) {
+            vantaSetLastSettled({
+                symbol: t.symbol || "GOLF",
+                direction: sold.direction || t.direction,
+                invested: Number(t.amount),
+                value: Number(t.amount) + soldProfit,
+                profit: soldProfit,
+                pct: Number(t.amount) ? (soldProfit / Number(t.amount)) * 100 : 0,
+                won: sold.status === "WON",
+                reason: "SOLD"
+            });
+        }
 
         removeTradeMarker(t);
         trades = trades.filter(x => x.id !== t.id);
@@ -4862,6 +4867,8 @@ function renderOpenTrades() {
 
     activeTrades.forEach(trade => {
         const remaining = Math.max(0, Math.ceil((trade.endTime - Date.now()) / 1000));
+        const rv = closeValueFor(trade);
+        const rpl = rv - Number(trade.amount);
         const item = document.createElement("div");
         item.className = "open-trade";
         item.dataset.openTrade = trade.id;
@@ -4885,7 +4892,7 @@ function renderOpenTrades() {
             <div class="open-right">
                 <div class="open-amount">${money(trade.amount)}</div>
                 <div class="open-countdown" data-countdown="${trade.id}">${formatTime(remaining)}</div>
-                <div class="open-value" data-openval="${trade.id}">${money(closeValueFor(trade))}</div>
+                <div class="open-value" data-openval="${trade.id}">${rpl >= 0 ? "+" : "−"}${money(Math.abs(rpl))}</div>
                 <button type="button" class="open-sell" data-exit="${trade.id}">SELL</button>
             </div>
         `;
@@ -4977,15 +4984,19 @@ function updateTrades() {
                     trade
                 );
 
+            const dpl =
+                v - Number(
+                    trade.amount
+                );
+
             oval.textContent =
+                (dpl >= 0 ? "+" : "−") +
                 money(
-                    v
+                    Math.abs(dpl)
                 );
 
             oval.style.color =
-                v >= Number(
-                    trade.amount
-                )
+                dpl >= 0
                 ? "var(--up)"
                 : "var(--down)";
 
@@ -11452,6 +11463,12 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vta-pos{border:1px solid var(--line);border-radius:20px;background:var(--panel) !important;padding:16px;margin-top:13px;box-shadow:var(--shadow)}
 .vta-pos-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .vta-pos-title{font-size:13px;font-weight:900;display:flex;align-items:center;gap:7px}
+.vta-close-trade{
+  margin-left:8px;height:28px;padding:0 13px;border-radius:99px;border:1px solid rgba(246,70,93,.4);
+  background:rgba(246,70,93,.12);color:var(--down);font-size:11px;font-weight:900;cursor:pointer;
+  transition:border-color .15s ease,transform .13s ease;
+}
+.vta-close-trade:hover{border-color:var(--down);transform:translateY(-1px)}
 .vta-pos-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .vta-pos-cell{border:1px solid var(--line);background:var(--panel-2) !important;border-radius:13px;padding:10px 11px;min-width:0}
 .vta-pos-cell b{display:block;font-size:14px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -12267,11 +12284,12 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     let pos=$('vtaPosCard');
     if(!pos){
       pos=document.createElement('section'); pos.id='vtaPosCard'; pos.className='vta-pos';
-      pos.innerHTML='<div class="vta-pos-head"><div class="vta-pos-title">Position</div><span class="vta-livechip"><i class="vta-live-dot"></i>LIVE</span></div>'
+      pos.innerHTML='<div class="vta-pos-head"><div class="vta-pos-title">Position</div><span class="vta-livechip"><i class="vta-live-dot"></i>LIVE</span>'
+        +'<button type="button" class="vta-close-trade" id="vtaCloseTrade" title="Close all open positions">Close Trade</button></div>'
         +'<div class="vta-pos-grid">'
         +'<div class="vta-pos-cell"><span>Invested</span><b id="vtaPInv">$0.00</b></div>'
         +'<div class="vta-pos-cell"><span>Current Value</span><b id="vtaPVal">$0.00</b></div>'
-        +'<div class="vta-pos-cell"><span>Profit / Loss</span><b id="vtaPPnl">+$0.00</b></div>'
+        +'<div class="vta-pos-cell"><span>Total Profit</span><b id="vtaPPnl">+$0.00</b></div>'
         +'<div class="vta-pos-cell"><span>Percentage</span><b id="vtaPPct">+0.00%</b></div>'
         +'<div class="vta-pos-cell"><span>Open Trades</span><b id="vtaPOpn">0</b></div>'
         +'</div>'
@@ -12283,6 +12301,19 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       /* One delegated handler for every per-position SELL button inside the card,
          plus the Clear button on the saved last-trade result. */
       pos.addEventListener('click', ev=>{
+        const ct=ev.target.closest('#vtaCloseTrade');
+        if(ct){
+          ev.stopPropagation();
+          __vantaSuppressLast = true;
+          let p;
+          try { p = (typeof sellOpenPositions==='function') ? sellOpenPositions() : undefined; } catch(e) { p = undefined; }
+          Promise.resolve(p).then(()=>{
+            __vantaSuppressLast = false;
+            if(typeof vantaClearLastSettled==='function') vantaClearLastSettled();
+            updatePosCard();
+          });
+          return;
+        }
         const clr=ev.target.closest('[data-clear-last]');
         if(clr){ ev.stopPropagation(); if(typeof vantaClearLastSettled==='function') vantaClearLastSettled(); updatePosCard(); return; }
         const btn=ev.target.closest('[data-exit]');
@@ -12335,7 +12366,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     const rowsBox=$('vtaPosRows');
     if(rowsBox){
       let out='';
-      if(__vantaLastSettled){
+      if(__vantaLastSettled && !rows.length){
         const ls=__vantaLastSettled;
         const sold=ls.reason==='SOLD';
         const tag=sold?(ls.direction==='UP'?'BUY':'SELL'):'EXPIRED';

@@ -4534,7 +4534,7 @@ async function createTrade(direction) {
         symbol: serverTrade.symbol || "GOLF",
         direction: serverTrade.direction,
         amount: serverTrade.amount,
-        entryPrice: serverTrade.entry_price,
+        entryPrice: (Number(currentPrice) && Number(currentPrice) > 0) ? Number(currentPrice) : serverTrade.entry_price,
         duration: serverTrade.duration_seconds,
         startTime: vantaParseUTC(serverTrade.opened_at),
         endTime: vantaParseUTC(serverTrade.closes_at),
@@ -5081,12 +5081,13 @@ async function vantaSyncTrades() {
 
     openList.forEach(st => {
         if (trades.some(t => t.id === st.id)) return;
+        const active = (st.symbol || "GOLF") === (window.vantaActiveCoin || "GOLF");
         const trade = {
             id: st.id,
             symbol: st.symbol || "GOLF",
             direction: st.direction,
             amount: st.amount,
-            entryPrice: st.entry_price,
+            entryPrice: (active && Number(currentPrice) && Number(currentPrice) > 0) ? Number(currentPrice) : st.entry_price,
             duration: st.duration_seconds,
             startTime: vantaParseUTC(st.opened_at),
             endTime: vantaParseUTC(st.closes_at),
@@ -6772,7 +6773,7 @@ async function vantaHandleEntry() {
 .vfx-portfolio{margin-top:9px;font-size:11px;font-weight:800;color:var(--text)}
 .vfx-held{margin-top:3px;font-size:9.5px;color:var(--muted);line-height:1.6}
 .vfx-cap{padding:7px 12px;border:1px solid rgba(184,134,11,.25);background:rgba(184,134,11,.08);border-radius:999px;color:#8a6a0d;font-size:10px;font-weight:900;white-space:nowrap}
-.vfx-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px;position:relative;z-index:1}
+.vfx-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:22px;position:relative;z-index:1}
 .vfx-action{min-height:46px;border:1px solid var(--line);border-radius:13px;background:var(--panel-2);color:var(--text);font-size:12px;font-weight:800;cursor:pointer;transition:transform .15s,box-shadow .15s}
 .vfx-action:hover{transform:translateY(-1px)}
 .vfx-action.primary{background:linear-gradient(135deg,var(--gold),#1d4ed8);color:#fff;border-color:transparent;box-shadow:0 10px 24px rgba(37,99,235,.22)}
@@ -6800,7 +6801,7 @@ async function vantaHandleEntry() {
 .vfx-msg{max-width:78%;display:flex;gap:9px;align-items:flex-end}.vfx-msg.mine{align-self:flex-end;flex-direction:row-reverse}.vfx-msg-avatar{width:28px;height:28px;flex:0 0 28px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--muted)}.vfx-msg.mine .vfx-msg-avatar{background:linear-gradient(135deg,var(--gold),#1d4ed8);color:#fff;border:0}.vfx-bubble{padding:11px 14px;border-radius:16px 16px 16px 5px;background:var(--panel-2);border:1px solid var(--line);font-size:11.5px;line-height:1.55;color:var(--text)}.vfx-msg.mine .vfx-bubble{border-radius:16px 16px 5px 16px;background:linear-gradient(145deg,var(--gold),#4a40c9);border-color:transparent;color:#fff}.vfx-meta{font-size:9.5px;color:var(--muted);margin-top:5px}.vfx-chat-compose{padding:14px;border-top:1px solid var(--line);display:flex;gap:8px;background:#fff}.vfx-chat-input{flex:1;min-width:0;height:44px;border:1px solid var(--line);border-radius:13px;background:var(--panel-2);color:var(--text);padding:0 13px;outline:none;font-size:11.5px}.vfx-send{width:46px;border:0;border-radius:13px;background:var(--gold);color:#fff;font-weight:900}
 .vfx-p2p-card{padding:16px;border:1px solid rgba(21,163,73,.18);background:rgba(21,163,73,.05);border-radius:16px;margin-bottom:6px}.vfx-p2p-card b{font-size:11px;color:var(--text)}.vfx-p2p-card p{font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:6px}
 @media(min-width:900px){.vfx-fab{right:28px;bottom:28px}.vfx-modal{align-items:center}.vfx-sheet{border-radius:28px}.vfx-wallet-extra{grid-template-columns:1.1fr .9fr}.vfx-usdt-hero{grid-row:span 2}}
-@media(max-width:430px){.vfx-fab{right:14px;bottom:calc(var(--nav-height) + env(safe-area-inset-bottom) + 12px);width:54px;height:54px;border-radius:18px}.vfx-actions{grid-template-columns:1fr 1fr}.vfx-actions .vfx-action:last-child{grid-column:1/-1}.vfx-sheet{padding:18px;border-radius:24px 24px 18px 18px}.vfx-chat-sheet{padding:0;border-radius:24px 24px 0 0}.vfx-convert-row{grid-template-columns:1fr}.vfx-swap{display:none}}
+@media(max-width:430px){.vfx-fab{right:14px;bottom:calc(var(--nav-height) + env(safe-area-inset-bottom) +   12px);width:54px;height:54px;border-radius:18px}.vfx-actions{grid-template-columns:1fr 1fr}.vfx-sheet{padding:18px;border-radius:24px 24px 18px 18px}.vfx-chat-sheet{padding:0;border-radius:24px 24px 0 0}.vfx-convert-row{grid-template-columns:1fr}.vfx-swap{display:none}}
 </style>
 
 <!-- Modern P2P group chat floating control -->
@@ -7006,7 +7007,7 @@ async function vantaHandleEntry() {
     box.innerHTML=`
       <section class="vfx-usdt-hero">
         <div class="vfx-usdt-top"><div><div class="vfx-label">Primary Wallet</div><div class="vfx-usdt-balance" data-vfx-usdt>$0.00 USDT</div><div class="vfx-golf-balance" id="vfxGolfBalanceLine">0.00 GOLF</div><div class="vfx-portfolio" id="vfxPortfolioLine"></div><div class="vfx-held" id="vfxHoldingsLine"></div></div><div class="vfx-cap">TESTNET</div></div>
-        <div class="vfx-actions"><button class="vfx-action green" data-open="vfxDepositModal">Deposit USDT</button><button class="vfx-action" data-vtr-open="vfxTransferModal">Send</button><button class="vfx-action primary" data-open="vfxConvertModal">Convert</button></div>
+        <div class="vfx-actions"><button class="vfx-action green" data-open="vfxDepositModal">Deposit USDT</button><button class="vfx-action" data-vtr-open="vfxTransferModal">Send</button><button class="vfx-action" id="vfxReceiveBtn">Receive</button><button class="vfx-action primary" data-open="vfxConvertModal">Convert</button></div>
       </section>
       <section class="vfx-golf-mini"><div class="vfx-golf-mini-head"><strong>⛳ GOLF — Early Access</strong><span class="vfx-golf-price" id="vfxGolfPrice">$0.00</span></div><p id="vfxGolfBlurb">GOLF is the early-access token traded on this platform. Its price is set by the same authoritative server-side market used for trading.</p><div class="vfx-golf-target" id="vfxGolfChange">24h change: 0.00%</div></section>
       <section class="vfx-wallet-row">
@@ -7019,12 +7020,47 @@ async function vantaHandleEntry() {
           <div class="vfx-w-col-head"><strong>Standard Crypto Wallet</strong><span class="vfx-tag norm">Established crypto</span></div>
           <div id="vfxNormalHoldings"><div class="vfx-w-note">Established cryptocurrencies you hold on the platform (BTC, ETH, BNB, USDT, USDC, SOL, LTC, …).</div></div>
         </section>
-      </section>`;
+      </section>
+      <div class="vfx-modal" id="vfxReceiveModal">
+        <section class="vfx-sheet">
+          <div class="vfx-sheet-head"><div><h2>Receive Coins</h2><div class="vfx-help">Get coins from other platform accounts, or deposit USDT on-chain. Internal transfers arrive instantly with no fees.</div></div><button class="vfx-close" data-vfx-close="vfxReceiveModal">✕</button></div>
+          <div class="vfx-form">
+            <div class="vfx-label">Your account email (internal transfers)</div>
+            <div class="vfx-address-row">
+              <input class="vfx-field" id="vfxRecvEmail" type="text" readonly value="—">
+              <button class="vfx-copy" id="vfxRecvCopy" type="button">Copy</button>
+            </div>
+            <div class="vfx-help">Share this email account. Other users tap <b>Send</b> in their wallet or dashboard and select it — USDT, GOLF or any listed coin arrives in your wallet instantly.</div>
+            <div class="vfx-p2p-card"><b>Prefer crypto from outside the platform?</b><p>Use the TRON Nile deposit to add USDT on-chain to this account.</p></div>
+            <button class="vfx-submit" type="button" data-open="vfxDepositModal" id="vfxRecvDepositBtn">Deposit USDT on-chain →</button>
+          </div>
+        </section>
+      </div>`;
     const container=wp.querySelector('.vw-container')||wp;
     const head=container.querySelector('.vw-page-head');
     if(head && head.nextSibling) container.insertBefore(box, head.nextSibling);
     else container.insertBefore(box, container.firstChild);
   }
+
+  /* ---- Receive: share your account email so others can send you coins ---- */
+  function vantaFillReceive(){
+    let email='';
+    try{ const u=JSON.parse(localStorage.getItem('vanta_user')||'null'); email=(u&&u.email)||''; }catch(e){}
+    const f=$('vfxRecvEmail');
+    if(f) f.value=email||'Log in to see your receive email';
+    if(!email) toast('Log in to receive coins on this account.');
+  }
+  $('vfxReceiveBtn')?.addEventListener('click',()=>{
+    if(typeof accountMode!=='undefined' && accountMode==='demo'){ toast('Switch to the Live account to receive coins.'); return; }
+    vantaFillReceive();
+    open('vfxReceiveModal');
+  });
+  $('vfxRecvCopy')?.addEventListener('click',async()=>{
+    const v=$('vfxRecvEmail')?.value; if(!v||v.indexOf('@')<0) return;
+    try{ await navigator.clipboard.writeText(v); toast('Email copied — share it to receive coins'); }
+    catch(e){ toast('Select the email and copy it manually'); }
+  });
+  $('vfxRecvDepositBtn')?.addEventListener('click',()=>{ if(typeof accountMode==='undefined'||accountMode!=='demo') loadDepositInfo(); });
 
   document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>{
     if(typeof accountMode!=='undefined' && accountMode==='demo'){
@@ -9354,7 +9390,7 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
 
   /* ---------------- INTERNAL TRANSFER (Send) ---------------- */
   let vtrRecipient=null;
-  function vantaOpenTransfer(){
+  function vantaOpenTransfer(preSym){
     if(typeof accountMode!=='undefined' && accountMode==='demo'){
       toast('Switch to the Live account to send coins.');
       return;
@@ -9362,6 +9398,9 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     if(!vantaToken()){ toast('Log in to send coins between platform accounts.'); return; }
     const doOpen=()=>{
       populateCoinSel();
+      if(preSym && $('vtrCoin') && Array.prototype.some.call($('vtrCoin').options,o=>o.value===preSym)){
+        $('vtrCoin').value=preSym;
+      }
       updateBalanceLine();
       open('vfxTransferModal');
       setTimeout(()=>$('vtrRecipient')?.focus(),110);
@@ -9462,9 +9501,22 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     function rowHtml(sym,withDw){
       const amt=Number(bal[sym]||0);
       const usd=amt*(sym==='USDT'?1:(Number(prices[sym])||0));
-      return '<div class="vfx-hold'+(withDw?' vfx-hold-dw':'')+'"><b>'+sym+'</b><span>'+coinFmt(amt)+' <em>≈ '+money(usd)+'</em></span>'
+      return '<div class="vfx-hold vfx-hold-dw"><b>'+sym+'</b><span>'+coinFmt(amt)+' <em>≈ '+money(usd)+'</em></span>'
+        +'<button class="vfx-dw" type="button" data-send-sym="'+sym+'">Send</button>'
         +(withDw?'<button class="vfx-dw" type="button" data-dw-sym="'+sym+'">Deposit / Withdraw</button>':'')
         +'</div>';
+    }
+
+    function wireRowBtns(box){
+      if(!box)return;
+      box.querySelectorAll('[data-send-sym]').forEach(b=>b.addEventListener('click',e=>{
+        e.stopPropagation();
+        window.vantaOpenTransfer(b.dataset.sendSym);
+      }));
+      box.querySelectorAll('[data-dw-sym]').forEach(b=>b.addEventListener('click',e=>{
+        e.stopPropagation();
+        if(window.vantaShowCoinAddress) window.vantaShowCoinAddress(b.dataset.dwSym);
+      }));
     }
 
     const plat=layout.platform_coins||[];
@@ -9474,16 +9526,14 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
         '<div class="vfx-w-note">'+(window.PLATFORM_COINS_META?window.PLATFORM_COINS_META.join(' → '):'USDT → platform coins')+' — these coins live in the investment wallet and are traded on VANTA Markets.</div></div>'
       : '<div class="vd-empty">No platform coins issued yet.</div>';
     if(!hasPlat){ /* create the holder rows for zero balances too */ }
-    platBox.querySelectorAll('[data-dw-sym]').forEach(b=>b.addEventListener('click',e=>{
-      e.stopPropagation();
-      if(window.vantaShowCoinAddress) window.vantaShowCoinAddress(b.dataset.dwSym);
-    }));
+    wireRowBtns(platBox);
 
     const norm=layout.normal_wallet_coins||[];
     normBox.innerHTML = norm.length
       ? '<div style="padding:2px 0 4px">'+norm.map(rowHtml).join('')+
         '<div class="vfx-w-note">Established cryptocurrencies you hold on the platform — swap between them any time.</div></div>'
       : '<div class="vd-empty">No normal-wallet coins configured.</div>';
+    wireRowBtns(normBox);
   }
   /* keep split synced with every refreshBalance */
   const __baseBalances=(window.vantaSyncWalletUI||function(){});

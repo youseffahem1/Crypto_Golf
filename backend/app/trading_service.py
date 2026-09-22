@@ -96,7 +96,12 @@ def close_trade(
     amount = float(trade.amount)
 
     if value is not None and value > 0:
-        value = round(max(amount * 0.3, min(amount * 2.4, float(value))), 6)
+        # The client submits the exact live value it has been displaying
+        # (mark-to-market tied to the chart price and the trade direction).
+        # A far-out sanity window (1%–10,000% of the stake) is only there to
+        # stop absurd claims — it never shapes normal play, so the number the
+        # UI showed is the number that is credited, exactly.
+        value = round(max(amount * 0.01, min(amount * 100.0, float(value))), 6)
         profit = round(value - amount, 6)
         exit_price = round(entry * value / amount, 8) if entry else 0.0
     else:

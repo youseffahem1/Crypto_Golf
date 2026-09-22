@@ -3531,10 +3531,14 @@ async function vantaPollPrice() {
             }
             /* Noticeable per-tick moves so even a single new 1-minute candle
                closes with a real multi-percent body — up too high and it
-               pins on the band, too low and bodies vanish again. */
-            const drift = dm.dir * currentPrice * (0.0017 * dm.impulse) * (dt / 1000);
-            const shake = (Math.random() - 0.5) * currentPrice * 0.006 * (dt / 1000);
-            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0032;
+               pins on the band, too low and bodies vanish again. The pull
+               back to the anchor is kept gentle so each short trend (up or
+               down) gets to travel a few percent before the market flips,
+               which is what lets a live value move clearly above/below the
+               stake instead of shivering on the spot. */
+            const drift = dm.dir * currentPrice * (0.0022 * dm.impulse) * (dt / 1000);
+            const shake = (Math.random() - 0.5) * currentPrice * 0.008 * (dt / 1000);
+            const pull = (VANTA_GOLF_WALK_ANCHOR - currentPrice) * 0.0018;
             next = clamp(currentPrice + drift + shake + pull, 0.08, VANTA_GOLF_OSC_HIGH - 0.02);
         } else {
             next = clamp(currentPrice + (Math.random() - 0.5) * currentPrice * 0.004, 0.02, currentPrice * 1.05);
@@ -4488,8 +4492,6 @@ async function createTrade(direction) {
             demo: true
         };
 
-        trade._vWalk = vantaInitValueWalk(trade.amount);
-
         demoBalance -= amount;
         vantaSaveDemoBalance();
 
@@ -4539,8 +4541,6 @@ async function createTrade(direction) {
         result: null
     };
 
-    trade._vWalk = vantaInitValueWalk(trade.amount);
-
     trades.push(trade);
 
     createMarker(trade);
@@ -4559,85 +4559,35 @@ async function createTrade(direction) {
 /* =========================================================
    SELL / EARLY EXIT
    SELL closes your open position(s) at the live value —
-   value = stake * (currentPrice / entryPrice) — and credits
-   that value straight back to the balance. Selling while the
-   candle is green banks the gain; selling while it's red
-   salvages what's left. If the timer reaches zero first, the
-   whole stake is lost (see vantaSettleDemoTrades / server
-   settle_due_trades).
+   value = stake * (currentPrice / entryPrice) for a BUY, and
+   value = stake * (2 − currentPrice / entryPrice) for a SELL —
+   and credits that value straight back to the balance. Selling
+   while the price moves in your direction banks the gain; while
+   it moves against you it salvages what's left. If the timer
+   reaches zero first, the whole stake is lost (see
+   vantaSettleDemoTrades / server settle_due_trades).
 ========================================================= */
 
-/* VALUE WALK — each open trade carries its own live value that moves on
-   a semi-random momentum walk (direction regimes + noise + a gentle pull
-   back toward the stake). It can climb well above or drop well below the
-   stake, is not locked to the 9–10 band, never repeats a fixed sequence,
-   and is seeded independently per trade. vantaStepTradesValues() advances
-   every walker once per second. */
-
-function vantaInitValueWalk(amount) {
-    const base = Number(amount) || 0;
-    const bias = (Math.random() * 2 - 1) * 0.04;
-    return {
-        base,
-        value: base,
-        bias,
-        dir: Math.random() < 0.5 ? 1 : -1,
-        impulse: vantaPickImpulse(),
-        regimeLeft: 3000 + Math.random() * 7000,
-        lastAt: performance.now(),
-        seeded: false
-    };
-}
-
-function vantaPickImpulse() {
-    const roll = Math.random();
-    return roll < 0.4 ? 1.6 + Math.random() * 2.4 : 0.4 + Math.random() * 0.8;
-}
-
-function vantaWalkValue(trade) {
-    if (trade && trade._vWalk && typeof trade._vWalk.value === "number") {
-        return trade._vWalk.value;
-    }
-    return null;
-}
-
-function vantaStepTradesValues() {
-    const now = performance.now();
-    for (let i = 0; i < trades.length; i++) {
-        const t = trades[i];
-        const w = t._vWalk;
-        if (!w) continue;
-        let dt = w.seeded ? (now - w.lastAt) : 1000;
-        w.lastAt = now;
-        w.seeded = true;
-        dt = Math.min(dt, 6000);
-
-        w.regimeLeft -= dt;
-        if (w.regimeLeft <= 0) {
-            const r = Math.random() * 100;
-            w.dir = r < (47 + w.bias * 100) ? 1 : (r < (94 + w.bias * 100) ? -1 : 0);
-            w.impulse = vantaPickImpulse();
-            w.regimeLeft = 3000 + Math.random() * 7000;
-        }
-
-        const drift = w.dir * w.value * w.impulse * 0.004 * (dt / 1000);
-        const noise = (Math.random() - 0.5) * w.value * (0.002 + w.impulse * 0.001) * (dt / 1000);
-        const pull = (w.base - w.value) * 0.012 * (dt / 1000);
-        let next = w.value + drift + noise + pull;
-        next = Math.max(Math.min(next, w.base * 2.2), w.base * 0.35);
-        w.value = next;
-    }
-}
+/* LIVE VALUE — fully driven by the real chart line, never an independent
+   random walk. Every tick the trade value is recomputed from the current
+   price and the trade's own direction / entry, so a BUY always follows the
+   price up when it rises and down when it falls, and a SELL is the mirror
+   image. There is no hard $9–$10 range: value simply accumulates with each
+   price move and can run well above or below the stake. */
 
 function closeValueFor(trade) {
-    const walked = vantaWalkValue(trade);
-    if (walked != null) return walked;
+    const amount = Number(trade.amount) || 0;
+    if (!amount) return 0;
     const entry = Number(trade.entryPrice) || 0;
     const now = (typeof currentPrice !== "undefined" && !isNaN(currentPrice) && Number(currentPrice) > 0)
         ? Number(currentPrice)
-        : entry;
-    if (!entry) return Number(trade.amount) || 0;
-    return (Number(trade.amount) || 0) * (now / entry);
+        : (entry || 1);
+    if (!entry) return amount;
+    const ratio = now / entry;
+    const sell = trade.direction === "DOWN" || trade.direction === "SELL";
+    let value = sell ? amount * (2 - ratio) : amount * ratio;
+    if (sell && value < amount * 0.01) value = amount * 0.01;
+    return value;
 }
 
 function sellOpenPositionById(id) {
@@ -5095,7 +5045,6 @@ async function vantaSyncTrades() {
             endTime: vantaParseUTC(st.closes_at),
             result: null
         };
-        trade._vWalk = vantaInitValueWalk(trade.amount);
         trades.push(trade);
         createMarker(trade);
     });
@@ -6036,7 +5985,6 @@ async function vantaEnterApp() {
     if (accountMode === "live") vantaSyncTrades();
 
     setInterval(vantaPollPrice, 1000);
-    setInterval(vantaStepTradesValues, 1000);
     setInterval(vantaResyncCandles, 5000);
     setInterval(vantaSyncTrades, 2500);
     setInterval(refreshGolfStats, 20000);

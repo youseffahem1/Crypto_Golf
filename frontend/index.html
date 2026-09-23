@@ -6328,171 +6328,360 @@ async function vantaHandleEntry() {
 }
 </style>
 
+<style id="vanta-wallet-dashboard-css">
+/* =========================================================
+   VANTA WALLET DASHBOARD — asset cards + deposit / send /
+   transfer per coin. Self-contained visual layer.
+========================================================= */
+.vwd-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.vwd-head{align-items:center!important}
+.vwd-market-state{text-transform:none;letter-spacing:.03em}
+.vanta-wallet-page #vfxWalletExtra{display:none!important}
+
+/* ---------- Hero ---------- */
+.vwd-hero{
+  position:relative;overflow:hidden;padding:24px 26px;border-radius:24px;
+  border:1px solid rgba(59,130,246,.16);
+  background:
+    radial-gradient(circle at 88% 8%,rgba(59,130,246,.20),transparent 34%),
+    radial-gradient(circle at 8% 100%,rgba(34,197,94,.10),transparent 30%),
+    linear-gradient(145deg,#151720,#0a0c12);
+  box-shadow:0 22px 60px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.04);
+  display:flex;align-items:center;justify-content:space-between;gap:20px;
+}
+.vwd-hero:after{content:"";position:absolute;width:220px;height:220px;right:-70px;top:-120px;border-radius:50%;border:1px solid rgba(59,130,246,.12);box-shadow:0 0 0 28px rgba(59,130,246,.03),0 0 0 56px rgba(96,165,250,.02)}
+.vwd-hero-label{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#8f93a4;font-weight:850}
+.vwd-hero-total{font-size:42px;line-height:1.05;font-weight:950;letter-spacing:-.055em;margin:8px 0 9px;font-variant-numeric:tabular-nums}
+.vwd-hero-sub{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:10px;color:#7f8496;font-weight:700}
+.vwd-live{display:inline-flex;align-items:center;gap:7px;color:#54e99a}
+.vwd-live i{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px rgba(34,197,94,.85);animation:vwdPulse 1.8s ease-in-out infinite}
+@keyframes vwdPulse{50%{opacity:.35}}
+.vwd-hero-right{display:flex;gap:22px;position:relative;z-index:2}
+.vwd-hero-stat{text-align:right}
+.vwd-hero-stat label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#7f8496;margin-bottom:6px}
+.vwd-hero-stat strong{font-size:17px;color:#54e99a;letter-spacing:-.02em}
+
+/* ---------- Grid ---------- */
+.vwd-grid-head{margin:22px 2px 10px}
+.vwd-section-title{font-size:16px;font-weight:950;letter-spacing:-.02em}
+.vwd-section-note{font-size:10px;color:#7f8496;font-weight:700}
+.vwd-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:13px;margin-top:4px;
+}
+.vwd-empty{padding:36px;border:1px dashed rgba(255,255,255,.08);border-radius:18px;color:#7f8496;font-size:11px;text-align:center}
+
+/* ---------- Card ---------- */
+.vwd-card{
+  position:relative;text-align:left;cursor:pointer;overflow:hidden;
+  padding:16px 17px 13px;border:1px solid rgba(255,255,255,.075);border-radius:20px;
+  background:linear-gradient(150deg,rgba(22,25,35,.85),rgba(9,11,17,.92));
+  box-shadow:inset 0 1px rgba(255,255,255,.04),0 14px 40px rgba(0,0,0,.14);
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+  display:flex;flex-direction:column;gap:11px;min-height:158px;
+}
+.vwd-card:hover{transform:translateY(-3px);border-color:rgba(59,130,246,.34);box-shadow:0 20px 46px rgba(0,0,0,.2)}
+.vwd-card:active{transform:scale(.985)}
+.vwd-card-top{display:flex;align-items:center;gap:11px;min-width:0}
+.vwd-logo{
+  width:44px;height:44px;flex:0 0 44px;border-radius:14px;display:grid;place-items:center;
+  color:#fff;font-weight:950;box-shadow:inset 0 1px rgba(255,255,255,.14),0 7px 20px rgba(0,0,0,.22);
+}
+.vwd-logo svg{width:24px;height:24px;display:block}
+.vwd-logo .txt{font-size:17px;line-height:1;display:block}
+.vwd-card-name{min-width:0;overflow:hidden}
+.vwd-card-sym{font-size:13px;font-weight:950}
+.vwd-card-meta{font-size:9px;color:#7f8496;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vwd-card-chev{color:#5e6470;font-size:20px;margin-left:auto;flex:none;line-height:1;transform:translateY(-1px)}
+.vwd-card-bal{font-size:21px;font-weight:950;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:auto}
+.vwd-card-bal span{font-size:11px;color:#8f93a4;font-weight:900;margin-left:4px}
+.vwd-card-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.vwd-card-usd{font-size:11px;color:#aeb3c0;font-weight:800}
+.vwd-card-chg{font-size:10px;font-weight:900}
+.vwd-card-chg.up{color:#22c55e}
+.vwd-card-chg.down{color:#f43f5e}
+.vwd-card-chg.flat{color:#7f8496}
+.vwd-card-acts{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:2px}
+.vwd-card-acts span{
+  text-align:center;padding:6px 2px;border-radius:9px;font-size:8px;font-weight:900;letter-spacing:.02em;
+  color:#b6bac7;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.14);white-space:nowrap;
+}
+.vwd-card-acts span:nth-child(1){color:#54e99a;background:rgba(34,197,94,.07);border-color:rgba(34,197,94,.16)}
+.vwd-card-acts span:nth-child(2){color:#93c5fd;background:rgba(59,130,246,.07);border-color:rgba(59,130,246,.16)}
+.vwd-card-acts span:nth-child(3){color:#d1b6ff;background:rgba(168,85,247,.07);border-color:rgba(168,85,247,.16)}
+/* brand tile gradients */
+.vwd-logo.sym-btc{background:linear-gradient(145deg,#f7a731,#b85b00)}
+.vwd-logo.sym-eth{background:linear-gradient(145deg,#7d91e8,#394da4)}
+.vwd-logo.sym-bnb{background:linear-gradient(145deg,#f6c34f,#b77e00)}
+.vwd-logo.sym-sol{background:linear-gradient(135deg,#9945ff,#14f195)}
+.vwd-logo.sym-sol svg{color:#fff;filter:drop-shadow(0 0 2px rgba(255,255,255,.35))}
+.vwd-logo.sym-xrp{background:linear-gradient(145deg,#2b333b,#0e1114)}
+.vwd-logo.sym-ltc{background:linear-gradient(145deg,#e2e5e9,#767c85);color:#36404d}
+.vwd-logo.sym-trx{background:linear-gradient(145deg,#f04252,#95121c)}
+.vwd-logo.sym-doge{background:linear-gradient(145deg,#e0c34d,#8a7016)}
+.vwd-logo.sym-ada{background:linear-gradient(145deg,#3f74e0,#1b3d8f)}
+.vwd-logo.sym-link{background:linear-gradient(145deg,#3565e6,#14337f)}
+.vwd-logo.sym-usdt{background:linear-gradient(145deg,#2bb389,#0e5c46)}
+.vwd-logo.sym-usdc{background:linear-gradient(145deg,#2f7fd6,#123f73)}
+.vwd-logo.sym-golf{background:linear-gradient(135deg,#ffe18a,#f4c95d);color:#3a2600}
+.vwd-logo.sym-nova{background:linear-gradient(145deg,#54e99a,#0b9e5c)}
+.vwd-logo.sym-abc{background:linear-gradient(145deg,#ff8fa3,#d92f52)}
+
+/* ---------- Modal ---------- */
+.vwd-modal{position:fixed;inset:0;z-index:100500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(2,3,8,.76);backdrop-filter:blur(18px) saturate(130%);-webkit-backdrop-filter:blur(18px) saturate(130%)}
+.vwd-modal[hidden]{display:none}
+.vwd-sheet{
+  position:relative;width:min(520px,100%);max-height:min(92dvh,760px);overflow:auto;padding:22px;
+  border:1px solid rgba(255,255,255,.10);border-radius:28px;
+  background:radial-gradient(circle at 92% -4%,rgba(59,130,246,.14),transparent 30%),linear-gradient(145deg,rgba(24,27,40,.97),rgba(8,10,16,.99));
+  box-shadow:0 34px 100px rgba(0,0,0,.62),inset 0 1px rgba(255,255,255,.06);
+  animation:vwdIn .26s cubic-bezier(.2,.85,.25,1.15);
+}
+@keyframes vwdIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+.vwd-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.vwd-coin-id{display:flex;align-items:center;gap:12px;min-width:0}
+.vwd-coin-id .vwd-logo{width:48px;height:48px;flex-basis:48px;border-radius:15px}
+.vwd-m-sym{font-size:18px;font-weight:950;letter-spacing:-.02em}
+.vwd-m-name{font-size:10px;color:#8f93a4;margin-top:3px}
+.vwd-close{width:36px;height:36px;flex:none;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04);color:#c8ccd6;font-size:20px;cursor:pointer}
+.vwd-close:hover{background:rgba(255,255,255,.09)}
+.vwd-m-quick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:17px 0 15px}
+.vwd-m-quick>div{padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.03)}
+.vwd-m-quick label{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:#7f8496;margin-bottom:6px}
+.vwd-m-quick b{font-size:12px;letter-spacing:-.01em}
+.vwd-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:5px;border:1px solid rgba(255,255,255,.07);border-radius:15px;background:rgba(0,0,0,.22);margin-bottom:16px}
+.vwd-tab{height:40px;border:0;border-radius:11px;background:transparent;color:#8f93a4;font-size:11px;font-weight:900;cursor:pointer;transition:.15s}
+.vwd-tab.active{color:#fff;background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 8px 20px rgba(37,99,235,.24)}
+.vwd-tab:not(.active):hover{color:#dde0e8;background:rgba(255,255,255,.05)}
+.vwd-pane[hidden]{display:none!important}
+.vwd-deposit-hint{font-size:11px;color:#aeb3c0;text-align:center;font-weight:700;margin-bottom:12px}
+.vwd-deposit-hint b{color:#fff}
+.vwd-addr-card{display:flex;align-items:center;gap:14px;padding:13px;border-radius:17px;border:1px solid rgba(34,197,94,.16);background:rgba(34,197,94,.05)}
+.vwd-qr{width:96px;height:96px;flex:none;border-radius:14px;background:#fff;padding:6px;box-shadow:0 10px 26px rgba(0,0,0,.18)}
+.vwd-addr-wrap{min-width:0;flex:1;display:flex;align-items:center;gap:9px}
+.vwd-addr{font-family:"SFMono-Regular",Consolas,"Roboto Mono",monospace;font-size:11.5px;line-height:1.5;color:#dbeafe;word-break:break-all;font-weight:600}
+.vwd-copy{flex:none;height:34px;padding:0 13px;border:1px solid rgba(34,197,94,.3);border-radius:10px;background:rgba(34,197,94,.12);color:#54e99a;font-size:10px;font-weight:900;cursor:pointer}
+.vwd-copy:hover{background:rgba(34,197,94,.2)}
+.vwd-copy.copied{color:#fff;background:#16a34a}
+.vwd-network-row{display:flex;align-items:center;gap:9px;margin-top:11px;flex-wrap:wrap}
+.vwd-net-chip{padding:5px 10px;border-radius:8px;font-size:9px;font-weight:900;background:rgba(59,130,246,.1);color:#93c5fd;border:1px solid rgba(59,130,246,.24)}
+.vwd-warn{font-size:9.5px;color:#7f8496;font-weight:600}
+.vwd-warn b{color:#c8ccd6}
+.vwd-addr-note{font-size:9.5px;color:#7f8496;line-height:1.55;margin-top:10px;padding:9px 11px;border-radius:11px;border:1px dashed rgba(255,159,67,.25);background:rgba(255,159,67,.05)}
+.vwd-net-unset{border:1px solid rgba(255,159,67,.3);background:rgba(255,159,67,.06);color:#fbbf24}
+
+/* forms */
+.vwd-field{margin-bottom:11px}
+.vwd-field label{display:block;font-size:10px;font-weight:850;color:#aeb3c0;margin-bottom:7px}
+.vwd-field input,.vwd-field select{
+  width:100%;height:48px;box-sizing:border-box;padding:0 14px;border-radius:13px;outline:none;
+  border:1px solid rgba(255,255,255,.09);background:rgba(3,5,10,.78);color:#fff;
+  font-size:15px;font-weight:750;font-family:inherit;box-shadow:inset 0 1px rgba(255,255,255,.02)
+}
+.vwd-field input:focus,.vwd-field select:focus{border-color:rgba(59,130,246,.55);box-shadow:0 0 0 4px rgba(59,130,246,.08)}
+.vwd-field select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8496b5 50%),linear-gradient(135deg,#8496b5 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+.vwd-field input[readonly]{opacity:.9}
+.vwd-field-foot{font-size:10px;color:#7f8496;margin-top:6px;font-weight:700}
+.vwd-field-foot b{color:#e8eaf0}
+.vwd-rate{padding:11px 13px;border-radius:13px;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.15);font-size:11px;font-weight:800;color:#93c5fd;margin-bottom:12px}
+.vwd-primary{width:100%;height:50px;border:0;border-radius:15px;color:#fff;font-size:13px;font-weight:950;cursor:pointer;letter-spacing:.02em;background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 14px 32px rgba(37,99,235,.24);transition:.15s}
+.vwd-primary:hover{transform:translateY(-1px);filter:brightness(1.06)}
+.vwd-primary:active{transform:scale(.985)}
+.vwd-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.vwd-demo-note{margin-top:11px;text-align:center;font-size:9px;color:#7f8496;font-weight:700}
+
+/* footer */
+.vwd-foot{margin-top:16px;font-size:9px;color:#696e7d;text-align:center;line-height:1.6}
+
+/* ---------- Light theme ---------- */
+[data-theme="light"] .vwd-hero{
+  background:radial-gradient(circle at 88% 8%,rgba(37,99,235,.10),transparent 34%),linear-gradient(145deg,#ffffff,#f2f5fb);
+  border-color:rgba(15,23,42,.08);box-shadow:0 20px 55px rgba(15,23,42,.07),inset 0 1px #fff;
+}
+[data-theme="light"] .vwd-hero:after{border-color:rgba(37,99,235,.10)}
+[data-theme="light"] .vwd-hero-label{color:#667085}
+[data-theme="light"] .vwd-hero-total{color:#101828}
+[data-theme="light"] .vwd-hero-sub{color:#98a2b3}
+[data-theme="light"] .vwd-hero-stat label{color:#98a2b3}
+[data-theme="light"] .vwd-section-note{color:#98a2b3}
+[data-theme="light"] .vwd-card{
+  background:linear-gradient(150deg,rgba(255,255,255,.96),rgba(248,250,252,.9));
+  border-color:rgba(15,23,42,.08);box-shadow:inset 0 1px #fff,0 14px 38px rgba(15,23,42,.05);
+}
+[data-theme="light"] .vwd-card:hover{border-color:rgba(37,99,235,.35)}
+[data-theme="light"] .vwd-card-sym,[data-theme="light"] .vwd-card-bal{color:#101828}
+[data-theme="light"] .vwd-card-meta{color:#98a2b3}
+[data-theme="light"] .vwd-card-usd{color:#667085}
+[data-theme="light"] .vwd-card-chg.up{color:#16a34a}
+[data-theme="light"] .vwd-card-chg.down{color:#dc2626}
+[data-theme="light"] .vwd-card-acts span{color:#475467;background:rgba(37,99,235,.05);border-color:rgba(37,99,235,.12)}
+[data-theme="light"] .vwd-card-acts span:nth-child(1){color:#15803d;background:#ecfdf3;border-color:#bbf7d0}
+[data-theme="light"] .vwd-card-acts span:nth-child(2){color:#2563eb;background:#eff6ff;border-color:#bfdbfe}
+[data-theme="light"] .vwd-card-acts span:nth-child(3){color:#7c3aed;background:#f5f3ff;border-color:#ddd6fe}
+[data-theme="light"] .vwd-modal{background:rgba(15,23,42,.24)}
+[data-theme="light"] .vwd-sheet{background:linear-gradient(145deg,rgba(255,255,255,.99),rgba(248,250,252,.99));border-color:rgba(37,99,235,.13);box-shadow:0 30px 80px rgba(15,23,42,.2)}
+[data-theme="light"] .vwd-m-sym{color:#101828}
+[data-theme="light"] .vwd-m-name{color:#98a2b3}
+[data-theme="light"] .vwd-close{color:#475467;border-color:rgba(15,23,42,.1)}
+[data-theme="light"] .vwd-m-quick>div{background:#f8fafc;border-color:rgba(15,23,42,.07)}
+[data-theme="light"] .vwd-m-quick b{color:#101828}
+[data-theme="light"] .vwd-tabs{background:rgba(15,23,42,.05);border-color:rgba(15,23,42,.08)}
+[data-theme="light"] .vwd-tab{color:#98a2b3}
+[data-theme="light"] .vwd-tab.active{color:#fff}
+[data-theme="light"] .vwd-deposit-hint{color:#667085}
+[data-theme="light"] .vwd-deposit-hint b{color:#101828}
+[data-theme="light"] .vwd-addr-card{background:#ecfdf3;border-color:#bbf7d0}
+[data-theme="light"] .vwd-addr{color:#14532d}
+[data-theme="light"] .vwd-copy{color:#15803d;background:rgba(22,163,74,.1);border-color:rgba(22,163,74,.3)}
+[data-theme="light"] .vwd-warn{color:#98a2b3}
+[data-theme="light"] .vwd-warn b{color:#475467}
+[data-theme="light"] .vwd-addr-note{color:#98a2b3;border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.06)}
+[data-theme="light"] .vwd-field label{color:#475467}
+[data-theme="light"] .vwd-field input,[data-theme="light"] .vwd-field select{background:#fff;border-color:rgba(15,23,42,.09);color:#101828;box-shadow:inset 0 1px rgba(15,23,42,.03)}
+[data-theme="light"] .vwd-field-foot{color:#98a2b3}
+[data-theme="light"] .vwd-field-foot b{color:#475467}
+[data-theme="light"] .vwd-rate{color:#2563eb;background:#eff6ff;border-color:#bfdbfe}
+[data-theme="light"] .vwd-demo-note{color:#98a2b3}
+[data-theme="light"] .vwd-foot{color:#98a2b3}
+
+/* ---------- Responsive ---------- */
+@media(max-width:760px){
+  .vwd-hero{flex-direction:column;align-items:flex-start;padding:20px}
+  .vwd-hero-total{font-size:34px}
+  .vwd-hero-right{gap:16px;width:100%}
+  .vwd-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .vwd-card{padding:14px 13px 12px;min-height:150px}
+  .vwd-logo{width:40px;height:40px;flex-basis:40px}
+  .vwd-card-bal{font-size:18px}
+  .vwd-card-acts span{font-size:7px;padding:6px 1px}
+}
+@media(max-width:430px){
+  .vwd-grid{grid-template-columns:1fr;gap:10px}
+  .vwd-card{min-height:0}
+  .vwd-m-quick{grid-template-columns:1fr 1fr}
+  .vwd-m-quick>div:last-child{grid-column:1/-1}
+  .vwd-sheet{padding:18px;border-radius:22px}
+  .vwd-addr-card{flex-direction:column;align-items:flex-start}
+}
+</style>
+
 <section class="vanta-wallet-page" id="vantaWalletPage">
   <div class="vw-container">
 
-    <div class="vw-page-head">
+    <div class="vw-page-head vwd-head">
       <div>
-        <h1 class="vw-page-title">Wallet</h1>
-        <p class="vw-page-sub">Manage your funds & discover rising coins</p>
+        <h1 class="vw-page-title">My Wallets</h1>
+        <p class="vw-page-sub">Your digital assets in one place — deposit, send & transfer anytime</p>
       </div>
-      <div class="vw-market-status"><i></i> Market Live</div>
+      <div class="vw-market-status"><i></i> <span class="vwd-market-state" id="vwLastUpdate">Live</span></div>
     </div>
 
-    <section class="vw-market-card">
-      <div class="vw-market-head">
-        <div>
-          <div class="vw-market-title">Crypto Market</div>
-          <div class="vw-market-note">Prices update automatically • CoinGecko</div>
+    <section class="vwd-hero">
+      <div>
+        <div class="vwd-hero-label">Total Portfolio Value</div>
+        <div class="vwd-hero-total" id="vwdTotal">$0.00</div>
+        <div class="vwd-hero-sub">
+          <span class="vwd-live"><i></i>Balances update live</span>
+          <span id="vwdHoldingsCount">0 assets</span>
         </div>
-        <div class="vw-market-note" id="vwLastUpdate">Updating…</div>
       </div>
-
-      <div class="vw-coins" id="vwCoinList">
-
-        <div class="vw-coin hot" data-coin="bitcoin" data-symbol="BTC">
-          <div class="vw-coin-main"><div class="vw-coin-logo btc">₿</div><div class="vw-coin-text"><span class="vw-coin-symbol">BTC <span class="vw-trend">↑ RISING</span></span><span class="vw-coin-name">Bitcoin</span></div></div>
-          <div class="vw-price" data-price>$77,386.00<small>BTC / USD</small></div>
-          <div class="vw-change up" data-change>+2.20%</div>
-          <button class="vw-coin-action" data-invest="bitcoin">Invest</button>
-        </div>
-
-        <div class="vw-coin hot" data-coin="ethereum" data-symbol="ETH">
-          <div class="vw-coin-main"><div class="vw-coin-logo eth">◆</div><div class="vw-coin-text"><span class="vw-coin-symbol">ETH <span class="vw-trend">↑ RISING</span></span><span class="vw-coin-name">Ethereum</span></div></div>
-          <div class="vw-price" data-price>$2,434.95<small>ETH / USD</small></div>
-          <div class="vw-change up" data-change>+1.11%</div>
-          <button class="vw-coin-action" data-invest="ethereum">Invest</button>
-        </div>
-
-        <div class="vw-coin golf-coin-card" data-symbol="GOLF" data-name="Golf Coin" data-price="0.00" data-change="0.00">
-  <div class="vw-coin-main">
-    <div class="vw-coin-logo golf-logo">G</div>
-    <div class="vw-coin-text">
-      <div class="vw-coin-symbol">GOLF <span class="vw-trend">NEW</span></div>
-      <div class="vw-coin-name">Golf Coin</div>
-    </div>
-  </div>
-  <div class="vw-price">$0.00<small>GOLF / USD</small></div>
-  <div class="vw-change" style="color:#8f91a2">0.00%</div>
-  <button class="vw-coin-action golf-invest-btn" type="button">Invest</button>
-</div>
-
-<div class="vw-coin" data-coin="tron" data-symbol="TRX">
-          <div class="vw-coin-main"><div class="vw-coin-logo trx">TRX</div><div class="vw-coin-text"><span class="vw-coin-symbol">TRX</span><span class="vw-coin-name">TRON</span></div></div>
-          <div class="vw-price" data-price>$0.3432<small>TRX / USD</small></div>
-          <div class="vw-change up" data-change>+0.84%</div>
-          <button class="vw-coin-action" data-invest="tron">Invest</button>
-        </div>
-
-        <div class="vw-coin hot" data-coin="solana" data-symbol="SOL">
-          <div class="vw-coin-main"><div class="vw-coin-logo sol">S</div><div class="vw-coin-text"><span class="vw-coin-symbol">SOL <span class="vw-trend">↑ RISING</span></span><span class="vw-coin-name">Solana</span></div></div>
-          <div class="vw-price" data-price>$94.82<small>SOL / USD</small></div>
-          <div class="vw-change up" data-change>+1.77%</div>
-          <button class="vw-coin-action" data-invest="solana">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="binancecoin" data-symbol="BNB">
-          <div class="vw-coin-main"><div class="vw-coin-logo bnb">◆</div><div class="vw-coin-text"><span class="vw-coin-symbol">BNB</span><span class="vw-coin-name">BNB</span></div></div>
-          <div class="vw-price" data-price>$682.40<small>BNB / USD</small></div>
-          <div class="vw-change up" data-change>+0.92%</div>
-          <button class="vw-coin-action" data-invest="binancecoin">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="ripple" data-symbol="XRP">
-          <div class="vw-coin-main"><div class="vw-coin-logo xrp">X</div><div class="vw-coin-text"><span class="vw-coin-symbol">XRP</span><span class="vw-coin-name">XRP / Ripple</span></div></div>
-          <div class="vw-price" data-price>$1.58<small>XRP / USD</small></div>
-          <div class="vw-change up" data-change>+2.04%</div>
-          <button class="vw-coin-action" data-invest="ripple">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="tether" data-symbol="USDT">
-          <div class="vw-coin-main"><div class="vw-coin-logo usdt">₮</div><div class="vw-coin-text"><span class="vw-coin-symbol">USDT</span><span class="vw-coin-name">Tether</span></div></div>
-          <div class="vw-price" data-price>$1.00<small>USDT / USD</small></div>
-          <div class="vw-change" data-change>+0.01%</div>
-          <button class="vw-coin-action" data-invest="tether">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="usd-coin" data-symbol="USDC">
-          <div class="vw-coin-main"><div class="vw-coin-logo usdc">$</div><div class="vw-coin-text"><span class="vw-coin-symbol">USDC</span><span class="vw-coin-name">USD Coin</span></div></div>
-          <div class="vw-price" data-price>$1.00<small>USDC / USD</small></div>
-          <div class="vw-change" data-change>+0.00%</div>
-          <button class="vw-coin-action" data-invest="usd-coin">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="dogecoin" data-symbol="DOGE">
-          <div class="vw-coin-main"><div class="vw-coin-logo doge">??</div><div class="vw-coin-text"><span class="vw-coin-symbol">DOGE</span><span class="vw-coin-name">Dogecoin</span></div></div>
-          <div class="vw-price" data-price="$0.18<small>DOGE / USD</small></div>
-          <div class="vw-change up" data-change>+1.43%</div>
-          <button class="vw-coin-action" data-invest="dogecoin">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="cardano" data-symbol="ADA">
-          <div class="vw-coin-main"><div class="vw-coin-logo ada">A</div><div class="vw-coin-text"><span class="vw-coin-symbol">ADA</span><span class="vw-coin-name">Cardano</span></div></div>
-          <div class="vw-price" data-price="$0.82<small>ADA / USD</small></div>
-          <div class="vw-change up" data-change>+0.68%</div>
-          <button class="vw-coin-action" data-invest="cardano">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="chainlink" data-symbol="LINK">
-          <div class="vw-coin-main"><div class="vw-coin-logo link">L</div><div class="vw-coin-text"><span class="vw-coin-symbol">LINK</span><span class="vw-coin-name">Chainlink</span></div></div>
-          <div class="vw-price" data-price="$22.41<small>LINK / USD</small></div>
-          <div class="vw-change up" data-change>+1.26%</div>
-          <button class="vw-coin-action" data-invest="chainlink">Invest</button>
-        </div>
-
-        <div class="vw-coin" data-coin="litecoin" data-symbol="LTC">
-          <div class="vw-coin-main"><div class="vw-coin-logo ltc">??</div><div class="vw-coin-text"><span class="vw-coin-symbol">LTC</span><span class="vw-coin-name">Litecoin</span></div></div>
-          <div class="vw-price" data-price="$82.15<small>LTC / USD</small></div>
-          <div class="vw-change up" data-change>+1.02%</div>
-          <button class="vw-coin-action" data-invest="litecoin">Invest</button>
-        </div>
-
+      <div class="vwd-hero-right">
+        <div class="vwd-hero-stat"><label>Holdings</label><strong id="vwdHoldings">0</strong></div>
+        <div class="vwd-hero-stat"><label>Network</label><strong id="vwdNet">Nile</strong></div>
       </div>
     </section>
 
-    <div class="golf-promo">
-  <div class="golf-promo-head">
-    <div class="golf-promo-logo">G</div>
-    <div><div class="golf-promo-title">Golf Coin — Early Access</div><div class="golf-promo-sub">GOLF • Early market</div></div>
-  </div>
-  <div class="golf-promo-copy">Start with <strong>10–20 GOLF</strong> in your wallet and follow its market movement. The market shows a <strong>$1.00 target for September 18</strong> as a promotional scenario, not a guaranteed future price.</div>
-  <div class="golf-promo-target"><span>Current price</span><b>$0.00</b><span>Target</span><b>$1.00 → Sep 18</b></div>
-  <div class="golf-promo-note">Prices reflect the live GOLF/USDT market used across the platform.</div>
-</div>
-
-<div class="vw-lower">
-      <div class="vw-card">
-        <div class="vw-card-title">Recent Activity</div>
-        <div class="vw-activity">
-          <div class="vw-activity-left"><div class="vw-icon">✦</div><div><b>Welcome Bonus</b><div style="color:#777989;font-size:9px;margin-top:3px">Introductory credit</div></div></div>
-          <span class="vw-positive">+$5.00</span>
-        </div>
-        <div class="vw-activity">
-          <div class="vw-activity-left"><div class="vw-icon">↕</div><div><b>Wallet Ready</b><div style="color:#777989;font-size:9px;margin-top:3px">Your balance is available</div></div></div>
-          <span style="color:#8f91a2;font-size:9px">NOW</span>
-        </div>
-      </div>
-
-      <div class="vw-card">
-        <div class="vw-card-title">Payment Methods</div>
-        <div class="vw-method"><div class="vw-method-icon">₿</div><div><b>Crypto</b><small>Fast & secure</small></div></div>
-        <div class="vw-method"><div class="vw-method-icon">▣</div><div><b>Bank Card</b><small>Debit / Credit Card</small></div></div>
-      </div>
+    <div class="vwd-row vwd-grid-head">
+      <h2 class="vwd-section-title">My Wallets</h2>
+      <span class="vwd-section-note">BTC • ETH • BNB • SOL &amp; more</span>
     </div>
+
+    <div class="vwd-grid" id="vwdGrid"></div>
+    <div class="vwd-empty" id="vwdEmpty" hidden>No wallets to show yet.</div>
+
+    <div class="vwd-foot">Deposit addresses are issued by the platform. Always confirm the network before sending — using the wrong chain can permanently lose funds.</div>
 
   </div>
 </section>
 
-<div class="vw-modal" id="vwModal">
-  <div class="vw-modal-box">
-    <h2 class="vw-modal-title" id="vwModalTitle">Deposit Funds</h2>
-    <p class="vw-modal-desc" id="vwModalDesc">Enter the amount you want to add to your wallet.</p>
-    <div id="vwInvestCoinBox" style="display:none"></div>
-    <div class="vw-input-wrap"><span class="vw-currency">$</span><input class="vw-input" id="vwAmountInput" type="number" min="0" step="0.01" placeholder="0.00"></div>
-    <div class="vw-modal-row">
-      <button class="vw-modal-btn vw-cancel" id="vwCancelBtn">Cancel</button>
-      <button class="vw-modal-btn vw-confirm" id="vwConfirmBtn">Confirm</button>
+<div class="vwd-modal" id="vwdModal" hidden>
+  <div class="vwd-sheet">
+
+    <div class="vwd-sheet-head">
+      <div class="vwd-coin-id">
+        <div class="vwd-logo" id="vwdMLogo"></div>
+        <div>
+          <div class="vwd-m-sym" id="vwdMSym">BTC</div>
+          <div class="vwd-m-name" id="vwdMName">Bitcoin</div>
+        </div>
+      </div>
+      <button class="vwd-close" id="vwdClose" type="button" aria-label="Close">✕</button>
     </div>
+
+    <div class="vwd-m-quick">
+      <div><label>Balance</label><b id="vwdMBal">0</b></div>
+      <div><label>≈ USD</label><b id="vwdMUsd">$0.00</b></div>
+      <div><label>Network</label><b id="vwdMNet">Bitcoin</b></div>
+    </div>
+
+    <div class="vwd-tabs" id="vwdTabs">
+      <button class="vwd-tab active" data-tab="deposit" type="button">Deposit</button>
+      <button class="vwd-tab" data-tab="send" type="button">Send</button>
+      <button class="vwd-tab" data-tab="transfer" type="button">Transfer</button>
+    </div>
+
+    <div class="vwd-pane" id="vwdPaneDeposit">
+      <div class="vwd-deposit-hint">Send <b id="vwdDepSym">BTC</b> to this address to top up your wallet</div>
+      <div class="vwd-addr-card">
+        <canvas class="vwd-qr" id="vwdQr" width="108" height="108"></canvas>
+        <div class="vwd-addr-wrap">
+          <div class="vwd-addr" id="vwdAddr"></div>
+          <button class="vwd-copy" id="vwdCopy" type="button">Copy</button>
+        </div>
+      </div>
+      <div class="vwd-network-row">
+        <span class="vwd-net-chip" id="vwdNetChip">Network</span>
+        <span class="vwd-warn" id="vwdWarn">Only send <b>BTC</b> on the <b>Bitcoin</b> network.</span>
+      </div>
+      <div class="vwd-addr-note" id="vwdAddrNote">Double-check the network and address before sending. Sending the wrong asset may result in permanent loss.</div>
+    </div>
+
+    <div class="vwd-pane" id="vwdPaneSend" hidden>
+      <div class="vwd-field">
+        <label for="vwdSendTo">Recipient email (Vanta account)</label>
+        <input id="vwdSendTo" type="email" placeholder="friend@vanta.example" autocomplete="off">
+      </div>
+      <div class="vwd-field">
+        <label for="vwdSendAmt">Amount (<span id="vwdSendSym">BTC</span>)</label>
+        <input id="vwdSendAmt" type="number" min="0" step="any" placeholder="0.00000000" inputmode="decimal" autocomplete="off">
+        <div class="vwd-field-foot">Available: <b id="vwdSendAvail">0</b> <span id="vwdSendSym2">BTC</span></div>
+      </div>
+      <div class="vwd-field">
+        <label for="vwdSendNote">Note (optional)</label>
+        <input id="vwdSendNote" type="text" maxlength="200" placeholder="Message to the recipient" autocomplete="off">
+      </div>
+      <button class="vwd-primary" id="vwdSendBtn" type="button">Send</button>
+      <div class="vwd-demo-note" id="vwdSendNoteDemo" hidden>Practice mode — this is a simulated transfer and does not touch a backend.</div>
+    </div>
+
+    <div class="vwd-pane" id="vwdPaneTransfer" hidden>
+      <div class="vwd-field">
+        <label for="vwdConvFrom">Converting from</label>
+        <input id="vwdConvFrom" type="text" readonly>
+      </div>
+      <div class="vwd-field">
+        <label for="vwdConvTo">Convert to</label>
+        <select id="vwdConvTo"></select>
+      </div>
+      <div class="vwd-field">
+        <label for="vwdConvAmt">Amount (<span id="vwdConvFromSym">BTC</span>)</label>
+        <input id="vwdConvAmt" type="number" min="0" step="any" placeholder="0.00" inputmode="decimal" autocomplete="off">
+        <div class="vwd-field-foot">Available: <b id="vwdConvAvail">0</b> <span id="vwdConvFromSym2">BTC</span></div>
+      </div>
+      <div class="vwd-rate" id="vwdRate">Rate loading…</div>
+      <button class="vwd-primary" id="vwdConvBtn" type="button">Convert</button>
+      <div class="vwd-demo-note" id="vwdConvNoteDemo" hidden>Practice mode — this is a simulated conversion and does not touch a backend.</div>
+    </div>
+
   </div>
 </div>
 
@@ -6547,144 +6736,425 @@ async function vantaHandleEntry() {
   </section>
 </div>
 
-<script id="vanta-wallet-final-js">
-(function(){
-  const walletPage=document.getElementById('vantaWalletPage');
-  const main=document.querySelector('.main');
-  const walletBalance=document.getElementById('vwTotalBalance');
-  const modal=document.getElementById('vwModal');
-  const input=document.getElementById('vwAmountInput');
-  const investBox=document.getElementById('vwInvestCoinBox');
-  const modalTitle=document.getElementById('vwModalTitle');
-  const modalDesc=document.getElementById('vwModalDesc');
-  const confirmBtn=document.getElementById('vwConfirmBtn');
-  const lastUpdate=document.getElementById('vwLastUpdate');
-  if(!walletPage||!main)return;
+<script id="vanta-wallet-final-js">(function(){
+  'use strict';
 
-  const fallbackPrices={
-    bitcoin:77386, ethereum:2434.95, tron:.3432, solana:94.82, binancecoin:682.40,
-    ripple:1.58, tether:1, dogecoin:.18, cardano:.82, chainlink:22.41,
-    'usd-coin':1, litecoin:82.15
+  /* =========================================================
+     VANTA WALLET DASHBOARD
+     Asset cards + Deposit / Send / Transfer per coin.
+     - demo/public demo  -> local practice balances + your own
+       configured deposit addresses (offline-friendly).
+     - live (logged in)  -> real backend balances, real /api/transfer
+       and /api/swap calls, backend deposit addresses preferred.
+  ========================================================= */
+  var pageEl  = document.getElementById('vantaWalletPage');
+  var grid    = document.getElementById('vwdGrid');
+  var emptyEl = document.getElementById('vwdEmpty');
+  var modal   = document.getElementById('vwdModal');
+  if(!pageEl || !grid || !modal) return;
+
+  /* ---------- Catalog ---------- */
+  var VWD_ORDER = ['BTC','ETH','BNB','SOL','XRP','LTC','TRX','DOGE','ADA','LINK','USDT','USDC','GOLF'];
+  var VWD_META = {
+    BTC :{name:'Bitcoin',   net:'Bitcoin',                 dec:8},
+    ETH :{name:'Ethereum',  net:'Ethereum (ERC-20)',       dec:6},
+    BNB :{name:'BNB',       net:'BNB Smart Chain (BEP-20)',dec:6},
+    SOL :{name:'Solana',    net:'Solana',                  dec:6},
+    XRP :{name:'XRP',       net:'XRP Ledger',              dec:4},
+    LTC :{name:'Litecoin',  net:'Litecoin',                dec:8},
+    TRX :{name:'TRON',      net:'TRON (TRC-20)',           dec:4},
+    DOGE:{name:'Dogecoin',  net:'Dogecoin',                dec:6},
+    ADA :{name:'Cardano',   net:'Cardano',                 dec:4},
+    LINK:{name:'Chainlink', net:'Ethereum (ERC-20)',       dec:4},
+    USDT:{name:'Tether',    net:'TRON (TRC-20)',           dec:4},
+    USDC:{name:'USD Coin',  net:'Ethereum (ERC-20)',       dec:4},
+    GOLF:{name:'Golf Coin', net:'VANTA Market',            dec:4}
   };
-  const coinNames={
-    bitcoin:'Bitcoin',ethereum:'Ethereum',tron:'TRON',solana:'Solana',binancecoin:'BNB',
-    ripple:'XRP / Ripple',tether:'Tether',dogecoin:'Dogecoin',cardano:'Cardano',chainlink:'Chainlink',
-    'usd-coin':'USD Coin',litecoin:'Litecoin'
+  var VWD_CG = {BTC:'bitcoin',ETH:'ethereum',BNB:'binancecoin',SOL:'solana',XRP:'ripple',LTC:'litecoin',
+                TRX:'tron',DOGE:'dogecoin',ADA:'cardano',LINK:'chainlink',USDT:'tether',USDC:'usd-coin'};
+  var VWD_DEFAULT = {BTC:77386,ETH:2434.95,BNB:682.4,SOL:94.82,XRP:1.58,LTC:82.15,TRX:.3432,DOGE:.18,ADA:.82,LINK:22.41,USDT:1,USDC:1,GOLF:.6};
+  var VWD_PRACTICE = {BTC:.0132,ETH:.2,BNB:.5,SOL:1.65,XRP:710,LTC:1.25,TRX:2350,DOGE:3300,ADA:520,LINK:14.5,USDC:1800,GOLF:21};
+  var VWD_MARK = {
+    BTC :'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">\u20BF</text>',
+    ETH :'<path d="M12 1.5 19.5 12.26l-7.5 4.39-7.5-4.39L12 1.5z"/><path d="M4.5 13.62l7.5 4.38 7.5-4.38L12 24 4.5 13.62z" opacity=".5"/>',
+    BNB :'<path d="M12 2.6 21.4 12 12 21.4 2.6 12 12 2.6z" opacity=".85"/><path d="M12 7.2 16.8 12 12 16.8 7.2 12 12 7.2z"/>',
+    SOL :'<g transform="rotate(9 12 12)" fill="currentColor"><rect x="4" y="5.5" width="16" height="3" rx="1.5"/><rect x="4" y="10.5" width="16" height="3" rx="1.5"/><rect x="4" y="15.5" width="16" height="3" rx="1.5"/></g>',
+    XRP :'<path d="M5.5 6.5 18.5 17.5M18.5 6.5 5.5 17.5" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/>',
+    LTC :'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">\u0141</text>',
+    TRX :'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="900">TRX</text>',
+    DOGE:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">\u00D0</text>',
+    ADA :'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">A</text>',
+    LINK:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="900">LINK</text>',
+    USDT:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">\u20AE</text>',
+    USDC:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">$</text>',
+    GOLF:'<text x="10.5" y="13" text-anchor="middle" dominant-baseline="central">G</text>'
   };
-  const prices={...fallbackPrices};
-  let mode='deposit', selectedCoin=null;
 
-  function money(v){
-    return '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  }
-  function coinMoney(v){
-    if(v>=1000)return '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    if(v>=1)return '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4});
-    return '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
-  }
-  function syncWallet(){
-    if(typeof balance!=='undefined' && walletBalance) walletBalance.textContent=money(balance);
-  }
-  function setPage(page){
-    const wallet=page==='wallet';
-    walletPage.classList.toggle('vw-active',wallet);
-    main.style.display=wallet?'none':'';
-    document.querySelectorAll('.side-item,.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
-    if(wallet){syncWallet();walletPage.scrollTop=0;refreshCoinPrices();}
-    window.scrollTo({top:0,behavior:'instant'});
-  }
-
-  document.querySelectorAll('[data-page="wallet"]').forEach(x=>x.addEventListener('click',()=>setPage('wallet')));
-  document.querySelectorAll('[data-page="trading"]').forEach(x=>x.addEventListener('click',()=>setPage('trading')));
-
-  function openDeposit(type){
-    mode=type; selectedCoin=null; investBox.style.display='none'; investBox.innerHTML='';
-    modalTitle.textContent=type==='deposit'?'Deposit Funds':'Withdraw Funds';
-    modalDesc.textContent=type==='deposit'?'Enter the amount you want to add to your wallet.':'Enter the amount you want to withdraw from your wallet.';
-    confirmBtn.textContent=type==='deposit'?'Deposit':'Withdraw';
-    input.value=''; modal.classList.add('vw-open'); setTimeout(()=>input.focus(),80);
-  }
-  function openInvest(coinId){
-    selectedCoin=coinId; mode='invest';
-    const row=document.querySelector(`[data-coin="${coinId}"]`);
-    const logo=row?.querySelector('.vw-coin-logo');
-    const symbol=row?.dataset.symbol||'COIN';
-    const cls=logo?.className||'vw-coin-logo';
-    modalTitle.textContent='Invest in '+symbol;
-    modalDesc.textContent='Deposit an amount and buy while the market moves.';
-    investBox.style.display='block';
-    investBox.innerHTML=`<div class="vw-invest-coin"><div class="${cls}">${logo?.textContent||symbol}</div><div><b>${coinNames[coinId]||symbol}</b><small>${symbol} • <span style="color:#4ade80">↑ Market is rising</span></small></div><div class="vw-invest-price"><strong>${coinMoney(prices[coinId]||0)}</strong><small>LIVE PRICE</small></div></div>`;
-    confirmBtn.textContent='Deposit & Invest';
-    input.value=''; modal.classList.add('vw-open'); setTimeout(()=>input.focus(),80);
-  }
-
-  document.getElementById('vwDepositBtn')?.addEventListener('click',()=>openDeposit('deposit'));
-  document.getElementById('vwWithdrawBtn')?.addEventListener('click',()=>openDeposit('withdraw'));
-  document.getElementById('vwCancelBtn').onclick=()=>modal.classList.remove('vw-open');
-
-  confirmBtn.onclick=()=>{
-    const value=Number(input.value);
-    if(!value||value<=0)return;
-    if(typeof balance==='undefined')return;
-    if(mode==='withdraw' && value>balance){alert('Insufficient balance.');return;}
-    if(mode==='invest' && value>balance){
-      modalTitle.textContent='Insufficient Balance';
-      modalDesc.textContent='Deposit more funds first, then you can invest in '+(coinNames[selectedCoin]||'this coin')+'.';
-      confirmBtn.textContent='Deposit Funds';
-      mode='deposit'; selectedCoin=null; investBox.style.display='none';
-      return;
-    }
-    if(mode==='invest'){
-      balance-=value;
-      if(typeof updateBalance==='function')updateBalance();
-      syncWallet();
-      modal.classList.remove('vw-open');
-      if(typeof showToast==='function')showToast(`Investment opened • ${coinNames[selectedCoin]||'Coin'} • ${money(value)}`);
-      return;
-    }
-    balance += mode==='deposit'?value:-value;
-    if(typeof updateBalance==='function')updateBalance();
-    syncWallet(); modal.classList.remove('vw-open');
+  /* =========================================================
+     YOUR OWN DEPOSIT ADDRESSES
+     ??? Put YOUR wallet addresses below. These are the addresses
+     shown on the Deposit tab of every coin. (Placeholder sample
+     values are used until you replace them.)
+  ========================================================= */
+  var WALLET_ADDRESSES = {
+    BTC : 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+    ETH : '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+    BNB : '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+    SOL : 'ExampleAddress11111111111111111111111111111',
+    XRP : 'rJge2QHq2r9j7v1WHkWf1R2wyz',
+    LTC : 'ltc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+    TRX : 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
+    DOGE:'DExample0000000000000000000000',
+    ADA : 'addr1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh0example',
+    LINK: '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+    USDT: 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
+    USDC: '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+    GOLF : 'GOLF-EXAMPLE-PLATFORM-WALLET'
   };
-  modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('vw-open')});
 
-  /* Live market prices: use CoinGecko when available, fallback to local demo prices. */
-  async function refreshCoinPrices(){
-    const ids=Object.keys(fallbackPrices).join(',');
+  var state = {
+    prices: {},
+    prev:   {},
+    backend: {},                 // deposit_addresses from /api/wallet/layout
+    activeSym: 'BTC',
+    activeTab: 'deposit',
+    busy: false
+  };
+
+  function esc(s){ return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function $(id){ return document.getElementById(id); }
+  function isDemo(){ return typeof accountMode !== 'undefined' ? accountMode === 'demo' : true; }
+  function hasToken(){ try{ return !!(window.vantaToken && vantaToken()); }catch(e){ return false; } }
+  function userTag(){ try{ var u=JSON.parse(localStorage.getItem('vanta_user')||'null'); return (u&&(u.id||u.email))||'guest'; }catch(e){ return 'guest'; } }
+  var demoKey = 'vwd_demo_'+userTag();
+
+  /* ---------- Practice balance store ---------- */
+  function practiceGet(){
+    try{ var raw=localStorage.getItem(demoKey); if(raw){ var m=JSON.parse(raw); if(m&&typeof m==='object')return m; } }catch(e){}
+    return {};
+  }
+  function practice(){ var m=practiceGet(); for(var k in VWD_PRACTICE){ if(!(k in m)) m[k]=VWD_PRACTICE[k]; } return m; }
+  function practiceSave(m){ try{ localStorage.setItem(demoKey,JSON.stringify(m)); }catch(e){} }
+
+  function realBal(sym){
     try{
-      const res=await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+encodeURIComponent(ids)+'&vs_currencies=usd&include_24hr_change=true',{cache:'no-store'});
-      if(!res.ok)throw new Error('price api');
-      const data=await res.json();
-      document.querySelectorAll('.vw-coin[data-coin]').forEach(row=>{
-        const id=row.dataset.coin, d=data[id];
-        if(!d||typeof d.usd!=='number')return;
-        prices[id]=d.usd;
-        const priceEl=row.querySelector('[data-price]');
-        const changeEl=row.querySelector('[data-change]');
-        priceEl.innerHTML=coinMoney(d.usd)+'<small>'+row.dataset.symbol+' / USD</small>';
-        const ch=Number(d.usd_24h_change||0);
-        changeEl.textContent=(ch>=0?'+':'')+ch.toFixed(2)+'%';
-        changeEl.classList.toggle('up',ch>=0); changeEl.classList.toggle('down',ch<0);
-      });
-      lastUpdate.textContent='Updated just now • CoinGecko';
-    }catch(e){
-      /* Keep polished fallback values and gently animate the demo market. */
-      document.querySelectorAll('.vw-coin[data-coin]').forEach(row=>{
-        const id=row.dataset.coin;
-        const drift=(Math.random()-.42)*(id==='tether'?.0002:.004);
-        prices[id]=prices[id]*(1+drift);
-        const priceEl=row.querySelector('[data-price]');
-        if(priceEl)priceEl.innerHTML=coinMoney(prices[id])+'<small>'+row.dataset.symbol+' / USD</small>';
-      });
-      lastUpdate.textContent='Live prices • auto refresh';
+      var arr=window.vantaCoinBalances||coinBalances||null;
+      if(Array.isArray(arr)){
+        for(var i=0;i<arr.length;i++){ var r=arr[i]; if(String(r.symbol||r.currency||'').toUpperCase()===sym) return Number(r.balance!=null?r.balance:r.amount)||0; }
+      } else if(arr&&typeof arr==='object'){
+        if(arr[sym]!=null) return Number(arr[sym])||0;
+        if(arr[sym.toLowerCase()]!=null) return Number(arr[sym.toLowerCase()])||0;
+      }
+    }catch(e){}
+    return null;
+  }
+  function balanceFor(sym){
+    if(sym==='USDT'){
+      if(isDemo()) return typeof demoBalance==='number'?demoBalance:10000;
+      if(typeof balance==='number') return balance;
+      var ur=realBal('USDT'); if(ur!=null) return ur;
+    }
+    var real=realBal(sym);
+    if(!isDemo() && real!=null) return real;
+    var m=practice();
+    if(sym==='GOLF'){
+      var gp=(typeof golfPrice==='number'?golfPrice:0);
+      if(!isDemo() && gp>0){ try{ var g=realBal('GOLF'); if(typeof g==='number') return g; }catch(e){} }
+      return Number(m.GOLF)||0;
+    }
+    return Number(m[sym])||0;
+  }
+
+  function priceOf(sym){ var p=state.prices[sym]; if(typeof p==='number'&&p>0)return p; return VWD_DEFAULT[sym]||0; }
+  function changeOf(sym){ return state.prev[sym]!=null ? state.prev[sym] : null; }
+  function fmtMoney(v){ return '$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmtCoin(v,sym){ var n=Number(v)||0; if(n===0)return '0'; var d=(VWD_META[sym]||{dec:4}).dec||4; var s=n.toFixed(Math.min(d,8)); if(d>4) s=s.replace(/0+$/,'').replace(/\.$/,''); return s; }
+  function rate(a,b){ var pa=priceOf(a),pb=priceOf(b); if(!pa||!pb)return 0; return pa/pb; }
+
+  /* ---------- Logo tile ---------- */
+  function logoHtml(sym){
+    var mark=VWD_MARK[sym]||'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">?</text>';
+    var cur = (sym==='LTC'||sym==='GOLF') ? ' color="currentColor"' : ' fill="currentColor"';
+    return '<div class="vwd-logo sym-'+sym.toLowerCase()+'"><svg'+cur+' viewBox="0 0 24 24" aria-hidden="true">'+mark+'</svg></div>';
+  }
+
+  /* ---------- Render grid ---------- */
+  function render(){
+    var html='', total=0, holdings=0;
+    VWD_ORDER.forEach(function(sym){
+      var meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
+      var bal=balanceFor(sym);
+      var usd=bal*priceOf(sym);
+      if(bal>0) holdings++;
+      total+=usd;
+      var ch=changeOf(sym);
+      var chStr=ch==null?'\u2014':(ch>=0?'+':'')+Number(ch).toFixed(2)+'%';
+      var chCl=ch==null?'flat':(ch>=0?'up':'down');
+      html+=
+        '<button type="button" class="vwd-card" data-wallet="'+sym+'">'+
+          '<div class="vwd-card-top">'+logoHtml(sym)+
+            '<div class="vwd-card-name"><div class="vwd-card-sym">'+sym+'</div><div class="vwd-card-meta">'+esc(meta.name)+' \u2022 '+esc(meta.net)+'</div></div>'+
+            '<span class="vwd-card-chev">\u203A</span>'+
+          '</div>'+
+          '<div class="vwd-card-bal">'+fmtCoin(bal,sym)+' <span>'+sym+'</span></div>'+
+          '<div class="vwd-card-row"><span class="vwd-card-usd">'+fmtMoney(usd)+'</span><span class="vwd-card-chg '+chCl+'">'+chStr+'</span></div>'+
+          '<div class="vwd-card-acts"><span>Deposit</span><span>Send</span><span>Transfer</span></div>'+
+        '</button>';
+    });
+    grid.innerHTML=html;
+    emptyEl.hidden = VWD_ORDER.length>0;
+    var t=fmtMoney(total);
+    $('vwdTotal').textContent=t;
+    $('vwdHoldings').textContent=holdings;
+    $('vwdHoldingsCount').textContent=holdings+' '+(holdings===1?'asset':'assets');
+  }
+
+  /* ---------- Modal ---------- */
+  function setTab(tab){
+    state.activeTab=tab;
+    var tabs={deposit:$('vwdPaneDeposit'),send:$('vwdPaneSend'),transfer:$('vwdPaneTransfer')};
+    Array.prototype.forEach.call(document.querySelectorAll('#vwdTabs .vwd-tab'),function(b){ b.classList.toggle('active',b.getAttribute('data-tab')===tab); });
+    for(var k in tabs){ if('deposit'===k){ tabs[k].hidden=false; } else { tabs[k].hidden=true; } }
+    tabs[tab].hidden=false;
+  }
+  function syncModal(){
+    var sym=state.activeSym, meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
+    $('vwdMLogo').outerHTML=logoHtml(sym).replace('class="vwd-logo','id="vwdMLogo" class="vwd-logo');
+    $('vwdMSym').textContent=sym;
+    $('vwdMName').textContent=meta.name+(isDemo()?' \u00B7 Practice':'');
+    var bal=balanceFor(sym);
+    $('vwdMBal').textContent=fmtCoin(bal,sym);
+    $('vwdMUsd').textContent=fmtMoney(bal*priceOf(sym));
+    $('vwdMNet').textContent=meta.net;
+    $('vwdDepSym').textContent=sym;
+    $('vwdSendSym').textContent=sym; $('vwdSendSym2').textContent=sym;
+    $('vwdConvFromSym').textContent=sym; $('vwdConvFromSym2').textContent=sym;
+    $('vwdSendAvail').textContent=fmtCoin(bal,sym);
+    $('vwdConvAvail').textContent=fmtCoin(bal,sym);
+    $('vwdConvFrom').value=sym+' \u2014 '+meta.name;
+    $('vwdSendTo').value=''; $('vwdSendAmt').value=''; $('vwdSendNote').value='';
+    $('vwdConvAmt').value='';
+    var opts=''; VWD_ORDER.forEach(function(o){ if(o!==sym) opts+='<option value="'+o+'">'+o+' \u2014 '+esc((VWD_META[o]||{}).name||'')+'</option>'; });
+    $('vwdConvTo').innerHTML=opts;
+    fillDeposit();
+    updateRate();
+    $('vwdSendNoteDemo').hidden=!isDemo();
+    $('vwdConvNoteDemo').hidden=!isDemo();
+  }
+  function depositAddressFor(sym){
+    if(!isDemo()){
+      if(state.backend[sym]&&String(state.backend[sym]).trim().length>5) return {addr:state.backend[sym],fromBackend:true};
+      if(sym==='USDT'&&state.backend[sym]) return {addr:state.backend[sym],fromBackend:true};
+    }
+    var a=WALLET_ADDRESSES[sym];
+    if(a) return {addr:a,fromBackend:false};
+    return {addr:null,fromBackend:false};
+  }
+  function fillDeposit(){
+    var sym=state.activeSym, meta=VWD_META[sym]||{net:'Network'};
+    var d=depositAddressFor(sym);
+    var addrEl=$('vwdAddr'), copyBtn=$('vwdCopy');
+    copyBtn.classList.remove('copied'); copyBtn.textContent='Copy';
+    $('vwdNet').textContent=(meta.net||'').split(' ')[0];
+    $('vwdNetChip').textContent=meta.net;
+    $('vwdWarn').innerHTML='Only send <b>'+esc(sym)+'</b> on the <b>'+esc(meta.net)+'</b> network.';
+    if(d.addr){
+      addrEl.textContent=d.addr;
+      drawQr(d.addr);
+      copyBtn.disabled=false;
+      $('vwdNetChip').classList.remove('vwd-net-unset');
+      $('vwdAddrNote').innerHTML=d.fromBackend?
+        'Platform-issued '+esc(sym)+' deposit address for your account.':
+        'This is your configured '+esc(sym)+' deposit address. Replace the samples in <b>WALLET_ADDRESSES</b> with your own if needed.';
+    } else {
+      addrEl.textContent='Not Provided Yet';
+      clearQr();
+      copyBtn.disabled=true;
+      $('vwdNetChip').classList.add('vwd-net-unset');
+      $('vwdAddrNote').innerHTML='No deposit address configured yet for <b>'+esc(sym)+'</b>.';
+    }
+  }
+  function updateRate(){
+    var from=state.activeSym, to=$('vwdConvTo').value||'USDT', amt=parseFloat($('vwdConvAmt').value)||0;
+    var r=rate(from,to);
+    if(!isDemo()&&hasToken()&&r){
+      $('vwdRate').textContent='1 '+from+' \u2248 '+Number(r).toFixed(6)+' '+to+(amt?(' \u00B7 '+fmtCoin(amt,from)+' '+from+' \u2248 '+fmtCoin(amt*r,to)+' '+to):'');
+    } else {
+      $('vwdRate').textContent='Rate: 1 '+from+' \u2248 '+Number(r).toFixed(6)+' '+to+(amt?(' ('+fmtCoin(amt*r,to)+' '+to+')'):'');
     }
   }
 
-  // "Invest" on the demo market-price coin cards is handled by the
-  // safe-features layer below (redirects to the real GOLF/USDT convert flow).
+  /* ---------- Pseudo QR ---------- */
+  function hashString(s){
+    var h=2166136261;
+    for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
+    return h>>>0;
+  }
+  function rnd(seed){ var x=Math.sin(seed)*43758.5453; return x-Math.floor(x); }
+  function drawQr(text){
+    var c=$('vwdQr'); if(!c)return; var ctx=c.getContext('2d');
+    var n=21,size=108,cell=size/n;
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,size,size);
+    var seed=hashString(text);
+    ctx.fillStyle='#0b1220';
+    for(var y=0;y<n;y++){ for(var x=0;x<n;x++){
+      var inFinder=(x<7&&y<7)||(x>=n-7&&y<7)||(x<7&&y>=n-7);
+      var on=(seed^(x*71+y*131))%3!==0;
+      if(inFinder){ ctx.fillRect(x*cell,y*cell,cell,cell); continue; }
+      if(on) ctx.fillRect(x*cell,y*cell,cell,cell);
+    }}
+    ctx.fillStyle='#fff';
+    [0,1,2].forEach(function(f){
+      var fx= f===1? n-7:0, fy= f===2? n-7:0;
+      ctx.clearRect(fx*cell,fy*cell,7*cell,7*cell);
+      ctx.clearRect(fx*cell+cell,fy*cell+cell,(7-2)*cell,(7-2)*cell);
+    });
+    ctx.fillStyle='#0b1220';
+    [0,1,2].forEach(function(f){
+      var fx= f===1? n-7:0, fy= f===2? n-7:0;
+      ctx.fillRect(fx*cell,fy*cell,7*cell,cell); ctx.fillRect(fx*cell,(fy+6)*cell,7*cell,cell);
+      ctx.fillRect(fx*cell,fy*cell,cell,7*cell); ctx.fillRect((fx+6)*cell,fy*cell,cell,7*cell);
+    });
+  }
+  function clearQr(){ var c=$('vwdQr'); if(!c)return; var ctx=c.getContext('2d'); ctx.fillStyle='#eef0f4'; ctx.fillRect(0,0,c.width,c.height); }
 
-  syncWallet();
-  setInterval(()=>{if(walletPage.classList.contains('vw-active'))refreshCoinPrices()},15000);
+  function openModal(sym){
+    state.activeSym=sym||'BTC';
+    modal.hidden=false;
+    setTab('deposit');
+    syncModal();
+  }
+  function closeModal(){ modal.hidden=true; }
+
+  /* ---------- Actions ---------- */
+  function toast(msg){ try{ showToast(msg); }catch(e){ alert(msg); } }
+
+  function doSend(){
+    var sym=state.activeSym, btn=$('vwdSendBtn');
+    if(state.busy)return;
+    var email=($('vwdSendTo').value||'').trim();
+    var amt=parseFloat($('vwdSendAmt').value);
+    var note=($('vwdSendNote').value||'').trim();
+    if(!email){ toast('Enter the recipient email (a Vanta account).'); return; }
+    if(!(amt>0)){ toast('Enter a valid amount.'); return; }
+    if(isDemo()){
+      var m=practice();
+      if(sym==='USDT'){ if((demoBalance||0)<amt-1e-9){ toast('Insufficient USDT balance.'); return; } demoBalance-=amt; try{ vantaSaveDemoBalance(); }catch(e){} }
+      else { if((Number(m[sym])||0)<amt-1e-9){ toast('Insufficient '+sym+' balance.'); return; } m[sym]=(Number(m[sym])||0)-amt; practiceSave(m); }
+      toast('Demo transfer sent to '+email+' ('+fmtCoin(amt,sym)+' '+sym+').');
+      afterChange(); closeModal();
+      return;
+    }
+    if(!hasToken()){ toast('Log in to send from your wallet \u2014 or use Practice mode.'); return; }
+    btn.disabled=true; var old=btn.textContent; btn.textContent='Sending\u2026';
+    vantaApi('/api/transfer',{method:'POST',body:JSON.stringify({recipient_email:email,symbol:sym,amount:amt,note:note||null})})
+      .then(function(r){ toast('Transferred '+fmtCoin(amt,sym)+' '+sym+' to '+email+'.'); try{ refreshBalance(); }catch(e){} afterChange(); closeModal(); })
+      .catch(function(e){ toast(e.message||'Transfer failed.'); })
+      .finally(function(){ btn.disabled=false; btn.textContent=old; state.busy=false; });
+  }
+
+  function doConvert(){
+    var sym=state.activeSym, to=$('vwdConvTo').value;
+    var amt=parseFloat($('vwdConvAmt').value);
+    var btn=$('vwdConvBtn');
+    if(state.busy)return;
+    if(!to||to===sym){ toast('Choose a destination coin.'); return; }
+    if(!(amt>0)){ toast('Enter a valid amount.'); return; }
+    if(isDemo()){
+      var r=rate(sym,to), received=amt*r;
+      var m=practice();
+      if(sym==='USDT'){ if((demoBalance||0)<amt-1e-9){ toast('Insufficient USDT balance.'); return; } demoBalance-=amt; try{ vantaSaveDemoBalance(); }catch(e){} }
+      else { if((Number(m[sym])||0)<amt-1e-9){ toast('Insufficient '+sym+' balance.'); return; } m[sym]=(Number(m[sym])||0)-amt; practiceSave(m); }
+      if(to==='USDT'){ demoBalance=(demoBalance||0)+received; try{ vantaSaveDemoBalance(); }catch(e){} }
+      else { m[to]=(Number(m[to])||0)+received; practiceSave(m); }
+      toast('Converted '+fmtCoin(amt,sym)+' '+sym+' \u2192 '+fmtCoin(received,to)+' '+to+' (practice).');
+      afterChange(); closeModal();
+      return;
+    }
+    if(!hasToken()){ toast('Log in to convert from your wallet \u2014 or use Practice mode.'); return; }
+    btn.disabled=true; var old=btn.textContent; btn.textContent='Converting\u2026';
+    vantaApi('/api/swap',{method:'POST',body:JSON.stringify({from_symbol:sym,to_symbol:to,amount:amt})})
+      .then(function(r){ var got=(r&&r.to_amount)!=null?Number(r.to_amount):0; toast('Converted '+fmtCoin(amt,sym)+' '+sym+' \u2192 '+fmtCoin(got,to)+' '+to+'.'); try{ refreshBalance(); }catch(e){} afterChange(); closeModal(); })
+      .catch(function(e){ toast(e.message||'Conversion failed.'); })
+      .finally(function(){ btn.disabled=false; btn.textContent=old; state.busy=false; });
+  }
+
+  function afterChange(){
+    try{ if(typeof updateBalance==='function') updateBalance(); }catch(e){}
+    try{ if(typeof refreshBalance==='function') refreshBalance(); }catch(e){}
+    try{ if(window.vantaRenderAccountPanel) vantaRenderAccountPanel(); }catch(e){}
+    render();
+  }
+
+  /* ---------- Prices ---------- */
+  var cgTimer=null;
+  function vwdRefreshPrices(){
+    if(!grid || document.hidden && !pageEl.classList.contains('vw-active')) return;
+    var ids=[],map={}; VWD_ORDER.forEach(function(s){ var id=VWD_CG[s]; if(id){ ids.push(id); map[id]=s; } });
+    var url='https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd&include_24hr_change=true&t='+Date.now();
+    fetch(url).then(function(res){ return res.json(); }).then(function(data){
+      var np={}, prev={};
+      for(var id in map){ if(data&&data[id]!=null){
+        var sym=map[id]; var p=Number(data[id].usd)||0; var ch=Number(data[id].usd_24h_change);
+        if(p>0) np[sym]=p;
+        prev[sym]= (typeof ch==='number'&&!isNaN(ch))?ch:null;
+      }}
+      if(Object.keys(np).length){ state.prices=np; }
+      state.prev=Object.assign(state.prev,prev);
+      var lu=$('vwLastUpdate'); if(lu){ lu.textContent='Live \u00B7 '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+      render(); if(!modal.hidden) syncModal();
+    }).catch(function(){
+      render();
+    });
+  }
+  window.vantaWalletPrices = function(){ vwdRefreshPrices(); };
+
+  /* ---------- Backend layout (deposit addresses) ---------- */
+  function loadBackendLayout(){
+    if(!hasToken()) return;
+    vantaApi('/api/wallet/layout').catch(function(){ return null; }).then(function(d){
+      if(!d||!d.deposit_addresses)return;
+      for(var k in d.deposit_addresses){ state.backend[String(k).toUpperCase()]=d.deposit_addresses[k]; }
+      if(!modal.hidden) syncModal();
+    });
+  }
+
+  /* ---------- Events ---------- */
+  grid.addEventListener('click',function(e){
+    var card=e.target.closest ? e.target.closest('.vwd-card') : null;
+    if(card){ openModal(card.getAttribute('data-wallet')); }
+  });
+  $('vwdClose').addEventListener('click',closeModal);
+  modal.addEventListener('click',function(e){ if(e.target===modal) closeModal(); });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&!modal.hidden) closeModal(); });
+  Array.prototype.forEach.call(document.querySelectorAll('#vwdTabs .vwd-tab'),function(b){
+    b.addEventListener('click',function(){ setTab(b.getAttribute('data-tab')); });
+  });
+  $('vwdCopy').addEventListener('click',function(){
+    var addr=$('vwdAddr').textContent; if(!addr||addr==='Not Provided Yet')return;
+    function ok(){ var btn=$('vwdCopy'); btn.classList.add('copied'); btn.textContent='Copied!'; setTimeout(function(){ btn.classList.remove('copied'); btn.textContent='Copy'; },1800); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(addr).then(ok,function(){ legacyCopy(addr); ok(); }); }
+    else { legacyCopy(addr); ok(); }
+  });
+  function legacyCopy(t){ try{ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }catch(e){} }
+  $('vwdConvTo').addEventListener('change',updateRate);
+  $('vwdConvAmt').addEventListener('input',updateRate);
+  $('vwdSendBtn').addEventListener('click',doSend);
+  $('vwdConvBtn').addEventListener('click',doConvert);
+
+  /* ---------- Hook into page nav / global syncs ---------- */
+  function vwdLoad(){ render(); vwdRefreshPrices(); loadBackendLayout(); }
+  (function(){
+    var sp=window.vantaSetPage;
+    if(sp){ window.vantaSetPage=function(){ var p=arguments[0]; var r=sp.apply(this,arguments); if(p==='wallet') vwdLoad(); return r; }; }
+  })();
+  (function(){
+    var sw=window.vantaSyncWalletUI;
+    if(sw){ window.vantaSyncWalletUI=function(){ var r=sw.apply(this,arguments); render(); return r; }; }
+  })();
+
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',vwdLoad); } else { vwdLoad(); }
+  setInterval(function(){ if(pageEl.classList.contains('vw-active')) vwdRefreshPrices(); },20000);
 })();
 
 /* Golf Coin demo investment interaction — fully custom UI (no browser prompt) */

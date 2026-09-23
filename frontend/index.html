@@ -7530,8 +7530,10 @@ async function vantaHandleEntry() {
     const box=document.createElement('div'); box.id='vfxWalletExtra'; box.className='vfx-wallet-extra';
     box.innerHTML=`
       <section class="vfx-usdt-hero">
-        <div class="vfx-usdt-top"><div><div class="vfx-label">Primary Wallet</div><div class="vfx-usdt-balance" data-vfx-usdt>$0.00 USDT</div><div class="vfx-golf-balance" id="vfxGolfBalanceLine">0.00 GOLF</div><div class="vfx-portfolio" id="vfxPortfolioLine"></div><div class="vfx-held" id="vfxHoldingsLine"></div></div><div class="vfx-cap">TESTNET</div></div>
-        <div class="vfx-actions"><button class="vfx-action green" data-open="vfxDepositModal">Deposit USDT</button><button class="vfx-action" data-vtr-open="vfxTransferModal">Send</button><button class="vfx-action" id="vfxReceiveBtn">Receive</button><button class="vfx-action primary" data-open="vfxConvertModal">Convert</button></div>
+        <span class="vfx-cap">TESTNET • VIRTUAL</span>
+        <div class="vfx-usdt-top"><div><div class="vfx-label">USDT Balance</div><div class="vfx-usdt-balance" data-vfx-usdt>$0.00 <small>USDT</small></div><div class="vfx-golf-balance">GOLF&nbsp;<b id="vfxGolfBalanceLine">0.00</b></div><div class="vfx-portfolio" id="vfxPortfolioLine"></div></div></div>
+        <div class="vfx-held" id="vfxHoldingsLine"></div>
+        <div class="vfx-actions"><button class="vfx-action green" data-open="vfxDepositModal">↓ Deposit</button><button class="vfx-action" data-vtr-open="vfxTransferModal">Send</button><button class="vfx-action" id="vfxReceiveBtn">Receive</button><button class="vfx-action primary" data-open="vfxConvertModal">⇄ Swap</button></div>
       </section>
       <section class="vfx-golf-mini"><div class="vfx-golf-mini-head"><strong>⛳ GOLF — Early Access</strong><span class="vfx-golf-price" id="vfxGolfPrice">$0.00</span></div><p id="vfxGolfBlurb">GOLF is the early-access token traded on this platform. Its price is set by the same authoritative server-side market used for trading.</p><div class="vfx-golf-target" id="vfxGolfChange">24h change: 0.00%</div></section>
       <section class="vfx-wallet-row">
@@ -7731,9 +7733,9 @@ async function vantaHandleEntry() {
 
   /* ---- Hooks for the main script's refreshBalance() / refreshGolfStats() ---- */
   window.vantaSyncWalletUI=function(){
-    document.querySelectorAll('[data-vfx-usdt]').forEach(e=>e.textContent=money(typeof balance!=='undefined'?balance:0)+' USDT');
+    document.querySelectorAll('[data-vfx-usdt]').forEach(e=>e.innerHTML=money(typeof balance!=='undefined'?balance:0)+' <small>USDT</small>');
     const golfLine=$('vfxGolfBalanceLine');
-    if(golfLine)golfLine.textContent=(typeof golfBalance!=='undefined'?golfBalance:0).toLocaleString('en-US',{maximumFractionDigits:4})+' GOLF';
+    if(golfLine)golfLine.textContent=(typeof golfBalance!=='undefined'?golfBalance:0).toLocaleString('en-US',{maximumFractionDigits:4});
     const pc=$('vfxPortfolioLine'), hl=$('vfxHoldingsLine');
     if(!pc&&!hl)return;
     const prices=window.vantaServerPrices||{};
@@ -12100,26 +12102,62 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vfx-tag.norm{background:rgba(14,203,129,.13);color:var(--up)}
 .vfx-hold{border:1px solid var(--line);background:var(--panel-2) !important;border-radius:12px}
 .vfx-w-link{color:var(--gold);font-weight:800}
-.vfx-usdt-hero{
-  border-radius:22px;border:1px solid var(--line) !important;box-shadow:var(--shadow) !important;
+.vfx-wallet-extra{margin:20px auto 8px;width:100%}
+.vfx-usdt-hero,
+html[data-theme="light"] .vfx-usdt-hero,
+html[data-theme="dark"] .vfx-usdt-hero{
+  position:relative;overflow:hidden;
+  padding:34px 26px 30px !important;
+  border-radius:26px !important;
+  border:1px solid rgba(114,135,255,.18) !important;
   text-align:center;
   background:
-    radial-gradient(120% 150% at 50% 0%,rgba(114,135,255,.16),transparent 46%),
-    radial-gradient(140% 130% at 50% 120%,rgba(14,203,129,.08),transparent 58%),
-    var(--panel) !important;
+    radial-gradient(140% 170% at 50% -25%,rgba(114,135,255,.30),transparent 55%),
+    radial-gradient(130% 130% at 50% 135%,rgba(14,203,129,.12),transparent 60%),
+    linear-gradient(180deg,#151a33 0%,#0a0c13 100%) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 34px 80px -34px rgba(85,99,255,.4),var(--shadow) !important;
 }
+.vfx-usdt-hero:before{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 82% 8%,rgba(114,135,255,.16),transparent 30%),
+    radial-gradient(circle at 14% 100%,rgba(14,203,129,.14),transparent 34%);
+}
+.vfx-usdt-hero>*{position:relative;z-index:1}
 .vfx-usdt-hero .vfx-usdt-top{flex-direction:column !important;align-items:center !important;justify-content:center !important;gap:6px !important}
-.vfx-usdt-hero .vfx-label{letter-spacing:.22em;margin:0}
-.vfx-usdt-hero .vfx-cap{order:-1;margin:0 auto 6px}
-.vfx-golf-balance{font-size:12.5px;color:var(--muted);font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums}
-.vfx-usdt-balance{font-size:34px !important;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin-top:6px !important}
-.vfx-portfolio{margin-top:10px;font-size:12px}
-.vfx-held{max-width:440px;margin-left:auto;margin-right:auto}
-.vfx-actions{justify-content:center;align-items:center}
-.vfx-action{height:42px !important;border-radius:13px !important;font-weight:800 !important;font-size:12px !important}
-.vfx-action.primary{background:linear-gradient(180deg,#5563ff,#5563ff) !important}
-.vfx-action.green{background:linear-gradient(180deg,#0ecb81,#00b26b) !important;color:#fff !important}
-.vfx-cap{border-color:var(--line) !important;color:var(--muted) !important}
+.vfx-usdt-hero .vfx-label{color:#98a1c0 !important;letter-spacing:.3em;text-transform:uppercase;font-size:10.5px;font-weight:800;margin:0}
+.vfx-usdt-hero .vfx-cap{
+  order:0;display:inline-flex;margin:0 auto 14px;padding:6px 13px;
+  background:linear-gradient(90deg,rgba(114,135,255,.18),rgba(114,135,255,.05)) !important;
+  border:1px solid rgba(114,135,255,.34) !important;color:#b9c2ff !important;
+  letter-spacing:.18em;font-size:9.5px;border-radius:99px;
+}
+.vfx-usdt-balance{
+  font-size:clamp(40px,10vw,62px) !important;font-weight:900 !important;
+  font-variant-numeric:tabular-nums;letter-spacing:-.035em;line-height:1.05;
+  margin-top:8px !important;text-align:center;
+  background:linear-gradient(180deg,#ffffff 18%,#b8c2ff 88%);
+  -webkit-background-clip:text;background-clip:text;
+  color:transparent !important;
+  filter:drop-shadow(0 6px 30px rgba(114,135,255,.32));
+}
+.vfx-usdt-balance small{
+  margin-left:8px;padding:4px 12px;border-radius:99px;
+  background:linear-gradient(180deg,#8892ff,#5563ff) !important;
+  color:#ffffff !important;font-size:12px !important;font-weight:800;
+  box-shadow:0 8px 22px -8px rgba(85,99,255,.7);
+}
+body.vanta-hide-balance .vfx-usdt-balance{filter:blur(9px);-webkit-filter:blur(9px);opacity:.85}
+.vfx-golf-balance{color:#aab6ff;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:8px}
+.vfx-golf-balance b{color:#c7cfff;font-weight:900}
+.vfx-portfolio{margin-top:12px;font-size:13px;font-weight:800;color:#e6eaff !important}
+.vfx-portfolio:empty{display:none}
+.vfx-held{max-width:480px;margin:14px auto 0;color:#7e87a5;font-size:11px}
+.vfx-actions{justify-content:center;align-items:center;margin-top:26px;width:100%;max-width:560px;margin-left:auto;margin-right:auto}
+.vfx-action{height:46px !important;border-radius:14px !important;font-weight:800 !important;font-size:12px !important;border:1px solid rgba(114,135,255,.28) !important;background:rgba(255,255,255,.045) !important;color:#e7eaff !important;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.vfx-action:hover{border-color:rgba(114,135,255,.55) !important;transform:translateY(-2px)}
+.vfx-action.primary{background:linear-gradient(180deg,#5563ff,#4652ee) !important;color:#fff !important;border-color:transparent !important;box-shadow:0 12px 26px rgba(85,99,255,.35) !important}
+.vfx-action.green{background:linear-gradient(180deg,#0ecb81,#00a86b) !important;color:#fff !important;border-color:transparent !important;box-shadow:0 10px 24px rgba(14,203,129,.28) !important}
 
 /* ---------- Messages ---------- */
 .vm-box,.vm-thread,.vm-comp,.vm-convo{border-color:var(--line) !important;background:var(--panel) !important}

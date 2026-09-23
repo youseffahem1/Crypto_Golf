@@ -6334,7 +6334,21 @@ async function vantaHandleEntry() {
    transfer per coin. Self-contained visual layer.
 ========================================================= */
 .vwd-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.vwd-head{align-items:center!important}
+.vwd-head{align-items:center!important;flex-direction:column;align-items:stretch!important;gap:18px}
+.vwh-top{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;width:100%}
+.vwh-balance{position:relative;overflow:hidden;width:100%;padding:26px 22px 22px;border-radius:22px;text-align:center;border:1px solid rgba(167,139,250,.18);background:
+  radial-gradient(circle at 80% 0%,rgba(59,130,246,.20),transparent 40%),
+  radial-gradient(circle at 12% 100%,rgba(34,197,94,.10),transparent 45%),
+  linear-gradient(150deg,#171826,#0b0c12);
+  box-shadow:0 22px 50px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.04)}
+.vwh-balance:after{content:"";position:absolute;width:220px;height:220px;right:-70px;bottom:-110px;border-radius:50%;border:1px solid rgba(167,139,250,.14);box-shadow:0 0 0 32px rgba(167,139,250,.03),0 0 0 64px rgba(167,139,250,.018);pointer-events:none}
+.vwh-cap{display:inline-block;font-size:9px;letter-spacing:.16em;text-transform:uppercase;font-weight:850;color:#9496a5;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);padding:6px 12px;border-radius:999px}
+.vwh-label{margin-top:14px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9496a5;font-weight:850}
+.vwh-total{font-size:48px;line-height:1.05;font-weight:950;letter-spacing:-.055em;color:#fff;margin:6px 0 14px;font-variant-numeric:tabular-nums}
+.vwh-break{display:flex;justify-content:center;gap:38px;flex-wrap:wrap;position:relative;z-index:2}
+.vwh-stat span{display:block;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#777989;font-weight:800;margin-bottom:5px}
+.vwh-stat b{font-size:16px;color:#4ade80;font-variant-numeric:tabular-nums}
+@media (max-width:560px){ .vwh-total{font-size:36px} .vwh-break{gap:22px} .vwh-balance{padding:20px 16px 18px} }
 .vwd-market-state{text-transform:none;letter-spacing:.03em}
 .vanta-wallet-page #vfxWalletExtra{display:none!important}
 
@@ -6603,11 +6617,23 @@ async function vantaHandleEntry() {
   <div class="vw-container">
 
     <div class="vw-page-head vwd-head">
-      <div>
-        <h1 class="vw-page-title">Wallet</h1>
-        <p class="vw-page-sub">Deposit, send & transfer any coin for your assets on the Dashboard</p>
+      <div class="vwh-top">
+        <div>
+          <h1 class="vw-page-title">Wallet</h1>
+          <p class="vw-page-sub">Deposit, send & transfer any coin for your assets on the Dashboard</p>
+        </div>
+        <div class="vw-market-status"><i></i> Operations</div>
       </div>
-      <div class="vw-market-status"><i></i> Operations</div>
+      <div class="vwh-balance">
+        <span class="vwh-cap">TESTNET • VIRTUAL</span>
+        <div class="vwh-label">Total Balance</div>
+        <div class="vwh-total" id="vwhBalance">$0.00</div>
+        <div class="vwh-break">
+          <div class="vwh-stat"><span>USDT</span><b id="vwhUsdt">$0.00</b></div>
+          <div class="vwh-stat"><span>GOLF</span><b id="vwhGolf">0.0000</b></div>
+          <div class="vwh-stat"><span>Portfolio</span><b id="vwhPortfolio">≈ $0.00</b></div>
+        </div>
+      </div>
     </div>
 
     <section class="vwd-ops-card">
@@ -7733,20 +7759,29 @@ async function vantaHandleEntry() {
 
   /* ---- Hooks for the main script's refreshBalance() / refreshGolfStats() ---- */
   window.vantaSyncWalletUI=function(){
-    document.querySelectorAll('[data-vfx-usdt]').forEach(e=>e.innerHTML=money(typeof balance!=='undefined'?balance:0)+' <small>USDT</small>');
-    const golfLine=$('vfxGolfBalanceLine');
-    if(golfLine)golfLine.textContent=(typeof golfBalance!=='undefined'?golfBalance:0).toLocaleString('en-US',{maximumFractionDigits:4});
-    const pc=$('vfxPortfolioLine'), hl=$('vfxHoldingsLine');
-    if(!pc&&!hl)return;
     const prices=window.vantaServerPrices||{};
-    let total=Number(typeof balance!=='undefined'?balance:0)||0;
-    const holdings=[];
-    const add=(sym,amt)=>{ if(!amt||amt<=0)return; total+=Number(amt)*(Number(prices[sym])||0); holdings.push(`${sym} ${coinFmt(amt)}`); };
-    if(typeof golfBalance!=='undefined') add('GOLF',golfBalance);
+    const df=window.VWD_DEFAULT||{};
+    const usdt=Number(typeof balance!=='undefined'?balance:0)||0;
+    const golf=Number(typeof golfBalance!=='undefined'?golfBalance:0)||0;
     const cb=window.vantaCoinBalances||{};
-    for(const sym in cb){ if(sym==='USDT'||sym==='GOLF')continue; add(sym,cb[sym]); }
-    if(pc) pc.textContent='Portfolio value ≈ '+money(total);
-    if(hl) hl.textContent=holdings.length?('Holdings • '+holdings.join(' • ')):'No coin holdings yet — tap Invest on any market coin to grow your portfolio.';
+    let allTotal=usdt, holdingsVal=0;
+    const add=(sym,amt,toHold)=>{
+      if(!amt||amt<=0)return;
+      const price=Number(prices[sym])||Number(df[sym])||0;
+      allTotal+=amt*price;
+      if(toHold) holdingsVal+=amt*price;
+    };
+    add('GOLF',golf,true);
+    for(const sym in cb){ if(sym==='USDT'||sym==='GOLF')continue; add(sym,cb[sym],true); }
+    document.querySelectorAll('[data-vfx-usdt]').forEach(e=>e.innerHTML=money(usdt)+' <small>USDT</small>');
+    const g1=$('vfxGolfBalanceLine'); if(g1)g1.textContent=golf.toLocaleString('en-US',{maximumFractionDigits:4});
+    const pc=$('vfxPortfolioLine'), hl=$('vfxHoldingsLine');
+    if(pc) pc.textContent='Portfolio value ≈ '+money(allTotal);
+    if(hl) hl.textContent=(holdingsVal>0?'Holdings value ≈ '+money(holdingsVal):'No coin holdings yet — tap Invest on any market coin to grow your portfolio.');
+    const bh=$('vwhBalance'); if(bh) bh.textContent=money(allTotal);
+    const bu=$('vwhUsdt'); if(bu) bu.textContent=money(usdt);
+    const bg=$('vwhGolf'); if(bg) bg.textContent=golf.toLocaleString('en-US',{maximumFractionDigits:6});
+    const bp=$('vwhPortfolio'); if(bp) bp.textContent='≈ '+money(holdingsVal);
   };
   window.vantaSyncGolfUI=function(stats){
     const priceEl=$('vfxGolfPrice'); if(priceEl)priceEl.textContent='$'+Number(stats.price_usdt).toFixed(4);
@@ -7758,6 +7793,42 @@ async function vantaHandleEntry() {
     document.querySelectorAll('.golf-promo-target b').forEach((el,i)=>{ if(i===0) el.textContent='$'+Number(stats.price_usdt).toFixed(4); });
     const modalPrice=document.querySelector('.golf-live-card strong'); if(modalPrice)modalPrice.textContent='$'+Number(stats.price_usdt).toFixed(4);
   };
+
+  /* ---- Dashboard "Move to Wallet": liquidate platform coins into USDT ---- */
+  window.vantaMoveProfitToWallet=function(){
+    if(typeof accountMode!=='undefined' && accountMode==='demo'){
+      toast('Switch to the Live account to move profit to your wallet.');
+      if(window.vantaSetPage) window.vantaSetPage('wallet');
+      return;
+    }
+    if(typeof vantaToken!=='function' || !vantaToken()){ toast('Log in to move profit to your wallet.'); return; }
+    const btn=document.getElementById('icMoveBtn');
+    const old=btn?btn.textContent:'';
+    if(btn){ btn.disabled=true; btn.textContent='Moving…'; }
+    vantaApi('/api/platform/liquidate',{method:'POST',headers:{'Content-Type':'application/json'}})
+      .then(r=>{
+        const usd=Number(r&&r.usd_moved)||0;
+        toast(usd>0?('Moved '+money(usd)+' to your wallet.'):'No platform holdings left to move.');
+        if(typeof refreshBalance==='function') refreshBalance();
+        try{ if(window.vantaRefreshDashboard) window.vantaRefreshDashboard(); }catch(e){}
+        try{ if(window.vantaRefreshInfoCards) window.vantaRefreshInfoCards(); }catch(e){}
+        try{ if(window.vantaSyncWalletUI) window.vantaSyncWalletUI(); }catch(e){}
+      })
+      .catch(e=>toast((e&&e.message)||'Move failed — try again.'))
+      .finally(()=>{ if(btn){ btn.disabled=false; btn.textContent=old; } });
+  };
+
+  /* ---- Dashboard balance card quick actions (delegated) ---- */
+  document.addEventListener('click',(ev)=>{
+    const t=ev.target && ev.target.closest ? ev.target.closest('#vdSwapBtn,#vdTradeBtn') : null;
+    if(!t) return;
+    if(t.id==='vdSwapBtn'){
+      if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT','GOLF');
+      else if(window.vantaSetPage) window.vantaSetPage('wallet');
+    } else if(t.id==='vdTradeBtn'){
+      if(window.vantaSetPage) window.vantaSetPage('trading');
+    }
+  });
 
   // "Invest" on any market coin card opens Convert pre-set to buy that coin with USDT.
   document.querySelectorAll('[data-invest]').forEach(btn=>{
@@ -9508,6 +9579,13 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
 .vd-balance-label{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .vd-balance-value{margin-top:10px;font-size:42px;font-weight:950;letter-spacing:-.03em;color:var(--text);line-height:1}
 .vd-balance-value small{font-size:15px;color:var(--muted);letter-spacing:0;font-weight:700}
+.vd-glow{position:absolute;width:260px;height:260px;right:-90px;top:-120px;border-radius:50%;border:1px solid rgba(167,139,250,.14);box-shadow:0 0 0 34px rgba(167,139,250,.025),0 0 0 68px rgba(167,139,250,.015);pointer-events:none}
+.vd-actions{position:relative;z-index:2;display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+.vd-btn{height:52px;border:0;border-radius:15px;font-size:14px;font-weight:950;letter-spacing:.02em;cursor:pointer;color:#fff;transition:transform .18s,box-shadow .18s,filter .18s;font-family:inherit}
+.vd-btn:hover{transform:translateY(-2px);filter:brightness(1.07)}
+.vd-btn:active{transform:scale(.98)}
+.vd-btn-swap{background:linear-gradient(135deg,#3b82f6,#7c3aed);box-shadow:0 14px 30px rgba(99,102,241,.22)}
+.vd-btn-trade{background:linear-gradient(135deg,#25e98d,#0ea5e9);box-shadow:0 14px 30px rgba(14,165,233,.20)}
 .vd-balance-note{margin-top:12px;font-size:11px;color:var(--muted);line-height:1.5;max-width:460px}
 .vd-cap{padding:7px 12px;border:1px solid rgba(184,134,11,.25);background:rgba(184,134,11,.08);border-radius:999px;color:#b8860b;font-size:10px;font-weight:900;white-space:nowrap}
 
@@ -9631,14 +9709,19 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
       <div class="vd-live"><i></i> Market Live</div>
     </div>
 
-    <section class="vd-balance">
+    <section class="vd-balance" id="vdBalanceCard">
+      <div class="vd-glow" aria-hidden="true"></div>
       <div class="vd-balance-top">
         <div>
-          <div class="vd-balance-label">USDT Balance</div>
-          <div class="vd-balance-value" id="vdUsdtBalance">$0.00 <small>USDT</small></div>
-          <div class="vd-balance-note" id="vdBalanceNote">Starts at $0.00 — deposit testnet USDT, or trade on GOLF after swapping.</div>
+          <div class="vd-balance-label">Total Balance</div>
+          <div class="vd-balance-value" id="vdUsdtBalance">$0.00 <small>All Coins</small></div>
+          <div class="vd-balance-note" id="vdBalanceNote">Your full balance across every coin — USDT, platform tokens & crypto.</div>
         </div>
         <div class="vd-cap">TESTNET • VIRTUAL</div>
+      </div>
+      <div class="vd-actions">
+        <button class="vd-btn vd-btn-swap" id="vdSwapBtn" type="button">⇄ Swap</button>
+        <button class="vd-btn vd-btn-trade" id="vdTradeBtn" type="button">⚡ Trade</button>
       </div>
     </section>
 
@@ -9796,8 +9879,11 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     historyPage?.classList.toggle('vw-active',page==='history');
     document.getElementById('vantaAdminPage')?.classList.toggle('vw-active',page==='admin');
     if(page==='trading'){
-      tradingPage?.classList.remove('vw-active');
-      if(mainEl) mainEl.style.display = '';
+      /* Always land on the coin list so the user picks what to trade —
+         never straight into the last chart. */
+      window.vantaActiveCoin=null;
+      if(tradingPage) tradingPage.classList.add('vw-active');
+      if(mainEl) mainEl.style.display = 'none';
     }else{
       tradingPage?.classList.remove('vw-active');
       if(mainEl) mainEl.style.display = 'none';
@@ -9879,7 +9965,19 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
   }
   window.vantaRefreshDashboard=function(){
     const usdt=$('vdUsdtBalance');
-    if(usdt && typeof balance!=='undefined') usdt.textContent=money(balance)+' <small>USDT</small>';
+    if(usdt){
+      let total=Number(typeof balance!=='undefined'?balance:0)||0;
+      const prices=window.vantaServerPrices||{};
+      const cb=window.vantaCoinBalances||{};
+      const df=window.VWD_DEFAULT||{};
+      for(const k in cb){
+        if(k==='USDT') continue;
+        const amt=Number(cb[k])||0;
+        const pr=Number(prices[k])||Number(df[k])||0;
+        total+=amt*pr;
+      }
+      usdt.innerHTML=money(total)+' <small>All Coins</small>';
+    }
     refreshGolfCard();
     renderDashboardTransfers();
   };
@@ -12785,10 +12883,18 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       vantaApi('/api/platform/coins').then(d=>{
         if(!d)return;
         plat=Number(d.total_platform_value||0);
+        let crypto=0;
+        const cb=window.vantaCoinBalances||{};
+        const df=window.VWD_DEFAULT||{};
+        for(const k in cb){
+          if(k==='USDT'||k==='GOLF'||k==='NOVA'||k==='ABC') continue;
+          const amt=Number(cb[k])||0;
+          crypto+=amt*(Number(prices[k])||Number(df[k])||0);
+        }
         let today=0;
         const hist=(d.trades_today&&d.trades_today.length)?d.trades_today:[];
         for(let k in hist){ today+=Number(hist[k].profit||0); }
-        const total=usdt+plat;
+        const total=usdt+plat+crypto;
         const setTxt=(id,val)=>{const el=$(id); if(el) el.textContent=val;};
         const cur=$('vdaCur'); const conv=v=>{
           const sym=cur&&cur.value?cur.value:'USDT';
@@ -13507,7 +13613,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     }
   }
 
-  wire(byId('icMoveBtn'), function(){ if (window.vantaSetPage) window.vantaSetPage('wallet'); });
+  wire(byId('icMoveBtn'), function(){
+    if (typeof window.vantaMoveProfitToWallet === 'function') window.vantaMoveProfitToWallet();
+    else if (window.vantaSetPage) window.vantaSetPage('wallet');
+  });
   wire(byId('icTradeBtn'), scrollToTrade);
   wire(byId('stripTradeBtn'), scrollToTrade);
 

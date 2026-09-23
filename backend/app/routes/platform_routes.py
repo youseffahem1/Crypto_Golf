@@ -94,3 +94,46 @@ def platform_coins(
         total_unrealized_pnl=round(total_unrealized, 2),
         total_trade_profit=round(total_trade_profit, 2),
     )
+
+
+@router.post("/liquidate")
+def liquidate(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """Sell every platform-coin holding (GOLF/NOVA/ABC…) back into USDT at the
+    current authoritative price and move the full value into the wallet.
+    Powers the dashboard's "Move to Wallet" button — after it runs there are
+    no platform holdings left, so total_usdt_invested wipes to 0. Every sale
+    is recorded in the swap ledger (coin → USDT) so it stays auditable."""
+    balances = swap_service.user_balances(db, user_id)
+    try:
+        user = db.query(models.User).filter_by(id=user_id).with_for_update().first()
+    except Exception:
+        db.rollback()
+        user = db.query(models.User).filter_by(id=user_id).first()  # SQLite fallback
+    if not user:
+        return {"moved": [], "usd_moved": 0.0}
+
+    moved = []
+    transfers = []
+    usd_moved = 0.0
+    for sym in PLATFORM_COINS:
+        bal = float(balances.get(sym, 0.0) or 0.0)
+        if bal <= 0:
+            continue
+        price = float(market_service.get_usd_price(db, sym) or 0.0)
+        value = bal * price
+        if value <= 0:
+            value = 0.0
+        swap_service.set_balance(db, user, sym, 0.0)
+        transfers.append(models.SwapTx(
+            user_id=user_id, from_symbol=sym, to_symbol="USDT",
+            from_amount=bal, to_amount=value, rate=price,
+        ))
+        moved.append({"symbol": sym, "balance": round(bal, 8), "usd_value": round(value, 2)})
+        usd_moved += value
+
+    if transfers:
+        user.usdt_balance = float(user.usdt_balance or 0.0) + usd_moved
+        db.add_all(transfers)
+        db.commit()
+
+    return {"moved": moved, "usd_moved": round(usd_moved, 2)}

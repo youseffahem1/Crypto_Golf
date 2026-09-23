@@ -6562,6 +6562,36 @@ async function vantaHandleEntry() {
   .vwd-sheet{padding:18px;border-radius:22px}
   .vwd-addr-card{flex-direction:column;align-items:flex-start}
 }
+
+/* ---------- Dashboard embed + wallet operations page ---------- */
+.vwd-dash{margin-top:20px}
+.vwd-dash-meta{display:flex;align-items:center;gap:18px}
+.vwd-dash-meta .vwd-hero-stat label{display:block;text-align:right}
+.vwd-dash-meta .vwd-hero-stat strong{font-size:16px}
+.vwd-ops-card{margin-top:4px;padding:20px;border-radius:22px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(150deg,rgba(22,25,35,.85),rgba(9,11,17,.92));box-shadow:inset 0 1px rgba(255,255,255,.04),0 14px 40px rgba(0,0,0,.14)}
+.vwd-ops-card .vwd-section-note{display:block;line-height:1.6}
+.vwd-chip-row{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+.vwd-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(255,255,255,.03);cursor:pointer;color:#dde0e8;font-size:12px;font-weight:900;font-family:inherit;transition:.15s}
+.vwd-chip:hover{border-color:rgba(59,130,246,.4)}
+.vwd-chip.on{border-color:rgba(59,130,246,.55);background:rgba(59,130,246,.12);color:#fff;box-shadow:0 8px 18px rgba(37,99,235,.14)}
+.vwd-chip .vwd-logo{width:30px;height:30px;flex-basis:30px;border-radius:9px;box-shadow:inset 0 1px rgba(255,255,255,.14),0 4px 10px rgba(0,0,0,.2)}
+.vwd-chip .vwd-logo svg{width:16px;height:16px}
+.vwd-ops-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px}
+.vwd-ops-btn{height:52px;border:0;border-radius:15px;font-size:12.5px;font-weight:950;cursor:pointer;color:#fff;font-family:inherit;transition:.15s}
+.vwd-ops-btn.dep{background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 12px 26px rgba(22,163,74,.2)}
+.vwd-ops-btn.send{background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 12px 26px rgba(37,99,235,.2)}
+.vwd-ops-btn.tnf{background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 12px 26px rgba(168,85,247,.2)}
+.vwd-ops-btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
+.vwd-ops-btn:active{transform:scale(.985)}
+[data-theme="light"] .vwd-ops-card{background:linear-gradient(150deg,rgba(255,255,255,.96),rgba(248,250,252,.9));border-color:rgba(15,23,42,.08);box-shadow:inset 0 1px #fff,0 14px 38px rgba(15,23,42,.05)}
+[data-theme="light"] .vwd-chip{color:#475467;background:rgba(15,23,42,.03);border-color:rgba(15,23,42,.08)}
+[data-theme="light"] .vwd-chip:hover{border-color:rgba(37,99,235,.35)}
+[data-theme="light"] .vwd-chip.on{color:#fff;background:linear-gradient(135deg,#3b82f6,#2563eb);border-color:transparent}
+@media(max-width:430px){
+  .vwd-dash-meta{gap:12px}
+  .vwd-ops-btns{grid-template-columns:1fr}
+  .vwd-ops-btn{height:50px}
+}
 </style>
 
 <section class="vanta-wallet-page" id="vantaWalletPage">
@@ -6569,34 +6599,23 @@ async function vantaHandleEntry() {
 
     <div class="vw-page-head vwd-head">
       <div>
-        <h1 class="vw-page-title">My Wallets</h1>
-        <p class="vw-page-sub">Your digital assets in one place — deposit, send & transfer anytime</p>
+        <h1 class="vw-page-title">Wallet</h1>
+        <p class="vw-page-sub">Deposit, send & transfer any coin for your assets on the Dashboard</p>
       </div>
-      <div class="vw-market-status"><i></i> <span class="vwd-market-state" id="vwLastUpdate">Live</span></div>
+      <div class="vw-market-status"><i></i> Operations</div>
     </div>
 
-    <section class="vwd-hero">
-      <div>
-        <div class="vwd-hero-label">Total Portfolio Value</div>
-        <div class="vwd-hero-total" id="vwdTotal">$0.00</div>
-        <div class="vwd-hero-sub">
-          <span class="vwd-live"><i></i>Balances update live</span>
-          <span id="vwdHoldingsCount">0 assets</span>
-        </div>
+    <section class="vwd-ops-card">
+      <h2 class="vwd-section-title">Wallet Operations</h2>
+      <p class="vwd-section-note" style="margin-top:5px">Your coins live on the Dashboard — the first thing you see when you enter. Pick a coin, then run an operation.</p>
+      <div class="vwd-chip-row" id="vwdChips"></div>
+      <div class="vwd-ops-btns">
+        <button class="vwd-ops-btn dep" data-op="deposit" type="button">↓ Deposit</button>
+        <button class="vwd-ops-btn send" data-op="send" type="button">Send</button>
+        <button class="vwd-ops-btn tnf" data-op="transfer" type="button">⇄ Transfer</button>
       </div>
-      <div class="vwd-hero-right">
-        <div class="vwd-hero-stat"><label>Holdings</label><strong id="vwdHoldings">0</strong></div>
-        <div class="vwd-hero-stat"><label>Network</label><strong id="vwdNet">Nile</strong></div>
-      </div>
+      <div class="vwd-demo-note" id="vwdOpsNote" hidden>Practice mode — operations are simulated until you log in.</div>
     </section>
-
-    <div class="vwd-row vwd-grid-head">
-      <h2 class="vwd-section-title">My Wallets</h2>
-      <span class="vwd-section-note">BTC • ETH • BNB • SOL &amp; more</span>
-    </div>
-
-    <div class="vwd-grid" id="vwdGrid"></div>
-    <div class="vwd-empty" id="vwdEmpty" hidden>No wallets to show yet.</div>
 
     <div class="vwd-foot">Deposit addresses are issued by the platform. Always confirm the network before sending — using the wrong chain can permanently lose funds.</div>
 
@@ -6747,11 +6766,30 @@ async function vantaHandleEntry() {
      - live (logged in)  -> real backend balances, real /api/transfer
        and /api/swap calls, backend deposit addresses preferred.
   ========================================================= */
-  var pageEl  = document.getElementById('vantaWalletPage');
-  var grid    = document.getElementById('vwdGrid');
-  var emptyEl = document.getElementById('vwdEmpty');
-  var modal   = document.getElementById('vwdModal');
-  if(!pageEl || !grid || !modal) return;
+  var pageEl=null, grid=null, emptyEl=null, modal=null;
+
+  /* Called when the DOM is fully parsed: resolve the (dashboard) grid +
+     the operations modal, bind clicks, then boot the dashboard. */
+  function boot(){
+    pageEl=document.getElementById('vantaWalletPage');
+    grid=document.getElementById('vwdGrid');
+    emptyEl=document.getElementById('vwdEmpty');
+    modal=document.getElementById('vwdModal');
+    if(!pageEl||!grid||!modal) return;
+    grid.addEventListener('click',function(e){
+      var card=e.target.closest?e.target.closest('.vwd-card'):null;
+      if(card){ openModal(card.getAttribute('data-wallet')); }
+    });
+    modal.addEventListener('click',function(e){ if(e.target===modal) closeModal(); });
+    vwdLoad();
+
+    /* The page router (window.vantaSetPage) is defined by a LATER script
+       tag, so attach the hook only now that every script has parsed. */
+    var sp=window.vantaSetPage;
+    if(sp){ window.vantaSetPage=function(){ var p=arguments[0]; var r=sp.apply(this,arguments); if(p==='wallet') vwdLoad(); return r; }; }
+    var sw=window.vantaSyncWalletUI;
+    if(sw){ window.vantaSyncWalletUI=function(){ var r=sw.apply(this,arguments); render(); return r; }; }
+  }
 
   /* ---------- Catalog ---------- */
   var VWD_ORDER = ['BTC','ETH','BNB','SOL','XRP','LTC','TRX','DOGE','ADA','LINK','USDT','USDC','GOLF'];
@@ -6909,6 +6947,16 @@ async function vantaHandleEntry() {
     $('vwdHoldingsCount').textContent=holdings+' '+(holdings===1?'asset':'assets');
   }
 
+  /* ---------- Wallet-page coin chips ---------- */
+  function buildChips(){
+    var wrap=$('vwdChips'); if(!wrap) return;
+    var html='';
+    VWD_ORDER.forEach(function(sym){
+      html+='<button type="button" class="vwd-chip'+(sym===state.activeSym?' on':'')+'" data-chip="'+sym+'">'+logoHtml(sym)+'<span>'+sym+'</span></button>';
+    });
+    wrap.innerHTML=html;
+  }
+
   /* ---------- Modal ---------- */
   function setTab(tab){
     state.activeTab=tab;
@@ -6955,7 +7003,7 @@ async function vantaHandleEntry() {
     var d=depositAddressFor(sym);
     var addrEl=$('vwdAddr'), copyBtn=$('vwdCopy');
     copyBtn.classList.remove('copied'); copyBtn.textContent='Copy';
-    $('vwdNet').textContent=(meta.net||'').split(' ')[0];
+    var netEl=$('vwdNet'); if(netEl) netEl.textContent=(meta.net||'').split(' ')[0];
     $('vwdNetChip').textContent=meta.net;
     $('vwdWarn').innerHTML='Only send <b>'+esc(sym)+'</b> on the <b>'+esc(meta.net)+'</b> network.';
     if(d.addr){
@@ -7018,10 +7066,10 @@ async function vantaHandleEntry() {
   }
   function clearQr(){ var c=$('vwdQr'); if(!c)return; var ctx=c.getContext('2d'); ctx.fillStyle='#eef0f4'; ctx.fillRect(0,0,c.width,c.height); }
 
-  function openModal(sym){
+  function openModal(sym, tab){
     state.activeSym=sym||'BTC';
     modal.hidden=false;
-    setTab('deposit');
+    setTab(tab||'deposit');
     syncModal();
   }
   function closeModal(){ modal.hidden=true; }
@@ -7101,7 +7149,7 @@ async function vantaHandleEntry() {
       }}
       if(Object.keys(np).length){ state.prices=np; }
       state.prev=Object.assign(state.prev,prev);
-      var lu=$('vwLastUpdate'); if(lu){ lu.textContent='Live \u00B7 '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+      var lu=$('vwLastUpdate'); if(lu){ lu.textContent='Live \u00B7 '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); lu.hidden=false; }
       render(); if(!modal.hidden) syncModal();
     }).catch(function(){
       render();
@@ -7120,13 +7168,8 @@ async function vantaHandleEntry() {
   }
 
   /* ---------- Events ---------- */
-  grid.addEventListener('click',function(e){
-    var card=e.target.closest ? e.target.closest('.vwd-card') : null;
-    if(card){ openModal(card.getAttribute('data-wallet')); }
-  });
   $('vwdClose').addEventListener('click',closeModal);
-  modal.addEventListener('click',function(e){ if(e.target===modal) closeModal(); });
-  document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&!modal.hidden) closeModal(); });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&modal&&!modal.hidden) closeModal(); });
   Array.prototype.forEach.call(document.querySelectorAll('#vwdTabs .vwd-tab'),function(b){
     b.addEventListener('click',function(){ setTab(b.getAttribute('data-tab')); });
   });
@@ -7142,19 +7185,21 @@ async function vantaHandleEntry() {
   $('vwdSendBtn').addEventListener('click',doSend);
   $('vwdConvBtn').addEventListener('click',doConvert);
 
-  /* ---------- Hook into page nav / global syncs ---------- */
-  function vwdLoad(){ render(); vwdRefreshPrices(); loadBackendLayout(); }
-  (function(){
-    var sp=window.vantaSetPage;
-    if(sp){ window.vantaSetPage=function(){ var p=arguments[0]; var r=sp.apply(this,arguments); if(p==='wallet') vwdLoad(); return r; }; }
-  })();
-  (function(){
-    var sw=window.vantaSyncWalletUI;
-    if(sw){ window.vantaSyncWalletUI=function(){ var r=sw.apply(this,arguments); render(); return r; }; }
-  })();
+  var chipsEl=$('vwdChips');
+  if(chipsEl) chipsEl.addEventListener('click',function(e){
+    var b=e.target.closest?e.target.closest('.vwd-chip'):null; if(!b)return;
+    state.activeSym=b.getAttribute('data-chip');
+    Array.prototype.forEach.call(chipsEl.querySelectorAll('.vwd-chip'),function(c){ c.classList.toggle('on',c===b); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.vwd-ops-btn'),function(b){
+    b.addEventListener('click',function(){ openModal(state.activeSym, b.getAttribute('data-op')); });
+  });
 
-  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',vwdLoad); } else { vwdLoad(); }
-  setInterval(function(){ if(pageEl.classList.contains('vw-active')) vwdRefreshPrices(); },20000);
+  /* ---------- Hook into page nav / global syncs ---------- */
+  function vwdLoad(){ buildChips(); render(); vwdRefreshPrices(); loadBackendLayout(); }
+
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',boot); } else { boot(); }
+  setInterval(function(){ if(pageEl && pageEl.classList.contains('vw-active')) vwdRefreshPrices(); },20000);
 })();
 
 /* Golf Coin demo investment interaction — fully custom UI (no browser prompt) */
@@ -9601,6 +9646,22 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
           <small>Buy GOLF on the live chart, watch the value change in real time, and SELL to bank it before the timer runs out.</small>
         </button>
       </div>
+    </section>
+
+        <section class="vwd-dash">
+      <div class="vwd-row vwd-grid-head">
+        <div>
+          <h2 class="vwd-section-title">My Wallets</h2>
+          <span class="vwd-section-note" id="vwdHoldingsCount">0 assets</span>
+        </div>
+        <div class="vwd-dash-meta">
+          <span class="vwd-hero-stat"><label>Portfolio</label><strong id="vwdTotal">.00</strong></span>
+          <span class="vwd-hero-stat"><label>Holdings</label><strong id="vwdHoldings">0</strong></span>
+          <span class="vwd-live" id="vwLastUpdate" hidden>Live</span>
+        </div>
+      </div>
+      <div class="vwd-grid" id="vwdGrid"></div>
+      <div class="vwd-empty" id="vwdEmpty" hidden>No wallets to show yet.</div>
     </section>
 
     <div class="vd-grid">

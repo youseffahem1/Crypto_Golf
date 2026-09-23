@@ -6565,9 +6565,12 @@ async function vantaHandleEntry() {
 
 /* ---------- Dashboard embed + wallet operations page ---------- */
 .vwd-dash{margin-top:20px}
-.vwd-dash-meta{display:flex;align-items:center;gap:18px}
+.vwd-row.vwd-grid-head{flex-wrap:wrap;gap:10px 0}
+.vwd-dash-meta{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-left:auto}
+.vwd-dash-meta .vwd-hero-stat{display:flex;flex-direction:column;align-items:flex-end}
 .vwd-dash-meta .vwd-hero-stat label{display:block;text-align:right}
-.vwd-dash-meta .vwd-hero-stat strong{font-size:16px}
+.vwd-dash-meta .vwd-hero-stat strong{font-size:clamp(15px,3.4vw,17px);font-variant-numeric:tabular-nums}
+.vwd-dash-meta .vwd-live{padding:5px 11px;border:1px solid rgba(14,203,129,.3);background:rgba(14,203,129,.08);border-radius:99px;color:var(--up);font-size:10px;font-weight:900;letter-spacing:.08em;white-space:nowrap}
 .vwd-ops-card{margin-top:4px;padding:20px;border-radius:22px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(150deg,rgba(22,25,35,.85),rgba(9,11,17,.92));box-shadow:inset 0 1px rgba(255,255,255,.04),0 14px 40px rgba(0,0,0,.14)}
 .vwd-ops-card .vwd-section-note{display:block;line-height:1.6}
 .vwd-chip-row{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
@@ -6588,7 +6591,9 @@ async function vantaHandleEntry() {
 [data-theme="light"] .vwd-chip:hover{border-color:rgba(37,99,235,.35)}
 [data-theme="light"] .vwd-chip.on{color:#fff;background:linear-gradient(135deg,#3b82f6,#2563eb);border-color:transparent}
 @media(max-width:430px){
-  .vwd-dash-meta{gap:12px}
+  .vwd-dash-meta{width:100%;justify-content:space-between;gap:12px;margin-left:0;padding-top:10px;border-top:1px dashed var(--line)}
+  .vwd-dash-meta .vwd-hero-stat{align-items:flex-start}
+  .vwd-dash-meta .vwd-hero-stat label{text-align:left}
   .vwd-ops-btns{grid-template-columns:1fr}
   .vwd-ops-btn{height:50px}
 }
@@ -6611,8 +6616,8 @@ async function vantaHandleEntry() {
       <div class="vwd-chip-row" id="vwdChips"></div>
       <div class="vwd-ops-btns">
         <button class="vwd-ops-btn dep" data-op="deposit" type="button">↓ Deposit</button>
-        <button class="vwd-ops-btn send" data-op="send" type="button">Send</button>
-        <button class="vwd-ops-btn tnf" data-op="transfer" type="button">⇄ Transfer</button>
+        <button class="vwd-ops-btn send" data-op="send" type="button">Transfer</button>
+        <button class="vwd-ops-btn tnf" data-op="transfer" type="button">⇄ Swap</button>
       </div>
       <div class="vwd-demo-note" id="vwdOpsNote" hidden>Practice mode — operations are simulated until you log in.</div>
     </section>
@@ -6644,8 +6649,8 @@ async function vantaHandleEntry() {
 
     <div class="vwd-tabs" id="vwdTabs">
       <button class="vwd-tab active" data-tab="deposit" type="button">Deposit</button>
-      <button class="vwd-tab" data-tab="send" type="button">Send</button>
-      <button class="vwd-tab" data-tab="transfer" type="button">Transfer</button>
+      <button class="vwd-tab" data-tab="send" type="button">Transfer</button>
+      <button class="vwd-tab" data-tab="transfer" type="button">Swap</button>
     </div>
 
     <div class="vwd-pane" id="vwdPaneDeposit">
@@ -6792,8 +6797,12 @@ async function vantaHandleEntry() {
   }
 
   /* ---------- Catalog ---------- */
-  var VWD_ORDER = ['BTC','ETH','BNB','SOL','XRP','LTC','TRX','DOGE','ADA','LINK','USDT','USDC','GOLF'];
+  var VWD_ORDER = ['USDT','GOLF','NOVA','ABC','BTC','ETH','BNB','SOL','XRP','LTC','TRX','DOGE','ADA','LINK','USDC'];
   var VWD_META = {
+    USDT:{name:'Tether',    net:'TRON (TRC-20)',           dec:4},
+    GOLF:{name:'Golf Coin', net:'VANTA Market',            dec:4},
+    NOVA:{name:'Nova Coin', net:'VANTA Market',            dec:4},
+    ABC :{name:'ABC Coin',  net:'VANTA Market',            dec:4},
     BTC :{name:'Bitcoin',   net:'Bitcoin',                 dec:8},
     ETH :{name:'Ethereum',  net:'Ethereum (ERC-20)',       dec:6},
     BNB :{name:'BNB',       net:'BNB Smart Chain (BEP-20)',dec:6},
@@ -6804,13 +6813,11 @@ async function vantaHandleEntry() {
     DOGE:{name:'Dogecoin',  net:'Dogecoin',                dec:6},
     ADA :{name:'Cardano',   net:'Cardano',                 dec:4},
     LINK:{name:'Chainlink', net:'Ethereum (ERC-20)',       dec:4},
-    USDT:{name:'Tether',    net:'TRON (TRC-20)',           dec:4},
-    USDC:{name:'USD Coin',  net:'Ethereum (ERC-20)',       dec:4},
-    GOLF:{name:'Golf Coin', net:'VANTA Market',            dec:4}
+    USDC:{name:'USD Coin',  net:'Ethereum (ERC-20)',       dec:4}
   };
   var VWD_CG = {BTC:'bitcoin',ETH:'ethereum',BNB:'binancecoin',SOL:'solana',XRP:'ripple',LTC:'litecoin',
                 TRX:'tron',DOGE:'dogecoin',ADA:'cardano',LINK:'chainlink',USDT:'tether',USDC:'usd-coin'};
-  var VWD_DEFAULT = {BTC:77386,ETH:2434.95,BNB:682.4,SOL:94.82,XRP:1.58,LTC:82.15,TRX:.3432,DOGE:.18,ADA:.82,LINK:22.41,USDT:1,USDC:1,GOLF:.6};
+  var VWD_DEFAULT = {USDT:1,BTC:77386,ETH:2434.95,BNB:682.4,SOL:94.82,XRP:1.58,LTC:82.15,TRX:.3432,DOGE:.18,ADA:.82,LINK:22.41,USDC:1,GOLF:.6,NOVA:.25,ABC:.01};
   var VWD_PRACTICE = {BTC:.0132,ETH:.2,BNB:.5,SOL:1.65,XRP:710,LTC:1.25,TRX:2350,DOGE:3300,ADA:520,LINK:14.5,USDC:1800,GOLF:21};
   var VWD_MARK = {
     BTC :'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">\u20BF</text>',
@@ -6825,7 +6832,9 @@ async function vantaHandleEntry() {
     LINK:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="900">LINK</text>',
     USDT:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">\u20AE</text>',
     USDC:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">$</text>',
-    GOLF:'<text x="10.5" y="13" text-anchor="middle" dominant-baseline="central">G</text>'
+    GOLF:'<text x="10.5" y="13" text-anchor="middle" dominant-baseline="central">G</text>',
+    NOVA:'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="900">N</text>',
+    ABC :'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="900">A</text>'
   };
 
   /* =========================================================
@@ -6936,7 +6945,7 @@ async function vantaHandleEntry() {
           '</div>'+
           '<div class="vwd-card-bal">'+fmtCoin(bal,sym)+' <span>'+sym+'</span></div>'+
           '<div class="vwd-card-row"><span class="vwd-card-usd">'+fmtMoney(usd)+'</span><span class="vwd-card-chg '+chCl+'">'+chStr+'</span></div>'+
-          '<div class="vwd-card-acts"><span>Deposit</span><span>Send</span><span>Transfer</span></div>'+
+          '<div class="vwd-card-acts"><span>Deposit</span><span>Transfer</span><span>Swap</span></div>'+
         '</button>';
     });
     grid.innerHTML=html;
@@ -9629,23 +9638,6 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
         </div>
         <div class="vd-cap">TESTNET • VIRTUAL</div>
       </div>
-      <div class="vd-options">
-        <button class="vd-option dep" id="vdDepositBtn" type="button">
-          <div class="vd-oicon">↓</div>
-          <div>Deposit</div>
-          <small>Fund USDT on TRON Nile — credited after on-chain confirmation.</small>
-        </button>
-        <button class="vd-option swap" id="vdSwapBtn" type="button">
-          <div class="vd-oicon">⇄</div>
-          <div>Swap</div>
-          <small>Convert USDT into platform coins or crypto at live prices.</small>
-        </button>
-        <button class="vd-option trade" id="vdTradeBtn" type="button">
-          <div class="vd-oicon">▲</div>
-          <div>Trade</div>
-          <small>Buy GOLF on the live chart, watch the value change in real time, and SELL to bank it before the timer runs out.</small>
-        </button>
-      </div>
     </section>
 
         <section class="vwd-dash">
@@ -9890,16 +9882,8 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     renderDashboardTransfers();
   };
 
-  /* Deposit / Swap / Trade buttons */
-  $('vdDepositBtn')?.addEventListener('click',()=>{
-    if(typeof accountMode!=='undefined' && accountMode==='demo'){ toast('Switch to the Live account to deposit testnet USDT.'); return; }
-    openDepositModal();
-  });
-  $('vdSwapBtn')?.addEventListener('click',()=>{
-    if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT','GOLF');
-    else toast('Wait for the wallet to finish loading.');
-  });
-  $('vdTradeBtn')?.addEventListener('click',()=>setPage('trading'));
+  /* Coin actions (Deposit / Transfer / Swap) live in each wallet card's
+     modal — tap any coin (e.g. USDT) in "My Wallets" to open it. */
   $('vdChartLink')?.addEventListener('click',()=>setPage('trading'));
   $('vdSendBtn')?.addEventListener('click',()=>{
     if(typeof window.vantaOpenTransfer==='function') window.vantaOpenTransfer();
@@ -12118,9 +12102,20 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vfx-w-link{color:var(--gold);font-weight:800}
 .vfx-usdt-hero{
   border-radius:22px;border:1px solid var(--line) !important;box-shadow:var(--shadow) !important;
-  background:radial-gradient(120% 150% at 0% 0%,rgba(114,135,255,.14),transparent 46%),var(--panel) !important;
+  text-align:center;
+  background:
+    radial-gradient(120% 150% at 50% 0%,rgba(114,135,255,.16),transparent 46%),
+    radial-gradient(140% 130% at 50% 120%,rgba(14,203,129,.08),transparent 58%),
+    var(--panel) !important;
 }
-.vfx-usdt-balance{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.vfx-usdt-hero .vfx-usdt-top{flex-direction:column !important;align-items:center !important;justify-content:center !important;gap:6px !important}
+.vfx-usdt-hero .vfx-label{letter-spacing:.22em;margin:0}
+.vfx-usdt-hero .vfx-cap{order:-1;margin:0 auto 6px}
+.vfx-golf-balance{font-size:12.5px;color:var(--muted);font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums}
+.vfx-usdt-balance{font-size:34px !important;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin-top:6px !important}
+.vfx-portfolio{margin-top:10px;font-size:12px}
+.vfx-held{max-width:440px;margin-left:auto;margin-right:auto}
+.vfx-actions{justify-content:center;align-items:center}
 .vfx-action{height:42px !important;border-radius:13px !important;font-weight:800 !important;font-size:12px !important}
 .vfx-action.primary{background:linear-gradient(180deg,#5563ff,#5563ff) !important}
 .vfx-action.green{background:linear-gradient(180deg,#0ecb81,#00b26b) !important;color:#fff !important}
@@ -12525,7 +12520,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 .vd-balance{
   display:flex;flex-direction:column;align-items:stretch;
   text-align:center;
-  padding:36px 26px 24px !important;
+  padding:42px 26px 36px !important;
   border-radius:26px !important;
   border:1px solid rgba(114,135,255,.18) !important;
   background:
@@ -12744,25 +12739,6 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           const eyeOff='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
           const eyeOn='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
           $('vdaEye').innerHTML=on?eyeOff:eyeOn;
-        });
-        // Withdraw quick action inside vd-options (adds 4th tile)
-        const opts=q('.vd-options');
-        if(opts && !$('vdWdBtn')){
-          const w=document.createElement('button'); w.id='vdWdBtn'; w.className='vd-option wd'; w.type='button';
-          w.innerHTML='<div class="vd-oicon">↑</div>Withdraw';
-          opts.appendChild(w);
-          w.addEventListener('click',()=>{
-            if(window.vantaShowCoinAddress) window.vantaShowCoinAddress('USDT','withdraw',{},{});
-          });
-        }
-        // Invest action
-        const inv=document.createElement('button'); inv.id='vdInvestBtn'; inv.className='vd-option invest'; inv.type='button';
-        inv.innerHTML='<div class="vd-oicon">↗</div>Invest';
-        opts.appendChild(inv);
-        inv.addEventListener('click',()=>{
-          if(typeof vantaOpenConvert==='function') vantaOpenConvert('USDT','GOLF');
-          else if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT','GOLF');
-          else toast('Open the Wallet page to invest.');
         });
       }
       const prices=window.vantaServerPrices||{};

@@ -4721,6 +4721,17 @@ function vantaClearLastSettled() {
     __vantaLastSettled = null;
 }
 
+/* Bank a closed trade into the Position card's REALIZED ledger, which feeds
+   the account summary's separate Profit / Loss totals. The ledger itself lives
+   in the POSITION card's own script block, so this is the bridge to it; it is
+   a no-op until that block has parsed, and the summary is rebuilt from the
+   deal records anyway, so nothing depends on the call landing. */
+function vantaNoteRealizedTrade(row) {
+    try {
+        if (typeof window.vantaNoteRealizedTrade === "function") window.vantaNoteRealizedTrade(row);
+    } catch (e) { /* summary falls back to the deal records */ }
+}
+
 async function closePositions(list) {
     if (accountMode === "demo") {
         list.forEach(t => {
@@ -4751,6 +4762,9 @@ async function closePositions(list) {
                 amount: t.amount, profit, result: profit >= 0 ? "WIN" : "LOSS"
             });
             if (history.length > 5) history.pop();
+            /* Bank this close in the realized ledger immediately — `history`
+               above is a 5-row UI preview and is NOT the account total. */
+            vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit });
 
             removeTradeMarker(t);
             trades = trades.filter(x => x.id !== t.id);
@@ -4782,6 +4796,7 @@ async function closePositions(list) {
         __vantaClosing.delete(t.id);
 
         const soldProfit = Number(sold.profit || 0);
+        vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit: soldProfit });
         if (!__vantaSuppressLast) {
     vantaSetLastSettled({
         symbol: t.symbol || "GOLF",
@@ -5422,6 +5437,9 @@ function vantaSettleDemoTrades() {
             profit, result: "LOSS"
         });
         if (history.length > 5) history.pop();
+        /* An expiry realises the full stake as a loss: it belongs in the
+           account's Loss total, not in its Profit. */
+        vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit });
 
         trades = trades.filter(x => x.id !== t.id);
         removeTradeMarker(t);
@@ -12686,6 +12704,14 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
   padding:9px 12px 10px;border-bottom:1px solid var(--line);background:#080b11;
 }
 .vta-acct-row{display:flex;align-items:baseline;gap:8px;min-height:18px;min-width:0}
+/* What the Profit / Loss pair above it actually adds up to. Without this the
+   two account totals look like a copy of the trade above, which is the whole
+   confusion this block exists to remove. */
+.vta-acct-sub{
+  padding:7px 12px 8px;border-bottom:1px solid var(--line);background:#080b11;
+  font-size:10px;color:var(--muted2);letter-spacing:.02em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 .vta-acct-l{flex:0 0 auto;font-size:10.5px;color:var(--muted);letter-spacing:.02em;white-space:nowrap;line-height:18px}
 .vta-acct-dots{flex:1 1 auto;min-width:12px;border-bottom:1px dotted rgba(255,255,255,.14);transform:translateY(-3px)}
 .vta-acct-v{flex:0 0 auto;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap;line-height:18px}
@@ -13781,9 +13807,71 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     vantaDealsAt=now;
     vantaApi('/api/trade/history').then(l=>{
       window.__vantaPosDeals=Array.isArray(l)?l:[];
+      /* The server's deal book is the authoritative record of everything that
+         has closed, so the account summary is rebuilt from it verbatim instead
+         of trusting whatever this session happened to witness. */
+      vtSeedRealized(vtDeals());
       updatePosCard();
     }).catch(()=>{});
   }
+
+  /* ---------- REALIZED results (the account summary's Profit / Loss) -------
+     The last-closed-trade block shows ONE trade's result. The account summary
+     below it answers a different question: across every trade this account has
+     closed, how much was won and how much was lost. Those are two separate
+     totals and are never netted together, so a loss can never be reported as a
+     negative profit:
+        wins only   -> Profit +$0.74   Loss  $0.00
+        loss only   -> Profit  $0.00   Loss -$0.60
+        mixed       -> Profit +$0.24   Loss -$0.60
+     The rows are fed from the closed-trade records themselves (the server's
+     /api/trade/history in live mode, the practice ledger in demo), never from
+     the numbers already painted on screen. */
+  let vtRealized=[];
+
+  /* One entry per closed trade, keyed by trade id so a re-sync of the same
+     deal can never be counted twice. */
+  function vtNoteRealized(row){
+    if(!row) return;
+    const id=String(row.id==null?'':row.id);
+    const profit=Number(row.profit||row.pl||0);
+    if(!isFinite(profit)) return;
+    const rec={id:id||('r'+vtRealized.length+':'+profit), sym:row.sym||row.symbol||'GOLF',
+               profit:profit, at:row.at||0};
+    const i=vtRealized.findIndex(r=>r.id===rec.id);
+    if(i>=0) vtRealized[i]=rec; else vtRealized.push(rec);
+  }
+  /* Replace the ledger with an authoritative deal list (live: the server's),
+     so a reload rebuilds the totals from records rather than from an empty
+     in-memory list. Records are keyed by id, so re-seeding is idempotent. */
+  function vtSeedRealized(deals){
+    const list=Array.isArray(deals)?deals:[];
+    const next=[], seen=new Set();
+    list.forEach(d=>{
+      const id=String(d.id==null?'':d.id);
+      if(seen.has(id)) return;
+      const profit=Number(d.profit!=null?d.profit:d.pl)||0;
+      if(!isFinite(profit)) return;
+      seen.add(id);
+      next.push({id:id,sym:d.sym||'GOLF',profit:profit,at:d.at||0});
+    });
+    vtRealized=next;
+  }
+  /* The two account totals. Split, never signed: this is what guarantees a
+     loss can never surface as a negative Profit. */
+  function vtRealizedTotals(){
+    let profit=0, loss=0;
+    vtRealized.forEach(r=>{
+      const p=Number(r.profit)||0;
+      if(p>0) profit+=p; else if(p<0) loss+=p;
+    });
+    return {profit:profit, loss:loss, net:profit+loss, count:vtRealized.length};
+  }
+  /* This block is its own IIFE, but trades are closed by an EARLIER script, so
+     the ledger has to be reachable from there. */
+  window.vantaNoteRealizedTrade=vtNoteRealized;
+  window.vantaSeedRealizedTrades=vtSeedRealized;
+  window.vantaRealizedTotals=vtRealizedTotals;
 
   function vtHead(cells){
     return '<div class="vta-thead">'+cells.map(c=>'<span class="h-'+c[0]+'">'+c[1]+'</span>').join('')+'</div>';
@@ -13823,6 +13911,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         /* ---- last closed trade result (own block, own rows) ---- */
         +'<div class="vta-result" id="vtaResult" hidden></div>'
         /* ---- account summary (dotted leaders) ---- */
+        +'<div class="vta-acct-sub" id="vtaAcctSub">No closed trades yet</div>'
         +'<div class="vta-acct">'
         +'<div class="vta-acct-row" data-acc="profit"><span class="vta-acct-l">Profit</span><span class="vta-acct-dots"></span><b class="vta-acct-v flat" id="vtaPProfit">$0.00</b></div>'
         +'<div class="vta-acct-row" data-acc="loss"><span class="vta-acct-l">Loss</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPLoss">$0.00</b></div>'
@@ -13893,6 +13982,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   function updatePosCard(){
     if(!mainEl || mainEl.style.display==='none') return;
     ensurePosCard();
+    /* The account summary is built from closed trade records, so the deal book
+       has to be in memory even when the user never opens the DEALS tab. This is
+       rate-limited to one fetch per 30s and is a no-op in practice mode. */
+    vtLoadDeals(false);
     const sym=window.vantaActiveCoin||'GOLF';
     const all=(typeof trades!=='undefined'&&Array.isArray(trades))?trades:[];
     const tradesArr=all.filter(t=>(t.symbol||'GOLF')===sym);
@@ -13930,17 +14023,30 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     const ls0=__vantaLastSettled||null;
     const sr=ls0?vtSplit(ls0.profit):null;
 
-    /* ---- account summary: pure wallet arithmetic, floating P/L only ----
-       demoBalance / balance was already credited the real payout at close, so
-       an already-settled result must never be folded in here again.
-       Balance = Deposit + floating profit - floating loss. */
-    const funds=vtFunds();
-    setN('vtaPProfit',sp.profit>0?'+'+money(sp.profit):money(0));
+    /* ---- account summary ----------------------------------------------------
+       Profit and Loss are the ACCOUNT totals over every closed trade, split so
+       a loss is never shown as a negative profit. They come from the closed
+       trade records themselves, not from the floating P/L above and not from
+       the last trade's number on screen:
+         win   -> Profit +$0.24   Loss $0.00
+         loss  -> Profit  $0.00   Loss -$60.00
+         mixed -> Profit +$0.24   Loss -$60.00
+       The merge below is keyed by trade id, so re-reading the same deal can
+       never double-count it. */
+    vtDeals().forEach(vtNoteRealized);
+    const acct=vtRealizedTotals();
+    setN('vtaPProfit',acct.profit>0?'+'+money(acct.profit):money(0));
     const profitEl=$('vtaPProfit');
-    if(profitEl) profitEl.className='vta-acct-v '+(sp.profit>0?'up':'zero');
-    setN('vtaPLoss',sp.loss<0?'−'+money(Math.abs(sp.loss)):money(0));
+    if(profitEl) profitEl.className='vta-acct-v '+(acct.profit>0?'up':'zero');
+    setN('vtaPLoss',acct.loss<0?'−'+money(Math.abs(acct.loss)):money(0));
     const lossEl=$('vtaPLoss');
-    if(lossEl) lossEl.className='vta-acct-v '+(sp.loss<0?'down':'zero');
+    if(lossEl) lossEl.className='vta-acct-v '+(acct.loss<0?'down':'zero');
+
+    /* Balance is the only row that mixes the two: funds on the account were
+       already credited the real payout when each trade closed, so the realized
+       totals above must NOT be added again. Only the still-open floating P/L is
+       missing from the balance, and only that belongs here. */
+    const funds=vtFunds();
     setN('vtaPDeposit',money(funds));
     setN('vtaPSwap',money(swap));
     setN('vtaPComm',money(comm));
@@ -13948,6 +14054,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     setN('vtaPBalance',money(total));
     const balEl=$('vtaPBalance');
     if(balEl) balEl.className='vta-acct-v '+(sp.net>0?'up':sp.net<0?'down':'');
+    const sub=$('vtaAcctSub');
+    if(sub) sub.textContent=acct.count
+      ? acct.count+(acct.count===1?' closed trade':' closed trades')+' · won '+money(acct.profit)+' · lost '+money(Math.abs(acct.loss))
+      : 'No closed trades yet';
     const meta=$('vtaPosMeta');
     if(meta) meta.innerHTML='<i class="vta-dot"></i>'+esc(sym)+' <b>'+coinFmt(price)+'</b>';
 

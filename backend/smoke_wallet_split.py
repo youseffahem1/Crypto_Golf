@@ -129,12 +129,16 @@ raises("reverse cannot exceed wallet", swap_service.SwapError,
        swap_service.move_between_accounts, db, alice.id, "USDT", 600.01, "TO_TRADING")
 
 print("\n[8] the ledger recorded every move")
-rows = db.query(models.WalletTransfer).filter_by(user_id=alice.id).order_by(
-    models.WalletTransfer.id).all()
+rows = db.query(models.WalletTransfer).filter_by(user_id=alice.id).all()
 check("ledger row count", len(rows), 4)
-check("ledger dirs", [x.direction.value for x in rows],
-      ["TO_WALLET", "TO_WALLET", "TO_WALLET", "TO_TRADING"])
-check("ledger symbols", [x.symbol for x in rows], ["USDT", "BTC", "USDT", "USDT"])
+# id is a random UUID, so it carries no chronological meaning — compare the
+# contents as multisets rather than pretending the rows come back in order.
+check("ledger dirs", sorted(x.direction.value for x in rows),
+      sorted(["TO_WALLET", "TO_WALLET", "TO_WALLET", "TO_TRADING"]))
+check("ledger symbols", sorted(x.symbol for x in rows),
+      sorted(["USDT", "BTC", "USDT", "USDT"]))
+check("every amount is positive", all(float(x.amount) > 0 for x in rows), True)
+check("bob has no wallet rows", db.query(models.WalletTransfer).filter_by(user_id=bob.id).count(), 0)
 
 print("\n[9] a P2P send spends WALLET and credits the peer's wallet")
 tx = transfer_service.execute_transfer(db, alice.id, "bob@example.com", "USDT", 100.0)

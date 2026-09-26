@@ -1,6 +1,12 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
+# PostgreSQL drivers. Render's DATABASE_URL uses the postgresql+psycopg://
+# scheme (psycopg 3), so that driver is REQUIRED or the app dies on boot with
+# "ModuleNotFoundError: No module named 'psycopg'". psycopg2-binary is kept so
+# a plain postgresql:// URL keeps working too. [binary] ships prebuilt wheels,
+# so no libpq/compiler toolchain is needed on the Render image.
+psycopg[binary]
 psycopg2-binary
 httpx
 tronpy

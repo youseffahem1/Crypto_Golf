@@ -12051,9 +12051,6 @@ body.vanta-hide-balance #vdaTotal{filter:blur(7px);user-select:none;pointer-even
 .vta-ms-chg{font-size:11px;font-weight:800;margin-top:2px}
 .vta-ms-chg.up{color:var(--up)}.vta-ms-chg.down{color:var(--down)}
 .vta-ms-live{font-size:8px;font-weight:900;letter-spacing:.1em;padding:3px 6px;border-radius:99px;background:rgba(14,203,129,.13);color:var(--up)}
-.vta-recent .vhm{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px dashed var(--line);font-size:12px}
-.vta-recent .vhmm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.vta-recent .vhmc{font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap}
 #vtaMarkets,#vtaRecent{grid-column:1 / -1}
 
 /* ---------- Trading overview ---------- */
@@ -12129,7 +12126,7 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
    POSITIONS | ORDERS | DEALS — compact, dense, data rows only.
    ========================================================== */
 .vta-pos{
-  --vt-row:664px; --vt-hair:rgba(255,255,255,.045);
+  --vt-row:680px; --vt-hair:rgba(255,255,255,.045);
   border:1px solid var(--line);border-radius:5px;background:#06080d !important;
   padding:0;margin-top:12px;box-shadow:none;max-width:100%;min-width:0;
   font-size:12px;line-height:1.3;overflow:hidden;
@@ -12197,11 +12194,14 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 /* ---------- Panes / data rows ---------- */
 .vta-panes{background:#06080d}
 .vta-pane[hidden]{display:none}
-.vta-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.vta-scroll{
+  max-height:min(56vh,430px);overflow:auto;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+}
 .vta-thead,.vta-tr{display:grid;align-items:center;column-gap:8px;padding:0 12px;min-width:var(--vt-row)}
 .vta-thead{
   height:25px;border-bottom:1px solid var(--line);background:#0a0d14;
-  position:sticky;top:0;z-index:2;
+  position:sticky;top:0;z-index:3;
 }
 .vta-thead span{
   font-size:9px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
@@ -12209,7 +12209,7 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 }
 .vta-thead .h-pl,.vta-thead .h-act{text-align:right}
 .vta-tr{
-  height:31px;border-bottom:1px solid var(--vt-hair);
+  height:auto;min-height:31px;border-bottom:1px solid var(--vt-hair);
   font-variant-numeric:tabular-nums;transition:background .12s ease;
 }
 .vta-tr:last-child{border-bottom:0}
@@ -12242,12 +12242,15 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vta-x.ghost:hover{background:rgba(255,255,255,.06);color:var(--text)}
 .vta-empty{padding:14px 12px;font-size:11px;color:var(--muted2);letter-spacing:.02em}
 
-/* grid areas — shared by head cells and data cells */
+/* grid areas — shared by head cells and data cells.
+   The leading "." track is an empty flexible spacer: the instrument stays
+   anchored left, the numeric block stays right-anchored, exactly like a
+   real terminal — no giant dead column at any width. */
 .h-sym,.vt-sym{grid-area:sym}
 .h-side,.vt-side{grid-area:side}
 .h-vol,.vt-vol{grid-area:vol}
 .h-ep,.vt-ep{grid-area:ep}
-.vt-ar{grid-area:ar}
+.h-ar,.vt-ar{grid-area:ar}
 .h-cur,.vt-cur{grid-area:cur}
 .h-pl,.vt-pl{grid-area:pl}
 .h-time,.vt-time{grid-area:time}
@@ -12257,40 +12260,66 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 
 .vta-tbl-positions .vta-thead,
 .vta-tbl-positions .vta-tr{
-  grid-template-areas:"sym side vol ep ar cur pl time act";
-  grid-template-columns:minmax(120px,1fr) 46px 58px 78px 10px 78px minmax(76px,104px) 56px 50px;
+  grid-template-areas:". sym side vol ep ar cur pl time act";
+  grid-template-columns:minmax(14px,1fr) minmax(104px,auto) 44px 56px 78px 9px 78px 96px 56px 48px;
 }
 .vta-tbl-orders .vta-thead,
 .vta-tbl-orders .vta-tr{
-  grid-template-areas:"sym side vol price status time act";
-  grid-template-columns:minmax(120px,1fr) 46px 58px minmax(78px,96px) 68px 56px 50px;
+  grid-template-areas:". sym side vol price status time act";
+  grid-template-columns:minmax(14px,1fr) minmax(104px,auto) 44px 56px 86px 66px 56px 48px;
 }
-.vta-tbl-orders{--vt-row:560px}
+.vta-tbl-orders{--vt-row:576px}
 .vta-tbl-deals .vta-thead,
 .vta-tbl-deals .vta-tr{
-  grid-template-areas:"sym side vol price pl time";
-  grid-template-columns:minmax(120px,1fr) 46px 58px minmax(78px,96px) minmax(76px,104px) 56px;
+  grid-template-areas:". sym side vol price pl time";
+  grid-template-columns:minmax(14px,1fr) minmax(104px,auto) 44px 56px 86px 96px 56px;
 }
-.vta-tbl-deals{--vt-row:520px}
+.vta-tbl-deals{--vt-row:546px}
 
 .vta-pos-note{
   margin:0;padding:7px 12px;border-top:1px solid var(--line);background:#080b11;
   font-size:9.5px;color:var(--muted2);line-height:1.5;
 }
 
-/* ---------- Terminal responsive behaviour ---------- */
+/* ---------- Responsive: each table drops its own least useful column ---------- */
+@media (max-width:1040px){
+  /* POSITIONS: TIME and the arrow go — the arrow folds into the price cell. */
+  .vta-tbl-positions .vta-thead,
+  .vta-tbl-positions .vta-tr{
+    grid-template-areas:". sym side vol ep cur pl act";
+    grid-template-columns:minmax(12px,1fr) minmax(92px,auto) 42px 52px 72px 72px 90px 46px;
+  }
+  .vta-tbl-positions .vt-ar{display:none}
+  .vta-tbl-positions .vta-tr .vt-cur:before{content:"\2192 "}
+  .vta-tbl-positions .vta-thead .h-ar{display:none}
+  /* DEALS: VOLUME goes — when the deal closed matters more than its size. */
+  .vta-tbl-deals .vta-thead,
+  .vta-tbl-deals .vta-tr{
+    grid-template-areas:". sym side price pl time";
+    grid-template-columns:minmax(12px,1fr) minmax(92px,auto) 42px 86px 90px 56px;
+  }
+  .vta-tbl-deals .vt-vol,
+  .vta-tbl-deals .vta-thead .h-vol{display:none}
+  /* ORDERS keep the countdown, POSITIONS drop the "opened at" stamp —
+     it is the one column that goes away entirely on a narrow screen. */
+  .vta-tbl-positions .vt-time,
+  .vta-tbl-positions .h-time{display:none}
+  /* nothing forces a minimum width any more */
+  .vta-pos,.vta-tbl-orders,.vta-tbl-deals{--vt-row:0}
+}
 @media (max-width:640px){
   .vta-pos{border-radius:4px;margin-top:10px}
   .vta-thead{display:none}
   .vta-tmeta{display:none}
   .vta-tab{padding:0 10px;letter-spacing:.09em}
   .vta-tab.active:after{left:6px;right:6px}
+  .vta-scroll{max-height:min(64vh,380px)}
   .vta-tbl-positions .vta-tr,
   .vta-tbl-orders .vta-tr,
   .vta-tbl-deals .vta-tr{
     min-width:0;height:auto;padding:7px 10px;row-gap:2px;align-content:center;
   }
-  /* two/three-line compact rows — the data area never forces a page scroll */
+  /* three-line compact rows — the data area never forces a page scroll */
   .vta-tbl-positions .vta-tr{
     grid-template-areas:"sym side vol act" "ep ep cur pl" "time time time time";
     grid-template-columns:minmax(0,1fr) 44px 60px minmax(66px,auto);
@@ -12303,14 +12332,16 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
     grid-template-areas:"sym side vol" "price price pl" "time time time";
     grid-template-columns:minmax(0,1fr) 44px 66px;
   }
+  /* the time strip comes back as a full-width hairline row */
+  .vta-tr .vt-time{display:block;padding-top:2px;border-top:1px solid var(--vt-hair)}
+  .vta-tbl-positions .vta-tr .vt-time{display:block}
+  /* every cell rejoins the grid on the compact 3-line layout */
+  .vta-tr .vt-vol{display:block}
+  .vta-tbl-deals .vta-tr .vt-vol{display:block}
   .vta-tc[data-l]:before{
     content:attr(data-l) " ";
     font-size:8.5px;letter-spacing:.08em;color:var(--muted2);font-weight:700;
   }
-  /* the arrow column collapses into the live-price cell on small screens */
-  .vta-tbl-positions .vta-tr .vt-ar{display:none}
-  .vta-tbl-positions .vta-tr .vt-cur:before{content:"\2192 "}
-  .vt-time{padding-top:2px;border-top:1px solid var(--vt-hair)}
   .vt-status{text-align:right}
 }
 @media (min-width:901px){
@@ -12620,10 +12651,10 @@ button{cursor:pointer}
 .small-control{height:50px;border-radius:12px !important}
 .trade-buttons{gap:10px;margin-top:16px}
 .trade-btn{min-height:58px;font-size:15px;border-radius:16px !important}
-/* Position stays a dense forex terminal — never re-inflate it into cards */
+/* Position stays a dense forex terminal — never re-inflate it into cards.
+   Row height lives in the terminal block above (it goes multi-line on phones). */
 .vta-pos{padding:0;border-radius:5px;margin-top:12px}
 .vta-tbar{height:33px}
-.vta-tbl-positions .vta-tr,.vta-tbl-orders .vta-tr,.vta-tbl-deals .vta-tr{height:31px}
 .open-section,.history-section{margin-top:2px}
 .section-title{font-size:13.5px}
 .open-trade,.history-item{border-radius:18px !important}
@@ -12658,7 +12689,7 @@ button{cursor:pointer}
 .vm-avatar{width:44px;height:44px;border-radius:14px;font-size:16px}
 .vm-empty{padding:30px;font-size:13px}
 .vh-item{padding:14px 16px}
-.vh-item .vhm,.vta-recent .vhm{padding:11px 2px;font-size:12.5px}
+.vh-item .vhm{padding:11px 2px;font-size:12.5px}
 .vhp-tabs{gap:8px;padding:4px}
 .vhp-tab{height:38px;padding:0 18px;font-size:12.5px}
 
@@ -12811,7 +12842,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 .asset-name,.vw-coin-symbol,.vta-ms-sym{word-break:keep-all;overflow-wrap:anywhere}
 .toast{max-width:calc(100vw - 32px)}
 .trade-btn{white-space:nowrap}
-.vm-convo,.vh-item .vhm,.vta-recent .vhm{overflow-wrap:anywhere}
+.vm-convo,.vh-item .vhm{overflow-wrap:anywhere}
 
 /* ==========================================================
    DASHBOARD — premium centered balance + glass cards
@@ -12890,7 +12921,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   -webkit-background-clip:text;background-clip:text;color:transparent !important;}
 .vd-golf-change{font-size:13px;font-weight:800;margin-top:6px}
 .vd-empty{color:#7e87a5}
-#vdTransfers .vd-kpi, .vta-recent .vhmb{font-variant-numeric:tabular-nums}
+#vdTransfers .vd-kpi{font-variant-numeric:tabular-nums}
 
 /* ==========================================================
    TRADING CONTROLS — premium order pad
@@ -13211,6 +13242,20 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   function vtPlCell(pl,label){
     return '<div class="vta-tc vt-pl '+vtPlCls(pl)+'" data-l="'+(label||'P/L')+'">'+vtSigned(pl)+'</div>';
   }
+  function vtTimeCell(at,label,tip){
+    return '<div class="vta-tc vt-time" data-l="'+(label||'TIME')+'" title="'+esc(tip||'')+'">'+vtStamp(at)+'</div>';
+  }
+  /* Rows re-render on every tick; keep the data area where the user left it
+     and skip writes that would not change anything. */
+  function vtSetRows(box,html){
+    if(!box) return;
+    if(box.__vtHtml===html) return;
+    const sc=box.parentNode&&box.parentNode.classList.contains('vta-scroll')?box.parentNode:null;
+    const st=sc?sc.scrollTop:0, sl=sc?sc.scrollLeft:0;
+    box.innerHTML=html;
+    box.__vtHtml=html;
+    if(sc){ sc.scrollTop=st; sc.scrollLeft=sl; }
+  }
 
   function ensurePosCard(){
     if(!mainEl) return;
@@ -13363,7 +13408,8 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           +'<div class="vta-tc vt-ar"></div>'
           +'<div class="vta-tc vt-cur" data-l="VALUE">'+money(ls.value)+'</div>'
           +vtPlCell(ls.profit)
-          +'<div class="vta-tc vt-time" data-l="TIME">'
+          +'<div class="vta-tc vt-time" data-l="TIME" title="'
+          +esc((ls.reason==='SOLD'?'settled':'expired')+' · result banked')+'">'
           +(Number(ls.pct||0)!==0?(ls.profit>=0?'+':'−')+Math.abs(Number(ls.pct||0)).toFixed(2)+'%':'—')+'</div>'
           +'<div class="vta-tc vt-act"><button type="button" class="vta-x ghost" data-clear-last>CLEAR</button></div>'
           +'</div>';
@@ -13380,22 +13426,22 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           +'<div class="vta-tc vt-ar">&rarr;</div>'
           +'<div class="vta-tc vt-cur" data-l="PRICE">'+coinFmt(price||r.entry)+'</div>'
           +vtPlCell(r.pnl)
-          +'<div class="vta-tc vt-time" data-l="TIME">'+vtStamp(r.start)+'</div>'
+          +vtTimeCell(r.start,'TIME','opened '+vtStamp(r.start))
           +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(r.id))+'">SELL</button></div>'
           +'</div>'
         ).join('');
       }
-      rowsBox.innerHTML=out;
+      vtSetRows(rowsBox,out);
     }
 
     /* ---- ORDERS: every working order on the account ---- */
     const ordBox=$('vtaPosOrders');
     if(ordBox){
       if(!all.length){
-        ordBox.innerHTML='<div class="vta-empty">No working orders.</div>';
+        vtSetRows(ordBox,'<div class="vta-empty">No working orders.</div>');
       } else {
         const fmtLeft=(typeof formatTime==='function')?formatTime:null;
-        ordBox.innerHTML=all.map(t=>{
+        vtSetRows(ordBox, all.map(t=>{
           const left=t.endTime?Number(t.endTime)-Date.now():0;
           const leftTxt=left>0?(fmtLeft?fmtLeft(left/1000):Math.round(left/1000)+'s'):'0s';
           return '<div class="vta-tr">'
@@ -13403,11 +13449,11 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
             +'<div class="vta-tc vt-side '+vtSideCls(t.direction)+'">'+vtSide(t.direction)+'</div>'
             +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(t.amount)+'</div>'
             +'<div class="vta-tc vt-price" data-l="PRICE">'+coinFmt(t.entryPrice)+'</div>'
-            +'<div class="vta-tc vt-status">OPEN</div>'
-            +'<div class="vta-tc vt-time" data-l="T−">'+leftTxt+'</div>'
+            +'<div class="vta-tc vt-status" data-l="STATUS">OPEN</div>'
+            +'<div class="vta-tc vt-time" data-l="T−" title="closes in '+leftTxt+'">'+leftTxt+'</div>'
             +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(t.id))+'">CANCEL</button></div>'
             +'</div>';
-        }).join('');
+        }).join(''));
       }
     }
 
@@ -13416,18 +13462,18 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     if(dealBox){
       const list=vtDeals();
       if(!list.length){
-        dealBox.innerHTML='<div class="vta-empty">No deals yet.</div>';
+        vtSetRows(dealBox,'<div class="vta-empty">No deals yet.</div>');
       } else {
-        dealBox.innerHTML=list.map(d=>
+        vtSetRows(dealBox, list.map(d=>
           '<div class="vta-tr">'
           +'<div class="vta-tc vt-sym">'+esc(d.sym)+'<span class="vt-id">'+esc(String(d.id))+'</span></div>'
           +'<div class="vta-tc vt-side '+vtSideCls(d.dir)+'">'+vtSide(d.dir)+'</div>'
           +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(d.vol)+'</div>'
           +'<div class="vta-tc vt-price" data-l="PRICE">'+coinFmt(d.price)+'</div>'
           +vtPlCell(d.pl)
-          +'<div class="vta-tc vt-time" data-l="TIME">'+vtStamp(d.at)+'</div>'
+          +vtTimeCell(d.at,'TIME',(d.status?String(d.status)+' · ':'')+vtStamp(d.at))
           +'</div>'
-        ).join('');
+        ).join(''));
       }
       if(vantaPosTab==='deals') vtLoadDeals(false);
     }

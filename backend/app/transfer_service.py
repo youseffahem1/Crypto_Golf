@@ -7,13 +7,22 @@ the platform can ever credit a user. The only way coins move between humans
 here is sender -> recipient where BOTH are Vanta accounts, moved entirely
 inside the balances ledger (the same local tables swap/trading already use).
 
+A peer-to-peer send moves WALLET funds: it debits the sender's wallet
+balance and credits the recipient's wallet balance. It deliberately does NOT
+touch the trading account, so sending a coin to a friend can never silently
+liquidate a position that is being traded. Because a wallet only ever holds
+funds the user explicitly moved into it, the "insufficient funds" error points
+at the one action that fixes it.
+
 Security notes:
   - recipient is resolved by exact account email (normalized lowercase),
     never by a user-supplied external address.
   - sender identity comes from the JWT, never from the request body.
-  - balances are read/modified through swap_service.get_balance/set_balance
-    so USDT/GOLF columns and CoinBalance rows stay consistent everywhere.
+  - balances are read/modified through swap_service's accessors so USDT/GOLF
+    columns and CoinBalance rows stay consistent everywhere.
 """
+from decimal import Decimal, ROUND_DOWN
+
 from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 
@@ -22,6 +31,9 @@ from . import models, swap_service, market_service
 
 class TransferError(Exception):
     pass
+
+
+_QUANT = Decimal("0.00000001")
 
 
 def find_user_by_email(db: Session, email: str):
@@ -58,6 +70,10 @@ def _account_full(db: Session, user_id: str) -> models.User:
     return user
 
 
+def _dec(value) -> Decimal:
+    return Decimal(str(float(value or 0.0))).quantize(_QUANT, rounding=ROUND_DOWN)
+
+
 def execute_transfer(
     db: Session,
     sender_id: str,
@@ -70,7 +86,8 @@ def execute_transfer(
     if symbol not in market_service.SUPPORTED_SYMBOLS:
         raise TransferError("Unsupported coin for transfer")
 
-    if amount <= 0:
+    amount_dec = Decimal(str(float(amount))).quantize(_QUANT, rounding=ROUND_DOWN)
+    if amount_dec <= 0:
         raise TransferError("Amount must be greater than zero")
 
     sender = _account_full(db, sender_id)
@@ -85,18 +102,38 @@ def execute_transfer(
     if blocked:
         raise TransferError("You have blocked this user — unblock them before sending")
 
-    balance = swap_service.get_balance(db, sender, symbol)
-    if balance < amount:
-        raise TransferError(f"Insufficient {symbol} balance")
+    # Lock the sender (and, where the engine supports it, the recipient) so two
+    # concurrent sends in the same direction can never read-modify-write the
+    # same wallet balance and lose an update. Same pattern as swap_service.
+    try:
+        db.query(models.User).filter_by(id=sender.id).with_for_update().all()
+    except Exception:
+        db.rollback()  # SQLite fallback
+    try:
+        db.query(models.User).filter_by(id=recipient.id).with_for_update().all()
+    except Exception:
+        db.rollback()  # SQLite fallback
 
-    swap_service.set_balance(db, sender, symbol, balance - amount)
-    swap_service.set_balance(db, recipient, symbol, swap_service.get_balance(db, recipient, symbol) + amount)
+    # Sends spend the WALLET balance, not the trading balance.
+    balance = swap_service.get_wallet_balance(db, sender, symbol)
+    if _dec(balance) < amount_dec:
+        raise TransferError(
+            f"Insufficient {symbol} in your wallet — you can send at most "
+            f"{_dec(balance).normalize():f} {symbol}. Use “Move to Wallet” to "
+            f"transfer funds from your trading account first."
+        )
+
+    swap_service.set_wallet_balance(db, sender, symbol, float(_dec(balance) - amount_dec))
+    swap_service.set_wallet_balance(
+        db, recipient, symbol,
+        float(_dec(swap_service.get_wallet_balance(db, recipient, symbol)) + amount_dec),
+    )
 
     tx = models.Transfer(
         sender_id=sender.id,
         recipient_id=recipient.id,
         symbol=symbol,
-        amount=amount,
+        amount=float(amount_dec),
         note=(note or "").strip() or None,
         status=models.TransferStatus.COMPLETED,
     )

@@ -94,10 +94,14 @@ def _poll_one_address(db: Session, addr_row: models.DepositAddress):
 
 
 def _credit_deposit(db: Session, deposit: models.Deposit):
-    """Credits the user's virtual balance exactly once. Re-fetches the
+    """Credits the user's TRADING virtual balance exactly once. Re-fetches the
     Deposit row with a lock-equivalent re-check of its status immediately
     before crediting, so two overlapping poll cycles can never double-credit
-    the same row even under concurrency."""
+    the same row even under concurrency.
+
+    A deposit lands in the trading account, NOT in the wallet. The wallet is
+    an independent ledger that only ever changes through an explicit user
+    transfer, so crediting here must never touch a wallet balance."""
     fresh = db.query(models.Deposit).filter_by(id=deposit.id).first()
     if not fresh or fresh.status == models.DepositStatus.CONFIRMED:
         return
@@ -113,4 +117,4 @@ def _credit_deposit(db: Session, deposit: models.Deposit):
     fresh.status = models.DepositStatus.CONFIRMED
     fresh.confirmed_at = datetime.utcnow()
     db.commit()
-    print(f"[deposit_monitor] credited {fresh.amount} USDT to user {user.id} (tx {fresh.tx_hash})")
+    print(f"[deposit_monitor] credited {fresh.amount} USDT to trading account of user {user.id} (tx {fresh.tx_hash})")

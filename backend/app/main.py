@@ -36,7 +36,13 @@ def _migrate():
     """Additive, non-destructive migrations for pre-existing databases
     (create_all does not alter existing tables). Every existing trade is a
     GOLF trade, so the new column is backfilled with 'GOLF' — historical
-    settlement semantics are preserved exactly."""
+    settlement semantics are preserved exactly.
+
+    Also adds the WALLET half of the two-ledger balance model. The existing
+    columns stay the TRADING balances, and the new wallet columns default to
+    0, so every pre-existing account starts with an empty wallet — exactly the
+    required behaviour: a wallet only ever holds funds the user explicitly
+    moved into it."""
     insp = inspect(engine)
     if not insp.has_table("trades"):
         return
@@ -46,6 +52,25 @@ def _migrate():
             conn.execute(text("ALTER TABLE trades ADD COLUMN symbol VARCHAR(20) DEFAULT 'GOLF'"))
             conn.execute(text("UPDATE trades SET symbol = 'GOLF' WHERE symbol IS NULL OR symbol = ''"))
         logging.info("[migrate] added trades.symbol = 'GOLF'")
+
+    # --- Split every balance into a TRADING balance and a WALLET balance -----
+    additive = [
+        ("users", "usdt_wallet_balance"),
+        ("users", "golf_wallet_balance"),
+        ("coin_balances", "wallet_balance"),
+    ]
+    with engine.begin() as conn:
+        for table, column in additive:
+            if not insp.has_table(table):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            if column in existing:
+                continue
+            conn.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN {column} FLOAT DEFAULT 0 NOT NULL"
+            ))
+            conn.execute(text(f"UPDATE {table} SET {column} = 0 WHERE {column} IS NULL"))
+            logging.info(f"[migrate] added {table}.{column} = 0 (wallet starts empty)")
 
 
 _migrate()

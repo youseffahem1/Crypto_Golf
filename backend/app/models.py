@@ -22,11 +22,26 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Virtual balances only — never represent real, spendable funds. USDT
+    # -------------------------------------------------------------------------
+    # TRADING ACCOUNT (usdt_balance / golf_balance below) and WALLET ACCOUNT
+    # (usdt_wallet_balance / golf_wallet_balance) are TWO INDEPENDENT LEDGERS.
+    # They are never derived from one another and never synchronised.
+    #
+    #   * TRADING balance — where deposits land, where trades are staked and
+    #     settled, and where the platform-coin investment book lives. This is
+    #     what Home/Trading shows.
+    #   * WALLET balance — starts at 0 for every account and only ever changes
+    #     through an explicit user action (see wallet_routes POST /transfer and
+    #     the WalletTransfer ledger below). This is what the Wallet page shows.
+    #
+    # Virtual balances only — they never represent real, spendable funds. USDT
     # here is credited ONLY after a real Nile-testnet deposit is verified
     # (see DepositMonitor) or from trade settlement / virtual swap.
+    # -------------------------------------------------------------------------
     usdt_balance = Column(Float, default=0.0, nullable=False)
     golf_balance = Column(Float, default=0.0, nullable=False)
+    usdt_wallet_balance = Column(Float, default=0.0, nullable=False)
+    golf_wallet_balance = Column(Float, default=0.0, nullable=False)
 
     deposit_address = relationship("DepositAddress", back_populates="user", uselist=False)
     deposits = relationship("Deposit", back_populates="user")
@@ -155,18 +170,54 @@ class GolfStat(Base):
 
 class CoinBalance(Base):
     """Virtual balance for a single (user, coin) pair — one row per symbol a
-    user holds. USDT and GOLF stay on the User row (historical columns all
-    existing code reads), every other tradeable coin lives here so users can
-    hold/convert as many currencies as the platform lists."""
+    user holds. USDT and GOLF keep dedicated columns on the User row (the
+    historical columns all existing code reads), every other tradeable coin
+    lives here so users can hold/convert as many currencies as the platform
+    lists.
+
+    `balance` is the TRADING balance and `wallet_balance` is the WALLET
+    balance. They are separate, independently persisted numbers: a coin's
+    wallet balance is 0 until the user explicitly moves funds into it, and
+    moving funds is the ONLY thing that ever changes it (see
+    wallet_routes.POST /api/wallet/transfer and the WalletTransfer ledger).
+    """
     __tablename__ = "coin_balances"
 
     id = Column(String, primary_key=True, default=gen_id)
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     symbol = Column(String, nullable=False, index=True)
     balance = Column(Float, default=0.0, nullable=False)
+    wallet_balance = Column(Float, default=0.0, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("user_id", "symbol", name="uq_user_symbol"),)
+
+
+class WalletTransferDirection(str, enum.Enum):
+    """Which way an explicit wallet move went. The only two things that can
+    ever change a wallet balance in the whole platform."""
+
+    TO_WALLET = "TO_WALLET"      # trading account -> wallet
+    TO_TRADING = "TO_TRADING"    # wallet -> trading account
+
+
+class WalletTransfer(Base):
+    """Audit row for every explicit move between the trading account and the
+    wallet. Because the wallet starts at 0 and nothing auto-synchronises it,
+    this table is the complete, authoritative history of how the wallet got
+    funded. Written in the SAME transaction as the two balance updates, so a
+    wallet can never move without a matching row."""
+
+    __tablename__ = "wallet_transfers"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    symbol = Column(String, nullable=False, index=True)
+    amount = Column(Numeric(24, 8), nullable=False)          # always positive
+    direction = Column(Enum(WalletTransferDirection), nullable=False)
+    trading_balance_after = Column(Numeric(24, 8), nullable=False)
+    wallet_balance_after = Column(Numeric(24, 8), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class BalanceTransaction(Base):

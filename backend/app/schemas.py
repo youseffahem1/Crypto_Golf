@@ -143,9 +143,57 @@ class GolfStatsOut(BaseModel):
 class WalletLayoutOut(BaseModel):
     platform_coins: list[str]
     normal_wallet_coins: list[str]
+    # `balances` is the TRADING table (unchanged shape for existing callers).
+    # `trading_balances` is the explicit alias of it; `wallet_balances` is the
+    # separate WALLET ledger, which is all zeros until funds are transferred in.
     balances: dict
+    trading_balances: dict = Field(default_factory=dict)
+    wallet_balances: dict = Field(default_factory=dict)
     deposit_addresses: dict = Field(default_factory=dict)
     withdraw_addresses: dict = Field(default_factory=dict)
+
+
+class BalancesOut(BaseModel):
+    """The two ledgers, side by side. `trading` and `wallet` are independent
+    persisted balances for the same coins — the wallet is never derived from
+    the trading balance or from the account total."""
+
+    trading: dict
+    wallet: dict
+
+
+class WalletTransferRequest(BaseModel):
+    """An explicit move between the trading account and the wallet. This is
+    the only mechanism in the platform that can change a wallet balance."""
+
+    symbol: str = Field(default="USDT", max_length=20)
+    amount: float = Field(gt=0)
+    direction: str = Field(default="TO_WALLET", pattern="^(TO_WALLET|TO_TRADING)$")
+
+
+class WalletTransferOut(BaseModel):
+    ok: bool = True
+    id: str
+    symbol: str
+    amount: float
+    direction: str
+    trading_balance: float
+    wallet_balance: float
+
+
+class WalletTransferItem(BaseModel):
+    id: str
+    symbol: str
+    amount: float
+    direction: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WalletTransferHistoryOut(BaseModel):
+    transfers: list[WalletTransferItem] = Field(default_factory=list)
 
 
 # --- Platform coin trading / investment overview ---------------------------
@@ -251,6 +299,7 @@ class AdminUserOut(BaseModel):
     golf_balance: float
     created_at: datetime
     balances: dict = Field(default_factory=dict)
+    wallet_balances: dict = Field(default_factory=dict)
 
 
 class AdminUserListItem(BaseModel):
@@ -264,6 +313,7 @@ class AdminUserListItem(BaseModel):
     golf_balance: float
     created_at: datetime
     balances: dict = Field(default_factory=dict)
+    wallet_balances: dict = Field(default_factory=dict)
     trades: int = 0
     deposits: int = 0
     last_activity: Optional[datetime] = None

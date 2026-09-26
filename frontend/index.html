@@ -3008,10 +3008,25 @@ function vantaSetTheme(theme) {
    STATE
 ========================================================= */
 
-let balance = 0;
-let golfBalance = 0;
+/* ------------------------------------------------------------------
+   TWO INDEPENDENT LEDGERS PER COIN — TRADING vs WALLET
+   ------------------------------------------------------------------
+   coinBalances  = TRADING account. Deposits land here, trades stake and
+                   settle here, platform-coin investments are valued here.
+                   Home / Trading renders this.
+   walletBalances= WALLET account. Starts at 0 for every account and only
+                   ever changes when the user explicitly moves funds with
+                   "Move to Wallet". The Wallet page renders this.
+
+   Neither is ever computed from the other, and neither is ever a total of
+   the other. `balance` and `golfBalance` below are shortcuts into the
+   TRADING ledger.
+   ------------------------------------------------------------------ */
+let balance = 0;          // trading USDT
+let golfBalance = 0;      // trading GOLF
 let golfPrice = 0;
-let coinBalances = {};
+let coinBalances = {};    // {SYMBOL: trading balance}
+let walletBalances = {};  // {SYMBOL: wallet balance}
 let serverPrices = {};
 
 let currentPrice = 0.1;
@@ -5240,16 +5255,27 @@ async function vantaSyncTrades() {
 async function refreshBalance() {
     try {
         const b = await vantaApi("/api/wallet/balances");
-        balance = Number(b.USDT) || 0;
-        golfBalance = Number(b.GOLF) || 0;
+        /* The API returns the two ledgers side by side. Fall back to treating a
+           flat response as the trading table so an older backend shape still
+           leaves the trading account readable. */
+        const tr = (b && typeof b === "object" && b.trading) ? b.trading : (b || {});
+        const wa = (b && typeof b === "object" && b.wallet) ? b.wallet : {};
+        balance = Number(tr.USDT) || 0;
+        golfBalance = Number(tr.GOLF) || 0;
         coinBalances = {};
-        for (const k in b) {
-            if (Object.prototype.hasOwnProperty.call(b, k)) coinBalances[k] = Number(b[k]) || 0;
+        for (const k in tr) {
+            if (Object.prototype.hasOwnProperty.call(tr, k)) coinBalances[k] = Number(tr[k]) || 0;
         }
-        window.vantaCoinBalances = coinBalances;
+        walletBalances = {};
+        for (const k in wa) {
+            if (Object.prototype.hasOwnProperty.call(wa, k)) walletBalances[k] = Number(wa[k]) || 0;
+        }
+        window.vantaCoinBalances = coinBalances;      // TRADING
+        window.vantaWalletBalances = walletBalances;  // WALLET — never the trading table
         window.vantaServerPrices = serverPrices;
         updateBalance();
         if (typeof vantaSyncWalletUI === "function") vantaSyncWalletUI();
+        if (typeof vantaRenderWalletBalances === "function") vantaRenderWalletBalances();
         try {
             const p = await vantaApi("/api/market/prices");
             serverPrices = p || {};
@@ -6441,6 +6467,7 @@ async function vantaHandleEntry() {
 .vwh-balance:after{content:"";position:absolute;width:220px;height:220px;right:-70px;bottom:-110px;border-radius:50%;border:1px solid rgba(167,139,250,.14);box-shadow:0 0 0 32px rgba(167,139,250,.03),0 0 0 64px rgba(167,139,250,.018);pointer-events:none}
 .vwh-cap{display:inline-block;font-size:9px;letter-spacing:.16em;text-transform:uppercase;font-weight:850;color:#9496a5;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);padding:6px 12px;border-radius:999px}
 .vwh-label{margin-top:14px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9496a5;font-weight:850}
+.vwh-sub{margin:0 auto 16px;max-width:520px;font-size:11.5px;line-height:1.6;color:#9496a5}
 .vwh-total{font-size:48px;line-height:1.05;font-weight:950;letter-spacing:-.055em;color:#fff;margin:6px 0 14px;font-variant-numeric:tabular-nums}
 .vwh-break{display:flex;justify-content:center;gap:38px;flex-wrap:wrap;position:relative;z-index:2}
 .vwh-stat span{display:block;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#777989;font-weight:800;margin-bottom:5px}
@@ -6723,8 +6750,9 @@ async function vantaHandleEntry() {
       </div>
       <div class="vwh-balance">
         <span class="vwh-cap">TESTNET • VIRTUAL</span>
-        <div class="vwh-label">Total Balance</div>
+        <div class="vwh-label">Wallet Balance</div>
         <div class="vwh-total" id="vwhBalance">$0.00</div>
+        <p class="vwh-sub">Your wallet only holds funds you explicitly move here from your trading account. It does not mirror your trading balance.</p>
         <div class="vwh-break">
           <div class="vwh-stat"><span>USDT</span><b id="vwhUsdt">$0.00</b></div>
           <div class="vwh-stat"><span>GOLF</span><b id="vwhGolf">0.0000</b></div>
@@ -6765,7 +6793,7 @@ async function vantaHandleEntry() {
     </div>
 
     <div class="vwd-m-quick">
-      <div><label>Balance</label><b id="vwdMBal">0</b></div>
+      <div><label>Wallet Balance</label><b id="vwdMBal">0</b></div>
       <div><label>≈ USD</label><b id="vwdMUsd">$0.00</b></div>
       <div><label>Network</label><b id="vwdMNet">Bitcoin</b></div>
     </div>
@@ -6800,7 +6828,7 @@ async function vantaHandleEntry() {
       <div class="vwd-field">
         <label for="vwdSendAmt">Amount (<span id="vwdSendSym">BTC</span>)</label>
         <input id="vwdSendAmt" type="number" min="0" step="any" placeholder="0.00000000" inputmode="decimal" autocomplete="off">
-        <div class="vwd-field-foot">Available: <b id="vwdSendAvail">0</b> <span id="vwdSendSym2">BTC</span></div>
+        <div class="vwd-field-foot">Available in wallet: <b id="vwdSendAvail">0</b> <span id="vwdSendSym2">BTC</span></div>
       </div>
       <div class="vwd-field">
         <label for="vwdSendNote">Note (optional)</label>
@@ -6822,7 +6850,7 @@ async function vantaHandleEntry() {
       <div class="vwd-field">
         <label for="vwdConvAmt">Amount (<span id="vwdConvFromSym">BTC</span>)</label>
         <input id="vwdConvAmt" type="number" min="0" step="any" placeholder="0.00" inputmode="decimal" autocomplete="off">
-        <div class="vwd-field-foot">Available: <b id="vwdConvAvail">0</b> <span id="vwdConvFromSym2">BTC</span></div>
+        <div class="vwd-field-foot">Available in trading: <b id="vwdConvAvail">0</b> <span id="vwdConvFromSym2">BTC</span></div>
       </div>
       <div class="vwd-rate" id="vwdRate">Rate loading…</div>
       <button class="vwd-primary" id="vwdConvBtn" type="button">Convert</button>
@@ -6897,17 +6925,25 @@ async function vantaHandleEntry() {
   var pageEl=null, grid=null, emptyEl=null, modal=null;
 
   /* Called when the DOM is fully parsed: resolve the (dashboard) grid +
-     the operations modal, bind clicks, then boot the dashboard. */
+     the operations modal, bind clicks, then boot the dashboard.
+
+     The grid is OPTIONAL. The current wallet page is built from the coin
+     chips + operations card, so #vwdGrid is not in the markup — requiring it
+     here used to abort the whole IIFE before a single listener was attached,
+     which left the deposit/transfer/swap modal dead. Bind the grid only when
+     it actually exists so the rest of the page still works. */
   function boot(){
     pageEl=document.getElementById('vantaWalletPage');
     grid=document.getElementById('vwdGrid');
     emptyEl=document.getElementById('vwdEmpty');
     modal=document.getElementById('vwdModal');
-    if(!pageEl||!grid||!modal) return;
-    grid.addEventListener('click',function(e){
-      var card=e.target.closest?e.target.closest('.vwd-card'):null;
-      if(card){ openModal(card.getAttribute('data-wallet')); }
-    });
+    if(!pageEl||!modal) return;
+    if(grid){
+      grid.addEventListener('click',function(e){
+        var card=e.target.closest?e.target.closest('.vwd-card'):null;
+        if(card){ openModal(card.getAttribute('data-wallet')); }
+      });
+    }
     modal.addEventListener('click',function(e){ if(e.target===modal) closeModal(); });
     vwdLoad();
 
@@ -7092,21 +7128,49 @@ async function vantaHandleEntry() {
     }catch(e){}
     return null;
   }
-  function balanceFor(sym){
-    if(sym==='USDT'){
-      if(isDemo()) return typeof demoBalance==='number'?demoBalance:10000;
-      if(typeof balance==='number') return balance;
-      var ur=realBal('USDT'); if(ur!=null) return ur;
+  function realWalletBal(sym){
+    try{
+      var arr=window.vantaWalletBalances||null;
+      if(arr&&typeof arr==='object'&&!Array.isArray(arr)){
+        if(arr[sym]!=null) return Number(arr[sym])||0;
+        if(arr[sym.toLowerCase()]!=null) return Number(arr[sym.toLowerCase()])||0;
+      } else if(Array.isArray(arr)){
+        for(var i=0;i<arr.length;i++){ var r=arr[i]; if(String(r.symbol||r.currency||'').toUpperCase()===sym) return Number(r.balance!=null?r.balance:r.amount)||0; }
+      }
+    }catch(e){}
+    return null;
+  }
+  /* Practice wallet: a second, independent map inside the practice store, so
+     practice mode obeys exactly the same "wallet starts empty, only an
+     explicit move funds it" rule as the live backend. */
+  function practiceWallet(){
+    var m=practice();
+    if(!m.__wallet||typeof m.__wallet!=='object') m.__wallet={};
+    return m.__wallet;
+  }
+
+  /* ---- TRADING balance: deposits, trading, investing, swaps -------------
+     In live mode this is ONLY ever the server's trading ledger — a coin that is
+     missing from it is 0. It must never fall through to the practice store,
+     or a signed-in user would see practice figures for a coin they hold no
+     trading balance of. */
+  function tradingBalanceFor(sym){
+    if(isDemo()){
+      if(sym==='USDT') return typeof demoBalance==='number'?demoBalance:10000;
+      return Number((practice())[sym])||0;
     }
     var real=realBal(sym);
-    if(!isDemo() && real!=null) return real;
-    var m=practice();
-    if(sym==='GOLF'){
-      var gp=(typeof golfPrice==='number'?golfPrice:0);
-      if(!isDemo() && gp>0){ try{ var g=realBal('GOLF'); if(typeof g==='number') return g; }catch(e){} }
-      return Number(m.GOLF)||0;
-    }
-    return Number(m[sym])||0;
+    if(real!=null) return real;
+    if(sym==='USDT' && typeof balance==='number') return balance;
+    return 0;
+  }
+
+  /* ---- WALLET balance: ONLY what was explicitly moved in ---------------- */
+  function walletBalanceFor(sym){
+    if(isDemo()) return Number(practiceWallet()[sym])||0;
+    var real=realWalletBal(sym);
+    if(real!=null) return real;
+    return 0;
   }
 
   function priceOf(sym){ var p=state.prices[sym]; if(typeof p==='number'&&p>0)return p; return VWD_DEFAULT[sym]||0; }
@@ -7127,12 +7191,12 @@ async function vantaHandleEntry() {
     return '<div class="vwd-logo sym-'+sym.toLowerCase()+'"><svg'+cur+' viewBox="0 0 24 24" aria-hidden="true">'+mark+'</svg></div>';
   }
 
-  /* ---------- Render grid ---------- */
+  /* ---------- Render grid (WALLET holdings — never the trading balance) ---- */
   function render(){
     var html='', total=0, holdings=0;
     VWD_ORDER.forEach(function(sym){
       var meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
-      var bal=balanceFor(sym);
+      var bal=walletBalanceFor(sym);
       var usd=bal*priceOf(sym);
       if(bal>0) holdings++;
       total+=usd;
@@ -7150,12 +7214,12 @@ async function vantaHandleEntry() {
           '<div class="vwd-card-acts"><span>Deposit</span><span>Transfer</span><span>Swap</span></div>'+
         '</button>';
     });
-    grid.innerHTML=html;
-    emptyEl.hidden = VWD_ORDER.length>0;
+    if(grid) grid.innerHTML=html;
+    if(emptyEl) emptyEl.hidden = VWD_ORDER.length>0;
     var t=fmtMoney(total);
-    $('vwdTotal').textContent=t;
-    $('vwdHoldings').textContent=holdings;
-    $('vwdHoldingsCount').textContent=holdings+' '+(holdings===1?'asset':'assets');
+    var te=$('vwdTotal'); if(te) te.textContent=t;
+    var th=$('vwdHoldings'); if(th) th.textContent=holdings;
+    var tc=$('vwdHoldingsCount'); if(tc) tc.textContent=holdings+' '+(holdings===1?'asset':'assets');
   }
 
   /* ---------- Wallet-page coin chips ---------- */
@@ -7181,15 +7245,16 @@ async function vantaHandleEntry() {
     $('vwdMLogo').outerHTML=logoHtml(sym).replace('class="vwd-logo','id="vwdMLogo" class="vwd-logo');
     $('vwdMSym').textContent=sym;
     $('vwdMName').textContent=meta.name+(isDemo()?' \u00B7 Practice':'');
-    var bal=balanceFor(sym);
+    /* The quick row is the wallet's own holding for this coin. */
+    var bal=walletBalanceFor(sym);
     $('vwdMBal').textContent=fmtCoin(bal,sym);
     $('vwdMUsd').textContent=fmtMoney(bal*priceOf(sym));
     $('vwdMNet').textContent=meta.net;
     $('vwdDepSym').textContent=sym;
     $('vwdSendSym').textContent=sym; $('vwdSendSym2').textContent=sym;
     $('vwdConvFromSym').textContent=sym; $('vwdConvFromSym2').textContent=sym;
-    $('vwdSendAvail').textContent=fmtCoin(bal,sym);
-    $('vwdConvAvail').textContent=fmtCoin(bal,sym);
+    $('vwdSendAvail').textContent=fmtCoin(walletBalanceFor(sym),sym);
+    $('vwdConvAvail').textContent=fmtCoin(tradingBalanceFor(sym),sym);
     $('vwdConvFrom').value=sym+' \u2014 '+meta.name;
     $('vwdSendTo').value=''; $('vwdSendAmt').value=''; $('vwdSendNote').value='';
     $('vwdConvAmt').value='';
@@ -7316,11 +7381,20 @@ async function vantaHandleEntry() {
     var note=($('vwdSendNote').value||'').trim();
     if(!email){ toast('Enter the recipient email (a Vanta account).'); return; }
     if(!(amt>0)){ toast('Enter a valid amount.'); return; }
+    /* A send spends WALLET funds, so the wallet balance is the ceiling. */
+    var avail=walletBalanceFor(sym);
+    if(amt>avail+1e-9){
+      toast('Insufficient '+sym+' in your wallet (you have '+fmtCoin(avail,sym)+'). Use \u201cMove to Wallet\u201d to bring funds across from trading first.');
+      return;
+    }
     if(isDemo()){
+      /* Practice keeps its own wallet map inside the practice store, so the
+         practice wallet also starts empty and only explicit moves fund it. */
       var m=practice();
-      if(sym==='USDT'){ if((demoBalance||0)<amt-1e-9){ toast('Insufficient USDT balance.'); return; } demoBalance-=amt; try{ vantaSaveDemoBalance(); }catch(e){} }
-      else { if((Number(m[sym])||0)<amt-1e-9){ toast('Insufficient '+sym+' balance.'); return; } m[sym]=(Number(m[sym])||0)-amt; practiceSave(m); }
-      toast('Demo transfer sent to '+email+' ('+fmtCoin(amt,sym)+' '+sym+').');
+      if(!m.__wallet||typeof m.__wallet!=='object') m.__wallet={};
+      m.__wallet[sym]=Math.max(0,(Number(m.__wallet[sym])||0)-amt);
+      practiceSave(m);
+      toast('Practice transfer sent to '+email+' ('+fmtCoin(amt,sym)+' '+sym+').');
       afterChange(); closeModal();
       return;
     }
@@ -7332,6 +7406,9 @@ async function vantaHandleEntry() {
       .finally(function(){ btn.disabled=false; btn.textContent=old; state.busy=false; });
   }
 
+  /* Swaps run on the TRADING account (they are the buy/sell engine for the
+     investment book), so the ceiling here is the trading balance — which is
+     exactly what the Convert pane's "Available in trading" line shows. */
   function doConvert(){
     var sym=state.activeSym, to=$('vwdConvTo').value;
     var amt=parseFloat($('vwdConvAmt').value);
@@ -7339,11 +7416,13 @@ async function vantaHandleEntry() {
     if(state.busy)return;
     if(!to||to===sym){ toast('Choose a destination coin.'); return; }
     if(!(amt>0)){ toast('Enter a valid amount.'); return; }
+    var avail=tradingBalanceFor(sym);
+    if(amt>avail+1e-9){ toast('Insufficient '+sym+' trading balance (you have '+fmtCoin(avail,sym)+').'); return; }
     if(isDemo()){
       var r=rate(sym,to), received=amt*r;
       var m=practice();
-      if(sym==='USDT'){ if((demoBalance||0)<amt-1e-9){ toast('Insufficient USDT balance.'); return; } demoBalance-=amt; try{ vantaSaveDemoBalance(); }catch(e){} }
-      else { if((Number(m[sym])||0)<amt-1e-9){ toast('Insufficient '+sym+' balance.'); return; } m[sym]=(Number(m[sym])||0)-amt; practiceSave(m); }
+      if(sym==='USDT'){ demoBalance=(demoBalance||0)-amt; try{ vantaSaveDemoBalance(); }catch(e){} }
+      else { m[sym]=(Number(m[sym])||0)-amt; practiceSave(m); }
       if(to==='USDT'){ demoBalance=(demoBalance||0)+received; try{ vantaSaveDemoBalance(); }catch(e){} }
       else { m[to]=(Number(m[to])||0)+received; practiceSave(m); }
       /* Average-cost book for practice platform coins, mirroring the server's
@@ -7530,7 +7609,7 @@ async function vantaHandleEntry() {
 .vfx-portfolio{margin-top:9px;font-size:11px;font-weight:800;color:var(--text)}
 .vfx-held{margin-top:3px;font-size:9.5px;color:var(--muted);line-height:1.6}
 .vfx-cap{padding:7px 12px;border:1px solid rgba(184,134,11,.25);background:rgba(184,134,11,.08);border-radius:999px;color:#8a6a0d;font-size:10px;font-weight:900;white-space:nowrap}
-.vfx-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:22px;position:relative;z-index:1}
+.vfx-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px;margin-top:22px;position:relative;z-index:1}
 .vfx-action{min-height:46px;border:1px solid var(--line);border-radius:13px;background:var(--panel-2);color:var(--text);font-size:12px;font-weight:800;cursor:pointer;transition:transform .15s,box-shadow .15s}
 .vfx-action:hover{transform:translateY(-1px)}
 .vfx-action.primary{background:linear-gradient(135deg,var(--gold),#1d4ed8);color:#fff;border-color:transparent;box-shadow:0 10px 24px rgba(37,99,235,.22)}
@@ -7764,9 +7843,9 @@ async function vantaHandleEntry() {
     box.innerHTML=`
       <section class="vfx-usdt-hero">
         <span class="vfx-cap">TESTNET • VIRTUAL</span>
-        <div class="vfx-usdt-top"><div><div class="vfx-label">USDT Balance</div><div class="vfx-usdt-balance" data-vfx-usdt>$0.00 <small>USDT</small></div><div class="vfx-golf-balance">GOLF&nbsp;<b id="vfxGolfBalanceLine">0.00</b></div><div class="vfx-portfolio" id="vfxPortfolioLine"></div></div></div>
+        <div class="vfx-usdt-top"><div>        <div class="vfx-label">Wallet USDT Balance</div><div class="vfx-usdt-balance" data-vfx-usdt>$0.00 <small>USDT</small></div><div class="vfx-golf-balance">GOLF&nbsp;<b id="vfxGolfBalanceLine">0.00</b></div><div class="vfx-portfolio" id="vfxPortfolioLine"></div></div></div>
         <div class="vfx-held" id="vfxHoldingsLine"></div>
-        <div class="vfx-actions"><button class="vfx-action green" data-open="vfxDepositModal">↓ Deposit</button><button class="vfx-action" data-vtr-open="vfxTransferModal">Send</button><button class="vfx-action" id="vfxReceiveBtn">Receive</button><button class="vfx-action primary" data-open="vfxConvertModal">⇄ Swap</button></div>
+        <div class="vfx-actions"><button class="vfx-action green" data-move-sym="USDT">⇅ Move to Wallet</button><button class="vfx-action green" data-open="vfxDepositModal">↓ Deposit</button><button class="vfx-action" data-vtr-open="vfxTransferModal">Send</button><button class="vfx-action" id="vfxReceiveBtn">Receive</button><button class="vfx-action primary" data-open="vfxConvertModal">⇄ Swap</button></div>
       </section>
       <section class="vfx-golf-mini"><div class="vfx-golf-mini-head"><strong>⛳ GOLF — Early Access</strong><span class="vfx-golf-price" id="vfxGolfPrice">$0.00</span></div><p id="vfxGolfBlurb">GOLF is the early-access token traded on this platform. Its price is set by the same authoritative server-side market used for trading.</p><div class="vfx-golf-target" id="vfxGolfChange">24h change: 0.00%</div></section>
       <section class="vfx-wallet-row">
@@ -7780,6 +7859,28 @@ async function vantaHandleEntry() {
           <div id="vfxNormalHoldings"><div class="vfx-w-note">Established cryptocurrencies you hold on the platform (BTC, ETH, BNB, USDT, USDC, SOL, LTC, …).</div></div>
         </section>
       </section>
+      <div class="vfx-modal" id="vfxMoveModal">
+        <section class="vfx-sheet">
+          <div class="vfx-sheet-head"><div><h2>Move between Trading &amp; Wallet</h2><div class="vfx-help">Your trading balance and your wallet balance are two separate amounts. Moving funds is the only thing that changes a wallet balance — nothing is ever moved automatically.</div></div><button class="vfx-close" data-vfx-close="vfxMoveModal">✕</button></div>
+          <div class="vfx-form">
+            <div class="vfx-move-split" id="vfxMoveSplit" role="group" aria-label="Transfer direction">
+              <button type="button" class="vfx-move-dir on" data-move-dir="TO_WALLET">Trading → Wallet</button>
+              <button type="button" class="vfx-move-dir" data-move-dir="TO_TRADING">Wallet → Trading</button>
+            </div>
+            <div class="vfx-label">Coin</div>
+            <select class="vfx-select" id="vfxMoveSym"></select>
+            <div class="vfx-move-bal">
+              <div><span id="vfxMoveFromLabel">Trading Balance</span><b id="vfxMoveFromBal">0</b></div>
+              <div><span id="vfxMoveToLabel">Wallet Balance</span><b id="vfxMoveToBal">0</b></div>
+            </div>
+            <div class="vfx-label">Amount (<span id="vfxMoveSymLabel">GOLF</span>)</div>
+            <input class="vfx-field" id="vfxMoveAmount" type="number" min="0" step="any" placeholder="0.00" inputmode="decimal" autocomplete="off">
+            <div class="vfx-help">Available to move: <b id="vfxMoveAvail">0</b> <span id="vfxMoveSymLabel2">GOLF</span> · <button type="button" class="vfx-move-max" id="vfxMoveMax">Move max</button></div>
+            <button class="vfx-submit" type="button" id="vfxMoveSubmit">Move to Wallet</button>
+            <div class="vfx-help" id="vfxMoveResult"></div>
+          </div>
+        </section>
+      </div>
       <div class="vfx-modal" id="vfxReceiveModal">
         <section class="vfx-sheet">
           <div class="vfx-sheet-head"><div><h2>Receive Coins</h2><div class="vfx-help">Get coins from other platform accounts, or deposit USDT on-chain. Internal transfers arrive instantly with no fees.</div></div><button class="vfx-close" data-vfx-close="vfxReceiveModal">✕</button></div>
@@ -7971,13 +8072,18 @@ async function vantaHandleEntry() {
   $('vfxChatInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){$('vfxSendBtn').click();e.preventDefault()}});
   $('vfxChatInfo')?.addEventListener('click',()=>toast('This community chat is for coordination only and is not connected directly to trades.'));
 
-  /* ---- Hooks for the main script's refreshBalance() / refreshGolfStats() ---- */
+  /* ---- Hooks for the main script's refreshBalance() / refreshGolfStats() ----
+     Every element this paints lives on the WALLET page, so every number here
+     comes from the WALLET ledger (window.vantaWalletBalances) — never from
+     the trading balance. The wallet holds only funds the user explicitly
+     moved into it, so a brand new account correctly renders all zeros here
+     while Home/Trading still shows the trading balance. */
   window.vantaSyncWalletUI=function(){
     const prices=window.vantaServerPrices||{};
     const df=window.VWD_DEFAULT||{};
-    const usdt=Number(typeof balance!=='undefined'?balance:0)||0;
-    const golf=Number(typeof golfBalance!=='undefined'?golfBalance:0)||0;
-    const cb=window.vantaCoinBalances||{};
+    const wb=window.vantaWalletBalances||{};
+    const usdt=Number(wb.USDT)||0;
+    const golf=Number(wb.GOLF)||0;
     let allTotal=usdt, holdingsVal=0;
     const add=(sym,amt,toHold)=>{
       if(!amt||amt<=0)return;
@@ -7986,12 +8092,12 @@ async function vantaHandleEntry() {
       if(toHold) holdingsVal+=amt*price;
     };
     add('GOLF',golf,true);
-    for(const sym in cb){ if(sym==='USDT'||sym==='GOLF')continue; add(sym,cb[sym],true); }
+    for(const sym in wb){ if(sym==='USDT'||sym==='GOLF')continue; add(sym,wb[sym],true); }
     document.querySelectorAll('[data-vfx-usdt]').forEach(e=>e.innerHTML=money(usdt)+' <small>USDT</small>');
     const g1=$('vfxGolfBalanceLine'); if(g1)g1.textContent=golf.toLocaleString('en-US',{maximumFractionDigits:4});
     const pc=$('vfxPortfolioLine'), hl=$('vfxHoldingsLine');
-    if(pc) pc.textContent='Portfolio value ≈ '+money(allTotal);
-    if(hl) hl.textContent=(holdingsVal>0?'Holdings value ≈ '+money(holdingsVal):'No coin holdings yet — tap Invest on any market coin to grow your portfolio.');
+    if(pc) pc.textContent='Wallet portfolio value ≈ '+money(allTotal);
+    if(hl) hl.textContent=(holdingsVal>0?'Wallet holdings value ≈ '+money(holdingsVal):'Your wallet is empty. Use “Move to Wallet” to transfer funds from your trading account.');
     const bh=$('vwhBalance'); if(bh) bh.textContent=money(allTotal);
     const bu=$('vwhUsdt'); if(bu) bu.textContent=money(usdt);
     const bg=$('vwhGolf'); if(bg) bg.textContent=golf.toLocaleString('en-US',{maximumFractionDigits:6});
@@ -8007,6 +8113,129 @@ async function vantaHandleEntry() {
     document.querySelectorAll('.golf-promo-target b').forEach((el,i)=>{ if(i===0) el.textContent='$'+Number(stats.price_usdt).toFixed(4); });
     const modalPrice=document.querySelector('.golf-live-card strong'); if(modalPrice)modalPrice.textContent='$'+Number(stats.price_usdt).toFixed(4);
   };
+
+  /* =======================================================================
+     TRADING <-> WALLET TRANSFER  (the only thing that funds the wallet)
+     -----------------------------------------------------------------------
+     Trading and wallet are two independent balances. This is the explicit
+     user action that moves funds between them; the server debits one ledger
+     and credits the other in a single transaction and rejects any amount
+     above the available source balance. Like every other wallet money action
+     in this app, practice mode is read-only here and points the user at their
+     live account.
+     ======================================================================= */
+  const vfxTradingOf=sym=>Number((window.vantaCoinBalances||{})[sym])||0;
+  const vfxWalletOf=sym=>Number((window.vantaWalletBalances||{})[sym])||0;
+  const vfxIsDemo=()=>typeof accountMode!=='undefined'&&accountMode==='demo';
+
+  /* The two figures for the coin selected in the modal, read from two
+     different ledgers and never from one another. */
+  function vfxMoveFigures(sym,dir){
+    const t=vfxTradingOf(sym), w=vfxWalletOf(sym);
+    return dir==='TO_WALLET'?{from:t,to:w}:{from:w,to:t};
+  }
+  window.vantaMoveFigures=vfxMoveFigures;
+
+  let vfxMoveSym='USDT', vfxMoveDir='TO_WALLET';
+  const vfxSet=(id,v)=>{const el=$(id); if(el) el.textContent=v;};
+  const vfxFmt=(n)=>Number(n||0).toLocaleString('en-US',{maximumFractionDigits:8});
+
+  function vfxSyncMoveModal(){
+    const sel=$('vfxMoveSym');
+    if(sel && sel.options.length!==(window.VANTACOINS||[]).length){
+      sel.innerHTML=(window.VANTACOINS||[]).map(c=>'<option value="'+c.sym+'">'+c.sym+' — '+c.name+'</option>').join('');
+    }
+    if(sel) sel.value=vfxMoveSym;
+    const toWallet=vfxMoveDir==='TO_WALLET';
+    const fig=vfxMoveFigures(vfxMoveSym,vfxMoveDir);
+    vfxSet('vfxMoveFromLabel',toWallet?'Trading Balance':'Wallet Balance');
+    vfxSet('vfxMoveToLabel',toWallet?'Wallet Balance':'Trading Balance');
+    vfxSet('vfxMoveFromBal',vfxFmt(fig.from));
+    vfxSet('vfxMoveToBal',vfxFmt(fig.to));
+    vfxSet('vfxMoveAvail',vfxFmt(fig.from));
+    vfxSet('vfxMoveSymLabel',vfxMoveSym);
+    vfxSet('vfxMoveSymLabel2',vfxMoveSym);
+    vfxSet('vfxMoveSubmit',toWallet?'Move to Wallet':'Move to Trading');
+    document.querySelectorAll('#vfxMoveSplit .vfx-move-dir').forEach(b=>b.classList.toggle('on',b.dataset.moveDir===vfxMoveDir));
+  }
+  window.vantaSyncMoveModal=vfxSyncMoveModal;
+
+  function vfxOpenMove(sym,dir){
+    if(sym) vfxMoveSym=String(sym).toUpperCase();
+    if(dir) vfxMoveDir=dir;
+    vfxSyncMoveModal();
+    const amt=$('vfxMoveAmount'); if(amt) amt.value='';
+    vfxSet('vfxMoveResult','');
+    open('vfxMoveModal');
+  }
+  window.vantaOpenMove=vfxOpenMove;
+  window.vantaRenderWalletBalances=function(){ vfxSyncMoveModal(); };
+
+  document.addEventListener('click',e=>{
+    const b=e.target&&e.target.closest?e.target.closest('[data-move-sym]'):null;
+    if(!b||!b.dataset||!b.dataset.moveSym) return;
+    if(vfxIsDemo()){
+      toast('Switch to your Live account to move real funds between Trading and Wallet.');
+      return;
+    }
+    if(typeof vantaToken!=='function'||!vantaToken()){
+      toast('Log in to move funds between your trading account and your wallet.');
+      return;
+    }
+    /* The row button names the direction it wants, so open the modal already
+       pointing that way instead of always defaulting to Trading ? Wallet. */
+    vfxOpenMove(b.dataset.moveSym, b.dataset.moveDir);
+  });
+
+  $('vfxMoveSym')?.addEventListener('change',e=>{ vfxMoveSym=e.target.value; vfxSyncMoveModal(); });
+  document.querySelectorAll('#vfxMoveSplit .vfx-move-dir').forEach(b=>b.addEventListener('click',()=>{
+    vfxMoveDir=b.dataset.moveDir; vfxSyncMoveModal();
+  }));
+  /* "Move max" must TRUNCATE, never round. toFixed() rounds, which can hand
+     back an amount a hair above the balance and the server would then — quite
+     correctly — reject the user's own "move everything". Scale through a
+     string first so a value already in exponential form still works. */
+  function vfxFloorTo8(n){
+    n=Number(n||0);
+    if(!(n>0)) return '';
+    return String(Math.floor(Number(n.toFixed(12))+'e8')/1e8);
+  }
+  $('vfxMoveMax')?.addEventListener('click',()=>{
+    const fig=vfxMoveFigures(vfxMoveSym,vfxMoveDir);
+    const amt=$('vfxMoveAmount');
+    if(amt) amt.value=vfxFloorTo8(fig.from);
+  });
+
+  function vfxDoMove(){
+    if(vfxIsDemo()){ toast('Switch to your Live account to move real funds.'); return; }
+    if(typeof vantaToken!=='function'||!vantaToken()){ toast('Log in first.'); return; }
+    const sym=vfxMoveSym, dir=vfxMoveDir;
+    const amount=Number($('vfxMoveAmount')?.value);
+    const fig=vfxMoveFigures(sym,dir);
+    const say=(m)=>vfxSet('vfxMoveResult',m);
+    if(!(amount>0)){ say('Enter an amount greater than zero.'); return; }
+    /* Client-side guard for instant feedback; the server validates again and
+       is the authority — it can never be talked into an overdraft. */
+    if(amount>Number(fig.from||0)+1e-9){
+      say('You can move at most '+vfxFmt(fig.from)+' '+sym+' — your '+(dir==='TO_WALLET'?'trading':'wallet')+' balance is lower than that.');
+      return;
+    }
+    const btn=$('vfxMoveSubmit');
+    if(btn){ btn.disabled=true; btn.textContent='Moving…'; }
+    vantaApi('/api/wallet/transfer',{method:'POST',body:JSON.stringify({symbol:sym,amount:amount,direction:dir})})
+      .then(r=>{
+        const t=Number(r&&r.trading_balance)||0, w=Number(r&&r.wallet_balance)||0;
+        say('Done. Trading '+coinFmt(t)+' '+sym+' · Wallet '+coinFmt(w)+' '+sym+'.');
+        toast((dir==='TO_WALLET'?'Moved to Wallet: ':'Moved to Trading: ')+coinFmt(amount)+' '+sym);
+        const amt=$('vfxMoveAmount'); if(amt) amt.value='';
+        if(typeof refreshBalance==='function') refreshBalance();
+        if(typeof window.vantaRefreshWalletSplit==='function') window.vantaRefreshWalletSplit();
+        if(typeof window.vantaRefreshInfoCards==='function') window.vantaRefreshInfoCards();
+      })
+      .catch(err=>{ say((err&&err.message)||'Transfer failed — try again.'); })
+      .finally(()=>{ if(btn){ btn.disabled=false; vfxSyncMoveModal(); } });
+  }
+  $('vfxMoveSubmit')?.addEventListener('click',vfxDoMove);
 
   /* ---- Dashboard "Move to Wallet": liquidate platform coins into USDT ----
      Both account modes are real here. Practice cashes out the platform coins
@@ -9948,6 +10177,17 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
 .vfx-w-link{width:100%;height:38px;margin-top:10px;border:1px solid rgba(37,99,235,.3);border-radius:11px;background:rgba(37,99,235,.06);color:var(--gold);font-size:11px;font-weight:850;cursor:pointer}
 .vfx-w-link:hover{background:rgba(37,99,235,.12)}
 .vfx-w-note{font-size:10px;color:var(--muted);line-height:1.6;margin-top:12px}
+/* --- Trading <-> Wallet transfer controls ------------------------------ */
+.vfx-move-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:4px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2)}
+.vfx-move-dir{min-height:42px;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:800;cursor:pointer}
+.vfx-move-dir.on{background:linear-gradient(135deg,var(--gold),#1d4ed8);color:#fff;border-color:transparent}
+.vfx-move-bal{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.vfx-move-bal>div{display:flex;flex-direction:column;gap:5px;padding:12px 14px;border:1px solid var(--line);border-radius:13px;background:var(--panel-2)}
+.vfx-move-bal span{font-size:9.5px;font-weight:850;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.vfx-move-bal b{font-size:16px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;word-break:break-all}
+.vfx-move-max{border:0;background:transparent;color:var(--gold,#2563eb);font-size:11px;font-weight:800;cursor:pointer;padding:0;text-decoration:underline}
+.vfx-dw[data-move-sym]{border-color:rgba(37,99,235,.35);color:#2563eb}
+.vfx-move-wallet{font-size:10.5px;color:var(--muted);font-weight:700}
 </style>
 
 <!-- =========================================================
@@ -10287,9 +10527,13 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
   function updateBalanceLine(){
     const sel=$('vtrCoin'); if(!sel)return;
     const sym=sel.value;
-    const amt=(window.vantaCoinBalances||{})[sym] || (sym==='USDT'?(typeof balance!=='undefined'?balance:0):sym==='GOLF'?(typeof golfBalance!=='undefined'?golfBalance:0):0);
+    /* A send moves funds out of the WALLET, so that is the balance the user
+       can actually spend here. The trading balance is a separate number — it
+       only reaches the wallet through an explicit "Move to Wallet". */
+    const w=(window.vantaWalletBalances||{})[sym];
+    const amt=(w!=null)?Number(w)||0:0;
     const line=$('vtrBalanceLine');
-    if(line) line.textContent='Available: '+coinFmt(amt)+' '+sym;
+    if(line) line.textContent='Available in wallet: '+coinFmt(amt)+' '+sym;
   }
   $('vtrCoin')?.addEventListener('change',updateBalanceLine);
   $('vtrAmount')?.addEventListener('input',()=>{
@@ -10348,7 +10592,11 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
   });
   $('vtrRecipResults')?.addEventListener('click',e=>{ const b=e.target.closest('[data-email]'); if(b)b.click&&b.click(); });
 
-  /* ---------------- WALLET SPLIT ---------------- */
+  /* ---------------- WALLET SPLIT ----------------
+     This renders the WALLET page's two coin groups, so every figure comes
+     from the WALLET ledger. The trading balance of the same coin is shown
+     next to it purely as the "available to move" figure feeding the
+     "Move to Wallet" action — the two are never combined into one number. */
   function vantaRefreshWalletSplit(){
     if(!vantaToken())return;
     vantaApi('/api/wallet/layout').then(layout=>{
@@ -10360,17 +10608,27 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
   function renderWalletSplit(){
     const layout=window.vantaWalletLayout; if(!layout)return;
     const prices=window.vantaServerPrices||{};
-    const bal=window.vantaCoinBalances||{};
+    const wal=(window.vantaWalletBalances)||(layout.wallet_balances||{});   // WALLET
+    const trd=(window.vantaCoinBalances)||(layout.trading_balances||{});    // TRADING
 
     const platBox=$('vfxInvestHoldings'), normBox=$('vfxNormalHoldings');
     if(!platBox||!normBox)return;
 
-    const usdVal=(sym,amt)=>{ const p=Number(prices[sym])||Number(prices['USDT']===1?0:0); return Number(amt)* (sym==='USDT'?1:(Number(prices[sym])||0)); };
-
+    /* Wallet balance is the headline number for a coin. The trading balance is
+       listed underneath purely as the amount available to transfer in — the
+       two are reported separately and never summed. */
     function rowHtml(sym,withDw){
-      const amt=Number(bal[sym]||0);
+      const amt=Number(wal[sym]||0);
+      const trading=Number(trd[sym]||0);
       const usd=amt*(sym==='USDT'?1:(Number(prices[sym])||0));
-      return '<div class="vfx-hold vfx-hold-dw"><b>'+sym+'</b><span>'+coinFmt(amt)+' <em>≈ '+money(usd)+'</em></span>'
+      /* The button is the transfer's direction control, so it has to name the
+         direction it will actually perform. Whichever side holds more is the
+         one worth offering to move. */
+      const out=trading>amt?'TO_TRADING':'TO_WALLET';
+      const label=out==='TO_TRADING'?'Move to Trading':'Move to Wallet';
+      return '<div class="vfx-hold vfx-hold-dw"><b>'+sym+'</b><span>'+coinFmt(amt)+' <em>≈ '+money(usd)+'</em>'
+        +'<i class="vfx-move-wallet">'+(out==='TO_TRADING'?'Wallet':'Trading')+' '+coinFmt(out==='TO_TRADING'?amt:trading)+' '+sym+'</i></span>'
+        +'<button class="vfx-dw" type="button" data-move-sym="'+sym+'" data-move-dir="'+out+'">'+label+'</button>'
         +'<button class="vfx-dw" type="button" data-send-sym="'+sym+'">Send</button>'
         +(withDw?'<button class="vfx-dw" type="button" data-dw-sym="'+sym+'">Deposit / Withdraw</button>':'')
         +'</div>';
@@ -10389,18 +10647,16 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
     }
 
     const plat=layout.platform_coins||[];
-    const hasPlat=plat.some(s=>Number(bal[s]||0)>0);
     platBox.innerHTML = plat.length
       ? '<div style="padding:2px 0 4px">'+plat.map(s=>rowHtml(s,true)).join('')+
-        '<div class="vfx-w-note">'+(window.PLATFORM_COINS_META?window.PLATFORM_COINS_META.join(' → '):'USDT → platform coins')+' — these coins live in the investment wallet and are traded on VANTA Markets.</div></div>'
+        '<div class="vfx-w-note">Platform coins held in your wallet. These are the same coins you trade on VANTA Markets — move them here from your trading account to park them in the wallet.</div></div>'
       : '<div class="vd-empty">No platform coins issued yet.</div>';
-    if(!hasPlat){ /* create the holder rows for zero balances too */ }
     wireRowBtns(platBox);
 
     const norm=layout.normal_wallet_coins||[];
     normBox.innerHTML = norm.length
       ? '<div style="padding:2px 0 4px">'+norm.map(rowHtml).join('')+
-        '<div class="vfx-w-note">Established cryptocurrencies you hold on the platform — swap between them any time.</div></div>'
+        '<div class="vfx-w-note">Established cryptocurrencies in your wallet. A coin shows 0 here until you move funds into it from your trading account.</div></div>'
       : '<div class="vd-empty">No normal-wallet coins configured.</div>';
     wireRowBtns(normBox);
   }

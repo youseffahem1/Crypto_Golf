@@ -58,7 +58,10 @@ def _symbol_list(balances: dict) -> list[str]:
 
 
 def _balances_map(db: Session, user_ids: list[str]) -> dict:
-    """{user_id: {SYMBOL: balance}} for every listed coin, one DB query."""
+    """{user_id: {SYMBOL: TRADING balance}} for every listed coin, one DB query.
+
+    Trading and wallet are separate ledgers, so this returns only the trading
+    one; _wallet_balances_map does the same for the wallet."""
     ids = list(dict.fromkeys(user_ids))
     out: dict = {}
     balances: dict = {i: {} for i in ids}
@@ -77,6 +80,35 @@ def _balances_map(db: Session, user_ids: list[str]) -> dict:
     for uid in ids:
         joined = dict(usdt[uid])
         for sym, val in balances[uid].items():
+            joined[sym] = val
+        out[uid] = joined
+    return out
+
+
+def _wallet_balances_map(db: Session, user_ids: list[str]) -> dict:
+    """{user_id: {SYMBOL: WALLET balance}} — read from the wallet columns
+    only, never derived from the trading balances above."""
+    ids = list(dict.fromkeys(user_ids))
+    out: dict = {i: {} for i in ids}
+    if not ids:
+        return out
+    usdt = {i: {} for i in ids}
+    coins: dict = {i: {} for i in ids}
+    for uid, val in db.query(models.User.id, models.User.usdt_wallet_balance).filter(
+        models.User.id.in_(ids)
+    ).all():
+        usdt[uid]["USDT"] = float(val or 0.0)
+    for uid, val in db.query(models.User.id, models.User.golf_wallet_balance).filter(
+        models.User.id.in_(ids)
+    ).all():
+        usdt[uid]["GOLF"] = float(val or 0.0)
+    for uid, sym, val in db.query(
+        models.CoinBalance.user_id, models.CoinBalance.symbol, models.CoinBalance.wallet_balance
+    ).filter(models.CoinBalance.user_id.in_(ids)).all():
+        coins[uid][sym] = float(val or 0.0)
+    for uid in ids:
+        joined = dict(usdt[uid])
+        for sym, val in coins[uid].items():
             joined[sym] = val
         out[uid] = joined
     return out
@@ -232,6 +264,7 @@ def admin_users(
     paged = rows.offset((page - 1) * page_size).limit(page_size).all()
     ids = [u.id for u in paged]
     balances = _balances_map(db, ids)
+    wallet_balances = _wallet_balances_map(db, ids)
     counters = _counters_map(db, ids)
 
     items = []
@@ -245,6 +278,7 @@ def admin_users(
             golf_balance=float(u.golf_balance or 0.0),
             created_at=u.created_at,
             balances=balances.get(u.id) or {},
+            wallet_balances=wallet_balances.get(u.id) or {},
             trades=counters.get(u.id, {}).get("trades", 0),
             deposits=counters.get(u.id, {}).get("deposits", 0),
             last_activity=counters.get(u.id, {}).get("last"),
@@ -264,6 +298,7 @@ def admin_user_detail(
         raise HTTPException(status_code=404, detail="User not found")
 
     balances = swap_service.user_balances(db, user.id)
+    wallet_balances = swap_service.user_wallet_balances(db, user.id)
     counters = _counters_map(db, [user.id])[user.id]
     depos = db.query(models.DepositAddress).filter_by(user_id=user.id).first()
 
@@ -281,6 +316,7 @@ def admin_user_detail(
         golf_balance=float(user.golf_balance or 0.0),
         created_at=user.created_at,
         balances=balances,
+        wallet_balances=wallet_balances,
         trades=counters["trades"],
         deposits=counters["deposits"],
         last_activity=counters["last"],
@@ -380,6 +416,7 @@ def admin_add_balance(
 
     user = db.query(models.User).filter_by(id=user_id).first()
     balances = swap_service.user_balances(db, user.id)
+    wallet_balances = swap_service.user_wallet_balances(db, user.id)
     counters = _counters_map(db, [user.id])[user.id]
     depos = db.query(models.DepositAddress).filter_by(user_id=user.id).first()
     usd_total = 0.0
@@ -389,7 +426,7 @@ def admin_add_balance(
     detail = schemas.AdminUserDetailOut(
         id=user.id, email=user.email, label=user.label, is_admin=bool(user.is_admin),
         usdt_balance=float(user.usdt_balance or 0.0), golf_balance=float(user.golf_balance or 0.0),
-        created_at=user.created_at, balances=balances,
+        created_at=user.created_at, balances=balances, wallet_balances=wallet_balances,
         trades=counters["trades"], deposits=counters["deposits"], last_activity=counters["last"],
         swaps=db.query(models.SwapTx).filter_by(user_id=user.id).count(),
         transfers_sent=db.query(models.Transfer).filter_by(sender_id=user.id).count(),
@@ -464,6 +501,7 @@ def _to_admin_user(u: models.User, db: Session) -> schemas.AdminUserOut:
         golf_balance=float(u.golf_balance or 0.0),
         created_at=u.created_at,
         balances=swap_service.user_balances(db, u.id),
+        wallet_balances=swap_service.user_wallet_balances(db, u.id),
     )
 
 

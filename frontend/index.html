@@ -4575,10 +4575,90 @@ async function createTrade(direction) {
    image. There is no hard $9–$10 range: value simply accumulates with each
    price move and can run well above or below the stake. */
 
+/* =========================================================
+   PEAK PRICE — the high-water mark of a position.
+   "I staked $10, it entered at 11, 11 was as high as it ever got,
+   I didn't sell, it fell back — keep telling me 11 was the high."
+
+   So a trade remembers the most favourable price it ever reached and
+   never forgets it: the watermark is monotonic (it only ever moves in
+   the trade's favour) and it outlives the price, so the panel can still
+   answer "how high did this go?" long after the market turned.
+   For a BUY the favourable extreme is the highest price; for a SELL it
+   is the lowest.
+
+   Keyed by trade id in its own map rather than hung off the trade
+   object, because vantaSyncTrades() rebuilds live trade objects from the
+   API response and would wipe a field stored on them.
+
+   This is bookkeeping for display only. It never feeds currentPrice,
+   the stake, the payout, BUY/SELL or execution — the trade is still
+   settled purely by closeValueFor() and the server's own verdict.
+   ========================================================= */
+window.__vantaPeak = window.__vantaPeak || {};
+
+function vantaTrackPeak(trade, px) {
+    if (!trade || trade.id === undefined || trade.id === null) return null;
+    const p = Number(px) || 0;
+    const key = String(trade.id);
+    if (!(p > 0)) return window.__vantaPeak[key] || null;
+    const entry = Number(trade.entryPrice) || 0;
+    let w = window.__vantaPeak[key];
+    if (!w) {
+        /* First time we see this trade. The entry price is already part of
+           its range, so a trade that enters at 11 and never ticks higher
+           keeps 11 as its peak — which is exactly the case being fixed. */
+        w = {
+            high: entry > 0 ? Math.max(p, entry) : p,
+            low: entry > 0 ? Math.min(p, entry) : p,
+            entry: entry > 0 ? entry : p
+        };
+        window.__vantaPeak[key] = w;
+    }
+    if (p > w.high) w.high = p;
+    if (p < w.low) w.low = p;
+    return w;
+}
+
+function vantaPeakFor(trade) {
+    if (!trade || trade.id === undefined || trade.id === null) return null;
+    return window.__vantaPeak[String(trade.id)] || null;
+}
+
+/* The peak that matters is the one in this trade's favour. */
+function vantaPeakBest(trade) {
+    const w = vantaPeakFor(trade);
+    if (!w) return 0;
+    const d = String((trade && trade.direction) || "").toUpperCase();
+    return (d === "DOWN" || d === "SELL") ? Number(w.low) : Number(w.high);
+}
+
+/* What the stake was worth at that peak — the gain that was on the table
+   at the best moment, and the ceiling a SELL could have collected. */
+function vantaPeakValue(trade) {
+    const best = vantaPeakBest(trade);
+    const amt = Number((trade && trade.amount) || 0);
+    const entry = Number((trade && trade.entryPrice) || 0);
+    if (!(best > 0) || !(amt > 0) || !(entry > 0)) return amt;
+    const d = String((trade && trade.direction) || "").toUpperCase();
+    const sell = (d === "DOWN" || d === "SELL");
+    const ratio = best / entry;
+    const v = sell ? amt * (2 - ratio) : amt * ratio;
+    return sell && v < amt * 0.01 ? amt * 0.01 : v;
+}
+
+/* Called once the position is settled and the peak has been copied into
+   the last-settled record, so the map cannot grow without bound. */
+function vantaForgetPeak(id) {
+    if (id === undefined || id === null) return;
+    delete window.__vantaPeak[String(id)];
+}
+
 function closeValueFor(trade) {
     const amount = Number(trade.amount) || 0;
     if (!amount) return 0;
     const entry = Number(trade.entryPrice) || 0;
+    vantaTrackPeak(trade, (typeof currentPrice !== "undefined" && !isNaN(currentPrice)) ? currentPrice : entry);
     const now = (typeof currentPrice !== "undefined" && !isNaN(currentPrice) && Number(currentPrice) > 0)
         ? Number(currentPrice)
         : (entry || 1);
@@ -4638,6 +4718,9 @@ async function closePositions(list) {
                 vantaSetLastSettled({
                     symbol: t.symbol || "GOLF",
                     direction: t.direction,
+                    entryPrice: Number(t.entryPrice) || 0,
+                    peak: vantaPeakBest(t),
+                    peakValue: vantaPeakValue(t),
                     invested: Number(t.amount),
                     value,
                     profit,
@@ -4646,6 +4729,7 @@ async function closePositions(list) {
                     reason: "SOLD"
                 });
             }
+            vantaForgetPeak(t.id);
 
             history.unshift({
                 id: t.id, symbol: t.symbol || "GOLF", direction: t.direction,
@@ -4684,17 +4768,21 @@ async function closePositions(list) {
 
         const soldProfit = Number(sold.profit || 0);
         if (!__vantaSuppressLast) {
-            vantaSetLastSettled({
-                symbol: t.symbol || "GOLF",
-                direction: sold.direction || t.direction,
-                invested: Number(t.amount),
-                value: Number(t.amount) + soldProfit,
-                profit: soldProfit,
-                pct: Number(t.amount) ? (soldProfit / Number(t.amount)) * 100 : 0,
-                won: sold.status === "WON",
-                reason: "SOLD"
-            });
+    vantaSetLastSettled({
+        symbol: t.symbol || "GOLF",
+        direction: sold.direction || t.direction,
+        entryPrice: Number((sold && sold.entry_price) != null ? sold.entry_price : t.entryPrice) || 0,
+        peak: vantaPeakBest(t),
+        peakValue: vantaPeakValue(t),
+        invested: Number(t.amount),
+        value: Number(t.amount) + soldProfit,
+        profit: soldProfit,
+        pct: Number(t.amount) ? (soldProfit / Number(t.amount)) * 100 : 0,
+        won: sold.status === "WON",
+        reason: "SOLD"
+    });
         }
+        vantaForgetPeak(t.id);
 
         removeTradeMarker(t);
         trades = trades.filter(x => x.id !== t.id);
@@ -5128,16 +5216,20 @@ async function vantaSyncTrades() {
             const h = histById.get(rt.id);
             const profit = h ? Number(h.profit || 0) : -amt;
             const won = h ? h.status === "WON" : profit >= 0;
-            vantaSetLastSettled({
-                symbol: rt.symbol || "GOLF",
-                direction: rt.direction,
-                invested: amt,
-                value: h ? (amt + profit) : 0,
-                profit,
-                pct: amt ? (profit / amt) * 100 : 0,
-                won,
-                reason: "EXPIRED"
-            });
+        vantaSetLastSettled({
+            symbol: rt.symbol || "GOLF",
+            direction: rt.direction,
+            entryPrice: Number(rt.entryPrice != null ? rt.entryPrice : rt.entry_price) || 0,
+            peak: vantaPeakBest(rt),
+            peakValue: vantaPeakValue(rt),
+            invested: amt,
+            value: h ? (amt + profit) : 0,
+            profit,
+            pct: amt ? (profit / amt) * 100 : 0,
+            won,
+            reason: "EXPIRED"
+        });
+            vantaForgetPeak(rt.id);
         });
     }
 
@@ -5283,16 +5375,21 @@ function vantaSettleDemoTrades() {
         const profit = -t.amount;
         vantaSaveDemoBalance();
 
-        vantaSetLastSettled({
-            symbol: t.symbol || "GOLF",
-            direction: t.direction,
-            invested: Number(t.amount),
-            value: 0,
-            profit,
-            pct: -100,
-            won: false,
-            reason: "EXPIRED"
-        });
+    vantaSetLastSettled({
+        symbol: t.symbol || "GOLF",
+        direction: t.direction,
+        entryPrice: Number(t.entryPrice) || 0,
+        peak: vantaPeakBest(t),
+        peakValue: vantaPeakValue(t),
+        invested: Number(t.amount),
+        value: 0,
+        profit,
+        pct: -100,
+        won: false,
+        reason: "EXPIRED"
+    });
+
+    vantaForgetPeak(t.id);
 
         history.unshift({
             id: t.id, symbol: t.symbol || "GOLF", direction: t.direction, amount: t.amount,
@@ -6909,6 +7006,80 @@ async function vantaHandleEntry() {
   function practice(){ var m=practiceGet(); for(var k in VWD_PRACTICE){ if(!(k in m)) m[k]=VWD_PRACTICE[k]; } return m; }
   function practiceSave(m){ try{ localStorage.setItem(demoKey,JSON.stringify(m)); }catch(e){} }
 
+  /* Practice coin holdings are also needed by the dashboard's "Move to
+     Wallet" button (.ic-btn), which lives in a different closure, so the two
+     accessors are published globally. */
+  window.vantaPracticeCoins=practice;
+  window.vantaPracticeSave=practiceSave;
+
+  /* Average-cost book for practice platform coins (mirror of the server's
+     SwapTx ledger): buying adds cost+quantity, selling removes the same
+     fraction of cost that the quantity sold represents, so the remaining
+     holding keeps its true basis and the realised part is never double
+     counted. Persisted inside the practice object itself. */
+  function vantaPlatSyms(){
+    var list=Array.isArray(window.__vantaPlatCoins)?window.__vantaPlatCoins:null;
+    if(list&&list.length) return list.map(function(c){ return String((c&&c.symbol)||c).toUpperCase(); });
+    if(Array.isArray(window.PLATFORM_COINS_META)&&window.PLATFORM_COINS_META.length)
+      return window.PLATFORM_COINS_META.map(function(s){ return String(s).toUpperCase(); });
+    return ['GOLF','NOVA','ABC'];
+  }
+  function vantaPracticeCost(m, sym, buyUsdt, buyCoins, sellCoins, sellUsdt){
+    if(!m || vantaPlatSyms().indexOf(String(sym||'').toUpperCase())<0) return;
+    if(!m.__cost || typeof m.__cost!=='object') m.__cost={};
+    var row=m.__cost[sym]||(m.__cost[sym]={usdt:0,coins:0});
+    row.usdt=Number(row.usdt)||0; row.coins=Number(row.coins)||0;
+    if(buyCoins>0){ row.usdt+=Number(buyUsdt)||0; row.coins+=buyCoins; }
+    if(sellCoins>0){
+      var basis=row.coins>0 ? row.usdt*(sellCoins/row.coins) : 0;
+      row.usdt=Math.max(0,row.usdt-basis);
+      row.coins=Math.max(0,row.coins-sellCoins);
+      if(row.coins<=0 && Math.abs(sellUsdt-basis)>1e-9){
+        /* Closed out the whole position: keep the realised result so the
+           "You made" line can report it instead of losing it. */
+        m.__realized=Number(m.__realized||0)+((Number(sellUsdt)||0)-basis);
+      }
+    }
+    if(row.coins<=0) delete m.__cost[sym];
+    practiceSave(m);
+  }
+  window.vantaPracticeCost=vantaPracticeCost;
+
+  /* Cash the practice platform coins the user actually bought back into
+     practice USDT — this is what the dashboard's "Move to Wallet" button
+     (.ic-btn) calls. Only coins present in the cost book count: the seeded
+     VWD_PRACTICE starter holdings were never paid for, so selling them would
+     hand out free money and is not a "profit". Returns the credited amount
+     and a per-coin breakdown; credits nothing when there is nothing bought. */
+  window.vantaPracticeLiquidate=function(getPrice){
+    var m=practice();
+    var book=(m&&m.__cost&&typeof m.__cost==='object')?m.__cost:null;
+    if(!book){ return {usd:0, lines:[]}; }
+    var usd=0; var lines=[];
+    Object.keys(book).forEach(function(k){
+      var row=book[k]; if(!row) return;
+      var sym=String(k).toUpperCase();
+      var owned=Number(m[sym]||0);
+      var have=Number(row.coins)||0;
+      var qty=Math.min(have, owned);
+      if(!(qty>0)){ if(owned<=0) delete book[k]; return; }
+      var px=Number(getPrice(sym))||0;
+      if(!(px>0)) return;
+      var value=qty*px;
+      var basis=have>0 ? (Number(row.usdt)||0)*(qty/have) : 0;
+      m[sym]=Math.max(0, owned-qty);
+      row.coins=Math.max(0, have-qty);
+      if(row.coins<=0) delete book[k];
+      /* Bank the realised part so the "You made" / profit card reports the
+         gain or the loss instead of silently dropping it. */
+      m.__realized=Number(m.__realized||0)+(value-basis);
+      usd+=value;
+      lines.push(fmtCoin(qty,sym)+' '+sym+' → '+fmtMoney(value));
+    });
+    if(usd>0) practiceSave(m);
+    return {usd:usd, lines:lines};
+  };
+
   function realBal(sym){
     try{
       var arr=window.vantaCoinBalances||coinBalances||null;
@@ -6939,6 +7110,11 @@ async function vantaHandleEntry() {
   }
 
   function priceOf(sym){ var p=state.prices[sym]; if(typeof p==='number'&&p>0)return p; return VWD_DEFAULT[sym]||0; }
+  /* The practice swap prices with priceOf(), so anything that later values a
+     practice platform holding — the dashboard's "Move to Wallet" button
+     (.ic-btn) and its profit/invested cards — must reuse this exact price or
+     the buy and the cash-out would disagree and invent phantom profit. */
+  window.vantaPracticePrice=priceOf;
   function changeOf(sym){ return state.prev[sym]!=null ? state.prev[sym] : null; }
   function fmtMoney(v){ return '$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function fmtCoin(v,sym){ var n=Number(v)||0; if(n===0)return '0'; var d=(VWD_META[sym]||{dec:4}).dec||4; var s=n.toFixed(Math.min(d,8)); if(d>4) s=s.replace(/0+$/,'').replace(/\.$/,''); return s; }
@@ -7109,6 +7285,26 @@ async function vantaHandleEntry() {
   }
   function closeModal(){ modal.hidden=true; }
 
+  /* The dashboard's coin cards and its "Move to Wallet" button (.ic-btn) open
+     the wallet's own Convert (transfer) tab, because that flow — unlike the
+     dashboard vfxConvertModal — already handles a practice swap end to end. */
+  window.vantaWalletConvertOpen=function(fromSym,toSym){
+    var from=String(fromSym||'USDT').toUpperCase();
+    var to=String(toSym||'').toUpperCase();
+    openModal(from,'transfer');
+    var sel=$('vwdConvTo');
+    if(sel){
+      var opt=Array.prototype.filter.call(sel.options,function(o){ return o.value===to; })[0];
+      if(!opt){
+        var el=document.createElement('option'); el.value=to; el.textContent=to; sel.appendChild(el);
+      }
+      sel.value=to;
+      sel.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    var amt=$('vwdConvAmt');
+    if(amt) setTimeout(function(){ amt.focus(); },120);
+  };
+
   /* ---------- Actions ---------- */
   function toast(msg){ try{ showToast(msg); }catch(e){ alert(msg); } }
 
@@ -7150,7 +7346,18 @@ async function vantaHandleEntry() {
       else { if((Number(m[sym])||0)<amt-1e-9){ toast('Insufficient '+sym+' balance.'); return; } m[sym]=(Number(m[sym])||0)-amt; practiceSave(m); }
       if(to==='USDT'){ demoBalance=(demoBalance||0)+received; try{ vantaSaveDemoBalance(); }catch(e){} }
       else { m[to]=(Number(m[to])||0)+received; practiceSave(m); }
-      toast('Converted '+fmtCoin(amt,sym)+' '+sym+' \u2192 '+fmtCoin(received,to)+' '+to+' (practice).');
+      /* Average-cost book for practice platform coins, mirroring the server's
+         SwapTx ledger, so "Invested"/"You made" stay real after buying and
+         after "Move to Wallet" cashes out. */
+      try{
+        vantaPracticeCost(m,
+          sym==='USDT' ? to : sym,
+          sym==='USDT' ? amt : 0,
+          sym==='USDT' ? received : 0,
+          to==='USDT' ? received : 0,
+          to==='USDT' ? amt : 0);
+      }catch(e){}
+      toast('Converted '+fmtCoin(amt,sym)+' '+sym+' → '+fmtCoin(received,to)+' '+to+' (practice).');
       afterChange(); closeModal();
       return;
     }
@@ -7708,10 +7915,6 @@ async function vantaHandleEntry() {
 
   // From "Invest" on any coin card — opens Convert pre-set to buy that coin with USDT.
   window.vantaOpenConvert=function(fromSym,toSym){
-    if(typeof accountMode!=='undefined' && accountMode==='demo'){
-      toast('Switch to Live Account to deposit, withdraw or convert funds.');
-      return;
-    }
     const doOpen=()=>{
       if(convFrom) convFrom.value=fromSym||'USDT';
       if(convTo) convTo.value=toSym&&toSym!==convFrom.value?toSym:(convFrom.value==='USDT'?'GOLF':'USDT');
@@ -7719,6 +7922,17 @@ async function vantaHandleEntry() {
       open('vfxConvertModal');
       if(convAmount) setTimeout(()=>convAmount.focus(),120);
     };
+    /* Practice is served by the wallet's own Convert tab, which already runs a
+       full practice swap; the dashboard vfxConvertModal posts to /api/swap and
+       is Live-only. Without this the dashboard's "Move to Wallet" button
+       (.ic-btn) had nothing it could ever move. */
+    if(typeof accountMode!=='undefined' && accountMode==='demo'){
+      if(typeof window.vantaWalletConvertOpen==='function'){
+        if(window.vantaSetPage) window.vantaSetPage('wallet');
+        setTimeout(function(){ window.vantaWalletConvertOpen('USDT', toSym||'GOLF'); },220);
+      }
+      return;
+    }
     if(typeof window.vantaRequirePin==='function') window.vantaRequirePin(doOpen);
     else doOpen();
   };
@@ -7794,17 +8008,57 @@ async function vantaHandleEntry() {
     const modalPrice=document.querySelector('.golf-live-card strong'); if(modalPrice)modalPrice.textContent='$'+Number(stats.price_usdt).toFixed(4);
   };
 
-  /* ---- Dashboard "Move to Wallet": liquidate platform coins into USDT ---- */
-  window.vantaMoveProfitToWallet=function(){
-    if(typeof accountMode!=='undefined' && accountMode==='demo'){
-      toast('Switch to the Live account to move profit to your wallet.');
-      if(window.vantaSetPage) window.vantaSetPage('wallet');
-      return;
+  /* ---- Dashboard "Move to Wallet": liquidate platform coins into USDT ----
+     Both account modes are real here. Practice cashes out the platform coins
+     the user actually bought, valued at the very same price its own swap used
+     (window.vantaPracticePrice), so the button is never a dead end and buy and
+     sell can never disagree. Live keeps POSTing /api/platform/liquidate. */
+  function vantaPlatformPrice(sym){
+    /* Practice first: must match the price the practice swap used. */
+    const isDemo=typeof accountMode!=='undefined' && accountMode==='demo';
+    if(isDemo && typeof window.vantaPracticePrice==='function'){
+      const pp=Number(window.vantaPracticePrice(sym));
+      if(pp>0) return pp;
     }
-    if(typeof vantaToken!=='function' || !vantaToken()){ toast('Log in to move profit to your wallet.'); return; }
+    const sp=window.vantaServerPrices||{};
+    let p=Number(sp[sym]);
+    if(!(p>0)) p=Number(sp[sym+'_usdt']);
+    if(!(p>0)) p=Number(sp[sym+'/USDT']);
+    if(!(p>0)){
+      const list=Array.isArray(window.__vantaPlatCoins)?window.__vantaPlatCoins:[];
+      const hit=list.find(c=>c&&String(c.symbol).toUpperCase()===sym);
+      if(hit) p=Number(hit.price)||0;
+    }
+    return p>0?p:0;
+  }
+  window.vantaPlatformPrice=vantaPlatformPrice;
+  window.vantaMoveProfitToWallet=function(){
     const btn=document.getElementById('icMoveBtn');
     const old=btn?btn.textContent:'';
-    if(btn){ btn.disabled=true; btn.textContent='Moving…'; }
+    const busy=txt=>{ if(btn){ btn.disabled=true; btn.textContent=txt; } };
+
+    if(typeof accountMode!=='undefined' && accountMode==='demo'){
+      const sell=typeof window.vantaPracticeLiquidate==='function'
+        ? window.vantaPracticeLiquidate(vantaPlatformPrice)
+        : {usd:0, lines:[]};
+      if(!(sell.usd>0)){
+        toast('No practice platform holdings to move yet — buy a platform coin first.');
+        return;
+      }
+      busy('Moving…');
+      demoBalance=(Number(demoBalance)||0)+sell.usd;
+      if(typeof vantaSaveDemoBalance==='function') vantaSaveDemoBalance();
+      toast('Moved '+money(sell.usd)+' to your practice wallet — '+sell.lines.join(' · '));
+      if(btn){ btn.disabled=false; btn.textContent=old; }
+      if(typeof updateBalance==='function') updateBalance();
+      try{ if(window.vantaSyncWalletUI) window.vantaSyncWalletUI(); }catch(e){}
+      try{ if(window.vantaRefreshInfoCards) window.vantaRefreshInfoCards(); }catch(e){}
+      try{ if(window.vantaSyncPosCard) window.vantaSyncPosCard(); }catch(e){}
+      return;
+    }
+
+    if(typeof vantaToken!=='function' || !vantaToken()){ toast('Log in to move profit to your wallet.'); return; }
+    busy('Moving…');
     vantaApi('/api/platform/liquidate',{method:'POST',headers:{'Content-Type':'application/json'}})
       .then(r=>{
         const usd=Number(r&&r.usd_moved)||0;
@@ -12164,31 +12418,70 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 }
 .vta-close-trade:hover{background:rgba(246,70,93,.2);border-color:var(--down)}
 
-/* ---------- Account summary (dotted leaders) ---------- */
+/* ---------- Account summary (dotted leaders) ----------
+   Placement is done with data-acc grid-areas, never :nth-child: the summary
+   grows and shrinks as rows are added (Realized, Loss…) and positional
+   selectors silently stack two items on the same cell, which is what made
+   Profit / Loss / Balance print on top of each other. Rows also use
+   min-height + a real gap instead of a hard height, so a bold or larger value
+   can never bleed into the row underneath. */
 .vta-acct{
-  display:grid;grid-template-columns:minmax(0,1fr);gap:0;
-  padding:8px 12px 9px;border-bottom:1px solid var(--line);background:#080b11;
+  display:grid;grid-template-columns:minmax(0,1fr);gap:3px 0;
+  padding:9px 12px 10px;border-bottom:1px solid var(--line);background:#080b11;
 }
-.vta-acct-row{display:flex;align-items:baseline;gap:6px;height:19px;min-width:0}
-.vta-acct-l{flex:0 0 auto;font-size:10.5px;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
+.vta-acct-row{display:flex;align-items:baseline;gap:8px;min-height:18px;min-width:0}
+.vta-acct-l{flex:0 0 auto;font-size:10.5px;color:var(--muted);letter-spacing:.02em;white-space:nowrap;line-height:18px}
 .vta-acct-dots{flex:1 1 auto;min-width:12px;border-bottom:1px dotted rgba(255,255,255,.14);transform:translateY(-3px)}
-.vta-acct-v{flex:0 0 auto;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap}
+.vta-acct-v{flex:0 0 auto;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap;line-height:18px}
 .vta-acct-v.up{color:var(--up)}
 .vta-acct-v.down{color:var(--down)}
 .vta-acct-v.flat{color:var(--muted)}
 .vta-acct-v.zero{color:var(--muted2)}
 .vta-acct-row.is-total{
-  margin-top:3px;padding-top:4px;border-top:1px solid var(--line);
+  margin-top:4px;padding-top:6px;border-top:1px solid var(--line);
 }
 .vta-acct-row.is-total .vta-acct-l{color:var(--text);font-weight:800}
 .vta-acct-row.is-total .vta-acct-v{font-size:12.5px}
 @media (min-width:760px){
-  .vta-acct{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:30px;max-width:820px}
-  .vta-acct-row:nth-child(1){grid-column:1;grid-row:1}
-  .vta-acct-row:nth-child(2){grid-column:1;grid-row:2}
-  .vta-acct-row:nth-child(3){grid-column:1;grid-row:3}
-  .vta-acct-row:nth-child(4){grid-column:2;grid-row:1}
-  .vta-acct-row.is-total{grid-column:2;grid-row:2/span 2;margin-top:0;border-top:0;align-self:center}
+  .vta-acct{grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 30px;max-width:820px}
+  .vta-acct-row[data-acc="profit"]{grid-area:1/1}
+  .vta-acct-row[data-acc="loss"]{grid-area:1/2}
+  .vta-acct-row[data-acc="deposit"]{grid-area:2/1}
+  .vta-acct-row[data-acc="swap"]{grid-area:2/2}
+  .vta-acct-row[data-acc="comm"]{grid-area:3/1}
+  .vta-acct-row[data-acc="realized"]{grid-area:3/2}
+  .vta-acct-row.is-total{grid-area:4/1/auto/span 2;margin-top:4px;padding-top:6px;align-self:end}
+}
+
+/* ---------- Last-trade result block ----------
+   A terminal-style readout of the most recent closed trade. Every part sits in
+   normal flow (flex/grid only, no absolute positioning) so nothing can overlap
+   or escape its row, and it reflows on narrow screens on its own. */
+.vta-result{padding:9px 12px 10px;border-bottom:1px solid var(--line);background:#080b11}
+.vta-result[hidden]{display:none}
+.vta-res-head{display:flex;align-items:center;gap:8px;min-width:0;padding-bottom:7px;border-bottom:1px solid var(--vt-hair)}
+.vta-res-inst{display:flex;align-items:center;gap:6px;min-width:0}
+.vta-res-inst b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:800;letter-spacing:.02em}
+.vta-res-tag{flex:0 0 auto;padding:1px 5px;border-radius:2px;font-size:9px;font-weight:900;letter-spacing:.08em;white-space:nowrap}
+.vta-res-tag.buy{background:rgba(38,166,118,.14);color:var(--up)}
+.vta-res-tag.sell{background:rgba(246,70,93,.14);color:var(--down)}
+.vta-res-tag.exp{background:rgba(255,255,255,.07);color:var(--muted2)}
+.vta-res-out{margin-left:auto;flex:0 0 auto;min-width:0;text-align:right}
+.vta-res-out-l{display:block;font-size:9px;font-weight:800;letter-spacing:.1em;color:var(--muted2);text-transform:uppercase;line-height:1.3}
+.vta-res-out-v{display:block;font-size:15px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.25}
+.vta-res-out-v.up{color:var(--up)}
+.vta-res-out-v.down{color:var(--down)}
+.vta-res-out-v.flat{color:var(--muted)}
+.vta-res-px{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px 0 0;font-size:11px;color:var(--muted);line-height:1.4;font-variant-numeric:tabular-nums}
+.vta-res-px b{color:var(--text);font-weight:800}
+.vta-res-peak{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid var(--vt-hair);font-size:11px;color:var(--muted);line-height:1.4;font-variant-numeric:tabular-nums}
+.vta-res-peak b{color:var(--text);font-weight:800}
+.vta-res-arrow{color:var(--muted2)}
+.vta-res-pl{margin-top:8px;padding-top:7px;border-top:1px solid var(--vt-hair)}
+.vta-res-acts{margin-top:9px}
+@media (max-width:420px){
+  .vta-res-out-v{font-size:14px}
+  .vta-res-px{gap:6px;font-size:10.5px}
 }
 
 /* ---------- Panes / data rows ---------- */
@@ -12214,7 +12507,6 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 }
 .vta-tr:last-child{border-bottom:0}
 .vta-tr:hover{background:rgba(59,130,246,.06)}
-.vta-tr.settled{background:rgba(255,255,255,.015)}
 .vta-tc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
 .vt-sym{color:var(--text);font-weight:800;font-size:12px;letter-spacing:.01em}
 .vt-id{display:block;font-size:9px;color:var(--muted2);font-weight:600;line-height:1.25}
@@ -12225,6 +12517,7 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vt-vol,.vt-ep,.vt-cur,.vt-price{color:#c2c9d6}
 .vt-ar{color:var(--muted2);text-align:center;font-size:10px}
 .vt-pl{text-align:right;font-weight:900;font-size:12px}
+.vt-pk{display:block;font-style:normal;font-size:9px;font-weight:700;letter-spacing:.02em;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vt-pl.up{color:var(--up)}
 .vt-pl.down{color:var(--down)}
 .vt-pl.flat{color:var(--muted)}
@@ -13239,8 +13532,8 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   function vtHead(cells){
     return '<div class="vta-thead">'+cells.map(c=>'<span class="h-'+c[0]+'">'+c[1]+'</span>').join('')+'</div>';
   }
-  function vtPlCell(pl,label){
-    return '<div class="vta-tc vt-pl '+vtPlCls(pl)+'" data-l="'+(label||'P/L')+'">'+vtSigned(pl)+'</div>';
+  function vtPlCell(pl,label,sub){
+    return '<div class="vta-tc vt-pl '+vtPlCls(pl)+'" data-l="'+(label||'P/L')+'">'+vtSigned(pl)+(sub?'<i class="vt-pk" title="best price this trade reached">'+sub+'</i>':'')+'</div>';
   }
   function vtTimeCell(at,label,tip){
     return '<div class="vta-tc vt-time" data-l="'+(label||'TIME')+'" title="'+esc(tip||'')+'">'+vtStamp(at)+'</div>';
@@ -13271,13 +13564,16 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         +'<span class="vta-tmeta" id="vtaPosMeta"><i class="vta-dot"></i>—</span>'
         +'<button type="button" class="vta-close-trade" id="vtaCloseTrade" title="Close all open positions on this market">CLOSE ALL</button>'
         +'</div></div>'
+        /* ---- last closed trade result (own block, own rows) ---- */
+        +'<div class="vta-result" id="vtaResult" hidden></div>'
         /* ---- account summary (dotted leaders) ---- */
         +'<div class="vta-acct">'
-        +'<div class="vta-acct-row"><span class="vta-acct-l">Profit</span><span class="vta-acct-dots"></span><b class="vta-acct-v flat" id="vtaPProfit">+0.00</b></div>'
-        +'<div class="vta-acct-row"><span class="vta-acct-l">Deposit</span><span class="vta-acct-dots"></span><b class="vta-acct-v" id="vtaPDeposit">0.00</b></div>'
-        +'<div class="vta-acct-row"><span class="vta-acct-l">Swap</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPSwap">0.00</b></div>'
-        +'<div class="vta-acct-row"><span class="vta-acct-l">Commission</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPComm">0.00</b></div>'
-        +'<div class="vta-acct-row is-total"><span class="vta-acct-l">Balance</span><span class="vta-acct-dots"></span><b class="vta-acct-v" id="vtaPBalance">0.00</b></div>'
+        +'<div class="vta-acct-row" data-acc="profit"><span class="vta-acct-l">Profit</span><span class="vta-acct-dots"></span><b class="vta-acct-v flat" id="vtaPProfit">$0.00</b></div>'
+        +'<div class="vta-acct-row" data-acc="loss"><span class="vta-acct-l">Loss</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPLoss">$0.00</b></div>'
+        +'<div class="vta-acct-row" data-acc="deposit"><span class="vta-acct-l">Deposit</span><span class="vta-acct-dots"></span><b class="vta-acct-v" id="vtaPDeposit">$0.00</b></div>'
+        +'<div class="vta-acct-row" data-acc="swap"><span class="vta-acct-l">Swap</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPSwap">$0.00</b></div>'
+        +'<div class="vta-acct-row" data-acc="comm"><span class="vta-acct-l">Commission</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPComm">$0.00</b></div>'
+        +'<div class="vta-acct-row is-total" data-acc="balance"><span class="vta-acct-l">Balance</span><span class="vta-acct-dots"></span><b class="vta-acct-v" id="vtaPBalance">$0.00</b></div>'
         +'</div>'
         /* ---- POSITIONS ---- */
         +'<div class="vta-pane vta-tbl-positions" data-pos-pane="positions">'
@@ -13355,34 +13651,47 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       const pnl=val-amt;
       invested+=amt; value+=val; pl+=pnl;
       swap+=Number(t.swap||0); comm+=Number(t.commission||0);
+      const pk=vantaPeakBest(t);
       rows.push({dir:vtSide(t.direction), id:t.id, sym:t.symbol||'GOLF', entry, amt, pnl, val,
-                 start:t.startTime, end:t.endTime});
+                 start:t.startTime, end:t.endTime,
+                 pk:pk, pkLabel:vtSide(t.direction)==='SELL'?'low':'peak', pkGain:vantaPeakValue(t)-amt});
     });
     pct=invested>0?(value/invested-1)*100:0;
-    /* Nothing open anymore: keep the LAST settled trade on screen so the
-       profit you banked never silently wipes to $0.00. Clear it with the
-       button, or the next opened position replaces it. */
-    if(!tradesArr.length && __vantaLastSettled){
-      const ls=__vantaLastSettled;
-      invested=Number(ls.invested||0);
-      value=Number(ls.value||0);
-      pl=Number(ls.profit||0);
-      pct=Number(ls.pct||0);
-    }
     const setN=(id,v)=>{const el=$(id); if(el) el.textContent=v;};
 
-    /* ---- account summary: Profit / Deposit / Swap / Commission / Balance ---- */
+    /* A result is NEVER allowed to hide inside a single signed number: a loss
+       shown as "Profit: -$60.00" is the bug being fixed here. Every figure is
+       split into a non-negative profit and a non-positive loss, so:
+         win   -> Profit +$25.00   Loss $0.00
+         loss  -> Profit  $0.00    Loss -$60.00
+       vtSplit() is the single mapping used by the summary, the result block and
+       the tables so they can never disagree. */
+    const vtSplit=net=>{
+      const n=Number(net)||0;
+      return { profit:n>0?n:0, loss:n<0?n:0, net:n };
+    };
+    const sp=vtSplit(pl);
+    const ls0=__vantaLastSettled||null;
+    const sr=ls0?vtSplit(ls0.profit):null;
+
+    /* ---- account summary: pure wallet arithmetic, floating P/L only ----
+       demoBalance / balance was already credited the real payout at close, so
+       an already-settled result must never be folded in here again.
+       Balance = Deposit + floating profit - floating loss. */
     const funds=vtFunds();
-    setN('vtaPProfit',vtSigned(pl));
+    setN('vtaPProfit',sp.profit>0?'+'+money(sp.profit):money(0));
     const profitEl=$('vtaPProfit');
-    if(profitEl) profitEl.className='vta-acct-v '+vtPlCls(pl);
+    if(profitEl) profitEl.className='vta-acct-v '+(sp.profit>0?'up':'zero');
+    setN('vtaPLoss',sp.loss<0?'−'+money(Math.abs(sp.loss)):money(0));
+    const lossEl=$('vtaPLoss');
+    if(lossEl) lossEl.className='vta-acct-v '+(sp.loss<0?'down':'zero');
     setN('vtaPDeposit',money(funds));
     setN('vtaPSwap',money(swap));
     setN('vtaPComm',money(comm));
-    const total=funds+pl;
+    const total=funds+sp.profit+sp.loss;
     setN('vtaPBalance',money(total));
     const balEl=$('vtaPBalance');
-    if(balEl) balEl.className='vta-acct-v '+(pl>0?'up':pl<0?'down':'');
+    if(balEl) balEl.className='vta-acct-v '+(sp.net>0?'up':sp.net<0?'down':'');
     const meta=$('vtaPosMeta');
     if(meta) meta.innerHTML='<i class="vta-dot"></i>'+esc(sym)+' <b>'+coinFmt(price)+'</b>';
 
@@ -13390,30 +13699,80 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     setN('vtaCnt-orders',String(all.length));
     setN('vtaCnt-deals',String(vtDeals().length));
 
+    /* ---- last closed trade: its own block, above the account summary ----
+       This used to be squeezed into a grid row inside the POSITIONS table,
+       where 8 cells fought for 7 tracks and Profit / Loss / Expired / P&L /
+       CLEAR landed on top of each other. */
+    const resBox=$('vtaResult');
+    if(resBox){
+      if(!ls0){
+        resBox.hidden=true;
+        resBox.innerHTML='';
+      } else {
+        const sold=ls0.reason==='SOLD';
+        const tag=sold?vtSide(ls0.direction):'EXPIRED';
+        const cls=sold?vtSideCls(ls0.direction):'exp';
+        const entry=Number(ls0.entryPrice!=null?ls0.entryPrice:ls0.entry)||0;
+        const exit=Number(ls0.value)||0;
+        /* The high-water mark, carried over from the position into the closed
+           record, so the peak is still on screen after the price fell back —
+           "this was as high as it ever went". */
+        const pk=Number(ls0.peak)||0;
+        const pkVal=Number(ls0.peakValue)||0;
+        const pkGain=pkVal-Number(ls0.invested||0);
+        const pkWord=(ls0.reason==='SOLD'&&vtSide(ls0.direction)==='SELL')?'lowest reached':'peak reached';
+        const pctTxt=Number(ls0.pct||0)!==0
+          ? (sr.net>=0?'+':'−')+Math.abs(Number(ls0.pct||0)).toFixed(2)+'%' : '—';
+        resBox.hidden=false;
+        resBox.innerHTML=
+          /* Instrument / Status ......... Result */
+          '<div class="vta-res-head">'
+          +'<span class="vta-res-inst"><b>'+esc(ls0.symbol||'GOLF')+'</b>'
+          +'<span class="vta-res-tag '+cls+'">'+tag+'</span></span>'
+          +'<span class="vta-res-out">'
+          +'<span class="vta-res-out-l">'+(sold?'SELL CLOSED':'EXPIRED')+'</span>'
+          +'<span class="vta-res-out-v '+vtPlCls(sr.net)+'">'
+          +(sr.net>0?'+':sr.net<0?'−':'')+money(Math.abs(sr.net))+'</span>'
+          +'</span></div>'
+          /* Entry price -> Exit price */
+          +'<div class="vta-res-px">'
+          +'<span>Entry <b>'+(entry>0?coinFmt(entry):'—')+'</b></span>'
+          +'<span class="vta-res-arrow">&rarr;</span>'
+          +'<span>Exit <b>'+(exit>0?coinFmt(exit):'—')+'</b></span>'
+          +'<span class="vta-res-arrow">&middot;</span>'
+          +'<span>Stake <b>'+money(ls0.invested)+'</b></span>'
+          +'<span class="vta-res-arrow">&middot;</span>'
+          +'<span>Return <b>'+pctTxt+'</b></span>'
+          +'</div>'
+          /* Peak reached — stays put no matter where the price went after */
+          +(pk>0
+            ? '<div class="vta-res-peak">'
+              +'<span>'+pkWord+' <b>'+coinFmt(pk)+'</b></span>'
+              +'<span class="vta-res-arrow">&middot;</span>'
+              +'<span>best value <b>'+money(pkVal)+'</b></span>'
+              +'<span class="vta-res-arrow">&middot;</span>'
+              +'<span>best P/L <b class="'+vtPlCls(pkGain)+'">'+vtSigned(pkGain)+'</b></span>'
+              +'</div>'
+            : '')
+          /* Profit / Loss, never mixed */
+          +'<div class="vta-res-pl">'
+          +'<div class="vta-acct-row"><span class="vta-acct-l">Profit:</span><span class="vta-acct-dots"></span>'
+          +'<b class="vta-acct-v '+(sr.profit>0?'up':'zero')+'" id="vtaResProfit">'
+          +(sr.profit>0?'+'+money(sr.profit):money(0))+'</b></div>'
+          +'<div class="vta-acct-row"><span class="vta-acct-l">Loss:</span><span class="vta-acct-dots"></span>'
+          +'<b class="vta-acct-v '+(sr.loss<0?'down':'zero')+'" id="vtaResLoss">'
+          +(sr.loss<0?'−'+money(Math.abs(sr.loss)):money(0))+'</b></div>'
+          +'</div>'
+          +'<div class="vta-res-acts">'
+          +'<button type="button" class="vta-x ghost" data-clear-last>CLEAR</button>'
+          +'</div>';
+      }
+    }
+
     /* ---- POSITIONS: live open positions on the active market ---- */
     const rowsBox=$('vtaPosRows');
     if(rowsBox){
       let out='';
-      if(__vantaLastSettled && !rows.length){
-        const ls=__vantaLastSettled;
-        const sold=ls.reason==='SOLD';
-        const tag=sold?vtSide(ls.direction):'EXPIRED';
-        const cls=sold?vtSideCls(ls.direction):'exp';
-        out+='<div class="vta-tr settled">'
-          +'<div class="vta-tc vt-sym">'+esc(ls.symbol||'GOLF')+'<span class="vt-id">'
-          +(sold?'last sell closed':'trade expired')+'</span></div>'
-          +'<div class="vta-tc vt-side '+cls+'">'+tag+'</div>'
-          +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(ls.invested)+'</div>'
-          +'<div class="vta-tc vt-ep" data-l="OPEN">—</div>'
-          +'<div class="vta-tc vt-ar"></div>'
-          +'<div class="vta-tc vt-cur" data-l="VALUE">'+money(ls.value)+'</div>'
-          +vtPlCell(ls.profit)
-          +'<div class="vta-tc vt-time" data-l="TIME" title="'
-          +esc((ls.reason==='SOLD'?'settled':'expired')+' · result banked')+'">'
-          +(Number(ls.pct||0)!==0?(ls.profit>=0?'+':'−')+Math.abs(Number(ls.pct||0)).toFixed(2)+'%':'—')+'</div>'
-          +'<div class="vta-tc vt-act"><button type="button" class="vta-x ghost" data-clear-last>CLEAR</button></div>'
-          +'</div>';
-      }
       if(!rows.length){
         out+='<div class="vta-empty">No open position on '+esc(sym)+'. Use BUY to stake and SELL to collect the live value.</div>';
       } else {
@@ -13425,7 +13784,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           +'<div class="vta-tc vt-ep" data-l="OPEN">'+coinFmt(r.entry)+'</div>'
           +'<div class="vta-tc vt-ar">&rarr;</div>'
           +'<div class="vta-tc vt-cur" data-l="PRICE">'+coinFmt(price||r.entry)+'</div>'
-          +vtPlCell(r.pnl)
+          +vtPlCell(r.pnl, null, r.pk>0 ? r.pkLabel+' '+coinFmt(r.pk)+' ('+vtSigned(r.pkGain)+')' : '')
           +vtTimeCell(r.start,'TIME','opened '+vtStamp(r.start))
           +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(r.id))+'">SELL</button></div>'
           +'</div>'
@@ -13538,6 +13897,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     }
   }
   setInterval(vantaUxLoop, 2000);
+
+  /* The dashboard's "Move to Wallet" button (.ic-btn) runs in a different
+     closure and has to redraw the position card after it credits a balance. */
+  window.vantaSyncPosCard=function(){ try{ vantaUxLoop(); }catch(e){} };
 
   /* Re-run home render whenever dashboard becomes active */
   if(window.vantaSetPage){
@@ -13959,7 +14322,52 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
 
     return Promise.all([platPromise, golfPromise]).then(function(res){
       var p = res[0];
-      if (p && typeof p.total_trade_profit !== 'undefined') {
+      if (p && Array.isArray(p.coins) && p.coins.length) {
+        window.__vantaPlatCoins = p.coins;
+      }
+      var isDemo = (typeof accountMode !== 'undefined' && accountMode === 'demo');
+      if (isDemo) {
+        /* Practice has no server ledger, so the same three numbers come from
+           the practice cost book plus the authoritative prices. Only coins in
+           the book count: the seeded VWD_PRACTICE starter holdings were never
+           paid for, so counting them would invent a fake "Invested" figure. */
+        var held = (typeof window.vantaPracticeCoins === 'function') ? window.vantaPracticeCoins() : {};
+        var book = (held && held.__cost && typeof held.__cost === 'object') ? held.__cost : {};
+        var realized = Number((held && held.__realized) || 0);
+        var value = 0, invested = 0, unrealized = 0;
+        Object.keys(book).forEach(function (sym) {
+          var row = book[sym];
+          if (!row) return;
+          var qty = Math.min(Number(row.coins) || 0, Number(held[sym]) || 0);
+          if (!(qty > 0)) return;
+          var px = (typeof window.vantaPlatformPrice === 'function') ? Number(window.vantaPlatformPrice(sym)) || 0 : 0;
+          if (!(px > 0)) {
+            var plist = Array.isArray(window.__vantaPlatCoins) ? window.__vantaPlatCoins : [];
+            for (var i = 0; i < plist.length; i++) {
+              if (plist[i] && String(plist[i].symbol).toUpperCase() === sym) { px = Number(plist[i].price) || 0; break; }
+            }
+          }
+          if (!(px > 0)) px = Number((window.vantaServerPrices || {})[sym]) || 0;
+          if (!(px > 0)) return;
+          var basis = (Number(row.usdt) || 0) * (qty / ((Number(row.coins) || qty)));
+          var val = qty * px;
+          value += val; invested += basis; unrealized += (val - basis);
+        });
+        var open = (typeof trades !== 'undefined' && Array.isArray(trades)) ? trades : [];
+        var demoPL = 0;
+        open.forEach(function (t) {
+          if (!t) return;
+          demoPL += (typeof closeValueFor === 'function' ? closeValueFor(t) : Number(t.amount) || 0) - (Number(t.amount) || 0);
+        });
+        var profit = realized + unrealized + demoPL;
+        var made = value - invested;
+        setText('icProfit', sign(profit) + usd(profit));
+        setNeg('icProfit', profit < 0);
+        setText('icInvested', usd(invested));
+        setText('icInvestedTotal', 'Total: ' + usd(value));
+        setText('icInvestedMsg', 'You made ' + sign(made) + usd(made));
+        setNeg('icInvestedMsg', made < 0);
+      } else if (p && typeof p.total_trade_profit !== 'undefined') {
         var profit = (Number(p.total_trade_profit) || 0) + (Number(p.total_unrealized_pnl) || 0);
         var invested = Number(p.total_usdt_invested) || 0;
         var total = Number(p.total_platform_value) || 0;

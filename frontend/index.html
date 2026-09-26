@@ -12124,30 +12124,198 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .down-btn{background:linear-gradient(180deg,#f6465d,#e0364f) !important;box-shadow:0 10px 22px rgba(246,70,93,.2) !important}
 .clock-btn{border-radius:15px !important;background:var(--panel-2) !important;border:1px solid var(--line) !important;color:var(--muted) !important}
 
-/* Position / P&L card */
-.vta-pos{border:1px solid var(--line);border-radius:20px;background:var(--panel) !important;padding:16px;margin-top:13px;box-shadow:var(--shadow)}
-.vta-pos-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.vta-pos-title{font-size:13px;font-weight:900;display:flex;align-items:center;gap:7px}
-.vta-close-trade{
-  margin-left:8px;height:28px;padding:0 13px;border-radius:99px;border:1px solid rgba(246,70,93,.4);
-  background:rgba(246,70,93,.12);color:var(--down);font-size:11px;font-weight:900;cursor:pointer;
-  transition:border-color .15s ease,transform .13s ease;
+/* ==========================================================
+   POSITION → FOREX TERMINAL  (.vta-pos stays the root)
+   POSITIONS | ORDERS | DEALS — compact, dense, data rows only.
+   ========================================================== */
+.vta-pos{
+  --vt-row:664px; --vt-hair:rgba(255,255,255,.045);
+  border:1px solid var(--line);border-radius:5px;background:#06080d !important;
+  padding:0;margin-top:12px;box-shadow:none;max-width:100%;min-width:0;
+  font-size:12px;line-height:1.3;overflow:hidden;
 }
-.vta-close-trade:hover{border-color:var(--down);transform:translateY(-1px)}
-.vta-pos-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-.vta-pos-cell{border:1px solid var(--line);background:var(--panel-2) !important;border-radius:13px;padding:10px 11px;min-width:0}
-.vta-pos-cell b{display:block;font-size:14px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.vta-pos-cell span{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
-.vta-pos-rows{display:flex;flex-direction:column;gap:8px;margin-top:4px}
-.vta-pos-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel-2) !important;border-radius:13px;padding:10px 13px;font-size:12px}
-.vta-pos-row .vtag{font-weight:900;width:40px}
-.vta-pos-row .vtag.buy{color:var(--up)}.vta-pos-row .vtag.sell{color:var(--down)}
-.vta-pos-row .vtag.exp{color:var(--muted)}
-.vta-pos-row .vmid{flex:1;min-width:0;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.vta-pos-row .vval{font-weight:900;font-variant-numeric:tabular-nums;color:var(--text)}
-.vta-pos-row .vpl{font-weight:900;font-variant-numeric:tabular-nums}
-.vta-pos-row .vpl.up{color:var(--up)}.vta-pos-row .vpl.down{color:var(--down)}
-.vta-pos-note{font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+/* ---------- Tab bar ---------- */
+.vta-tbar{
+  display:flex;align-items:stretch;gap:0;background:#0a0d14;
+  border-bottom:1px solid var(--line);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+}
+.vta-tbar::-webkit-scrollbar{display:none}
+.vta-tab{
+  position:relative;flex:0 0 auto;height:33px;padding:0 13px;border:0;background:transparent;
+  color:var(--muted2);font-size:10.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
+  white-space:nowrap;cursor:pointer;transition:color .15s ease;
+}
+.vta-tab:hover{color:var(--text)}
+.vta-tab.active{color:#eaf1ff}
+.vta-tab.active:after{content:"";position:absolute;left:9px;right:9px;bottom:-1px;height:2px;background:#3b82f6;border-radius:2px}
+.vta-tcount{
+  margin-left:5px;padding:1px 4px;border-radius:2px;background:rgba(255,255,255,.06);
+  color:var(--muted);font-size:9px;font-style:normal;font-weight:800;letter-spacing:0;
+}
+.vta-tab.active .vta-tcount{background:rgba(59,130,246,.2);color:#93b8ff}
+.vta-tbar-right{margin-left:auto;display:flex;align-items:center;gap:9px;padding:0 9px;flex:0 0 auto}
+.vta-tmeta{font-size:10px;color:var(--muted2);letter-spacing:.04em;white-space:nowrap;font-variant-numeric:tabular-nums}
+.vta-tmeta b{color:var(--text);font-weight:800}
+.vta-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--up);margin-right:5px;vertical-align:middle}
+.vta-close-trade{
+  height:22px;padding:0 9px;border-radius:3px;border:1px solid rgba(246,70,93,.38);
+  background:rgba(246,70,93,.1);color:var(--down);font-size:9.5px;font-weight:900;
+  letter-spacing:.08em;cursor:pointer;white-space:nowrap;
+  transition:background .15s ease,border-color .15s ease;
+}
+.vta-close-trade:hover{background:rgba(246,70,93,.2);border-color:var(--down)}
+
+/* ---------- Account summary (dotted leaders) ---------- */
+.vta-acct{
+  display:grid;grid-template-columns:minmax(0,1fr);gap:0;
+  padding:8px 12px 9px;border-bottom:1px solid var(--line);background:#080b11;
+}
+.vta-acct-row{display:flex;align-items:baseline;gap:6px;height:19px;min-width:0}
+.vta-acct-l{flex:0 0 auto;font-size:10.5px;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
+.vta-acct-dots{flex:1 1 auto;min-width:12px;border-bottom:1px dotted rgba(255,255,255,.14);transform:translateY(-3px)}
+.vta-acct-v{flex:0 0 auto;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap}
+.vta-acct-v.up{color:var(--up)}
+.vta-acct-v.down{color:var(--down)}
+.vta-acct-v.flat{color:var(--muted)}
+.vta-acct-v.zero{color:var(--muted2)}
+.vta-acct-row.is-total{
+  margin-top:3px;padding-top:4px;border-top:1px solid var(--line);
+}
+.vta-acct-row.is-total .vta-acct-l{color:var(--text);font-weight:800}
+.vta-acct-row.is-total .vta-acct-v{font-size:12.5px}
+@media (min-width:760px){
+  .vta-acct{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:30px;max-width:820px}
+  .vta-acct-row:nth-child(1){grid-column:1;grid-row:1}
+  .vta-acct-row:nth-child(2){grid-column:1;grid-row:2}
+  .vta-acct-row:nth-child(3){grid-column:1;grid-row:3}
+  .vta-acct-row:nth-child(4){grid-column:2;grid-row:1}
+  .vta-acct-row.is-total{grid-column:2;grid-row:2/span 2;margin-top:0;border-top:0;align-self:center}
+}
+
+/* ---------- Panes / data rows ---------- */
+.vta-panes{background:#06080d}
+.vta-pane[hidden]{display:none}
+.vta-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.vta-thead,.vta-tr{display:grid;align-items:center;column-gap:8px;padding:0 12px;min-width:var(--vt-row)}
+.vta-thead{
+  height:25px;border-bottom:1px solid var(--line);background:#0a0d14;
+  position:sticky;top:0;z-index:2;
+}
+.vta-thead span{
+  font-size:9px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--muted2);white-space:nowrap;overflow:hidden;
+}
+.vta-thead .h-pl,.vta-thead .h-act{text-align:right}
+.vta-tr{
+  height:31px;border-bottom:1px solid var(--vt-hair);
+  font-variant-numeric:tabular-nums;transition:background .12s ease;
+}
+.vta-tr:last-child{border-bottom:0}
+.vta-tr:hover{background:rgba(59,130,246,.06)}
+.vta-tr.settled{background:rgba(255,255,255,.015)}
+.vta-tc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
+.vt-sym{color:var(--text);font-weight:800;font-size:12px;letter-spacing:.01em}
+.vt-id{display:block;font-size:9px;color:var(--muted2);font-weight:600;line-height:1.25}
+.vt-side{font-size:9.5px;font-weight:900;letter-spacing:.07em}
+.vt-side.buy{color:var(--up)}
+.vt-side.sell{color:var(--down)}
+.vt-side.exp{color:var(--muted)}
+.vt-vol,.vt-ep,.vt-cur,.vt-price{color:#c2c9d6}
+.vt-ar{color:var(--muted2);text-align:center;font-size:10px}
+.vt-pl{text-align:right;font-weight:900;font-size:12px}
+.vt-pl.up{color:var(--up)}
+.vt-pl.down{color:var(--down)}
+.vt-pl.flat{color:var(--muted)}
+.vt-time{color:var(--muted2);font-size:9.5px}
+.vt-status{font-size:9px;font-weight:800;letter-spacing:.07em;color:var(--gold)}
+.vt-act{display:flex;justify-content:flex-end}
+.vta-x{
+  height:19px;padding:0 7px;border-radius:2px;border:1px solid rgba(246,70,93,.4);
+  background:rgba(246,70,93,.1);color:var(--down);font-size:9px;font-weight:900;
+  letter-spacing:.06em;cursor:pointer;white-space:nowrap;
+  transition:background .15s ease;
+}
+.vta-x:hover{background:rgba(246,70,93,.24)}
+.vta-x.ghost{border-color:var(--line);background:transparent;color:var(--muted)}
+.vta-x.ghost:hover{background:rgba(255,255,255,.06);color:var(--text)}
+.vta-empty{padding:14px 12px;font-size:11px;color:var(--muted2);letter-spacing:.02em}
+
+/* grid areas — shared by head cells and data cells */
+.h-sym,.vt-sym{grid-area:sym}
+.h-side,.vt-side{grid-area:side}
+.h-vol,.vt-vol{grid-area:vol}
+.h-ep,.vt-ep{grid-area:ep}
+.vt-ar{grid-area:ar}
+.h-cur,.vt-cur{grid-area:cur}
+.h-pl,.vt-pl{grid-area:pl}
+.h-time,.vt-time{grid-area:time}
+.h-act,.vt-act{grid-area:act}
+.h-price,.vt-price{grid-area:price}
+.h-status,.vt-status{grid-area:status}
+
+.vta-tbl-positions .vta-thead,
+.vta-tbl-positions .vta-tr{
+  grid-template-areas:"sym side vol ep ar cur pl time act";
+  grid-template-columns:minmax(120px,1fr) 46px 58px 78px 10px 78px minmax(76px,104px) 56px 50px;
+}
+.vta-tbl-orders .vta-thead,
+.vta-tbl-orders .vta-tr{
+  grid-template-areas:"sym side vol price status time act";
+  grid-template-columns:minmax(120px,1fr) 46px 58px minmax(78px,96px) 68px 56px 50px;
+}
+.vta-tbl-orders{--vt-row:560px}
+.vta-tbl-deals .vta-thead,
+.vta-tbl-deals .vta-tr{
+  grid-template-areas:"sym side vol price pl time";
+  grid-template-columns:minmax(120px,1fr) 46px 58px minmax(78px,96px) minmax(76px,104px) 56px;
+}
+.vta-tbl-deals{--vt-row:520px}
+
+.vta-pos-note{
+  margin:0;padding:7px 12px;border-top:1px solid var(--line);background:#080b11;
+  font-size:9.5px;color:var(--muted2);line-height:1.5;
+}
+
+/* ---------- Terminal responsive behaviour ---------- */
+@media (max-width:640px){
+  .vta-pos{border-radius:4px;margin-top:10px}
+  .vta-thead{display:none}
+  .vta-tmeta{display:none}
+  .vta-tab{padding:0 10px;letter-spacing:.09em}
+  .vta-tab.active:after{left:6px;right:6px}
+  .vta-tbl-positions .vta-tr,
+  .vta-tbl-orders .vta-tr,
+  .vta-tbl-deals .vta-tr{
+    min-width:0;height:auto;padding:7px 10px;row-gap:2px;align-content:center;
+  }
+  /* two/three-line compact rows — the data area never forces a page scroll */
+  .vta-tbl-positions .vta-tr{
+    grid-template-areas:"sym side vol act" "ep ep cur pl" "time time time time";
+    grid-template-columns:minmax(0,1fr) 44px 60px minmax(66px,auto);
+  }
+  .vta-tbl-orders .vta-tr{
+    grid-template-areas:"sym side vol act" "price price price status" "time time time time";
+    grid-template-columns:minmax(0,1fr) 44px 60px minmax(58px,auto);
+  }
+  .vta-tbl-deals .vta-tr{
+    grid-template-areas:"sym side vol" "price price pl" "time time time";
+    grid-template-columns:minmax(0,1fr) 44px 66px;
+  }
+  .vta-tc[data-l]:before{
+    content:attr(data-l) " ";
+    font-size:8.5px;letter-spacing:.08em;color:var(--muted2);font-weight:700;
+  }
+  /* the arrow column collapses into the live-price cell on small screens */
+  .vta-tbl-positions .vta-tr .vt-ar{display:none}
+  .vta-tbl-positions .vta-tr .vt-cur:before{content:"\2192 "}
+  .vt-time{padding-top:2px;border-top:1px solid var(--vt-hair)}
+  .vt-status{text-align:right}
+}
+@media (min-width:901px){
+  .vta-pos{margin-top:14px}
+}
 
 /* Open trades + history lists (trading screen, dark premium) */
 .open-section,.history-section{max-width:560px !important}
@@ -12306,7 +12474,6 @@ button{cursor:pointer}
   .vd-grid{grid-template-columns:1fr}
   .vtp-cards{grid-template-columns:1fr}
   .vfx-wallet-row{grid-template-columns:1fr}
-  .vta-pos-grid{grid-template-columns:repeat(3,1fr)}
 }
 @media (max-width:430px){
   .header{height:56px !important;padding:0 12px !important}
@@ -12319,7 +12486,6 @@ button{cursor:pointer}
   .timeframes{gap:0}
   .tf{min-width:32px;padding:0 7px;font-size:10px}
   .asset-bar{padding:0 10px!important}
-  .vta-pos-grid{grid-template-columns:repeat(2,1fr)}
   .vta-ms{flex-basis:112px}
 }
 @media (max-width:360px){
@@ -12454,13 +12620,10 @@ button{cursor:pointer}
 .small-control{height:50px;border-radius:12px !important}
 .trade-buttons{gap:10px;margin-top:16px}
 .trade-btn{min-height:58px;font-size:15px;border-radius:16px !important}
-.vta-pos{padding:24px;border-radius:22px;margin-top:20px}
-.vta-pos-title{font-size:14px}
-.vta-pos-grid{gap:10px;margin-top:4px}
-.vta-pos-cell{padding:15px 16px;border-radius:16px}
-.vta-pos-cell b{font-size:16px}
-.vta-pos-cell span{font-size:9.5px;margin-bottom:3px}
-.vta-pos-row{padding:15px 16px;border-radius:14px;font-size:13px}
+/* Position stays a dense forex terminal — never re-inflate it into cards */
+.vta-pos{padding:0;border-radius:5px;margin-top:12px}
+.vta-tbar{height:33px}
+.vta-tbl-positions .vta-tr,.vta-tbl-orders .vta-tr,.vta-tbl-deals .vta-tr{height:31px}
 .open-section,.history-section{margin-top:2px}
 .section-title{font-size:13.5px}
 .open-trade,.history-item{border-radius:18px !important}
@@ -12979,29 +13142,128 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     window.vantaRefreshDashboard=function(){ try{ if(_orig)_orig(); }catch(e){} vantaRenderHomeExtra(); };
   }
 
-  /* ---------- Trading screen: Position / P&L card (real live data) ---------- */
+  /* ---------- Trading screen: POSITION → forex terminal (real live data) ----------
+     Pure presentation over the existing trading state: `trades` (open
+     positions), `history` / /api/trade/history (deals), `balance` (funds) and
+     closeValueFor() (live valuation). No trading logic is touched here.        */
+  const VT_TABS=[['positions','Positions'],['orders','Orders'],['deals','Deals']];
+  let vantaPosTab='positions';
+  let vantaDealsAt=0;
+
+  const vt2=n=>String(n==null?'' : n).padStart(2,'0');
+  function vtMs(ts){
+    if(ts===null||ts===undefined||ts==='')return 0;
+    if(typeof ts==='number')return isFinite(ts)?ts:0;
+    const s=String(ts);
+    return Date.parse(/\dZ$/.test(s)?s:s+'Z')||0;
+  }
+  function vtStamp(ts){const d=vtMs(ts);if(!d)return '—';const x=new Date(d);return vt2(x.getDate())+'/'+vt2(x.getMonth()+1)+' '+vt2(x.getHours())+':'+vt2(x.getMinutes());}
+  const vtVol=v=>{const n=Number(v||0);return isFinite(n)?Math.abs(n).toFixed(2):'0.00';};
+  const vtSide=(d)=>{const up=String(d||'').toUpperCase()==='UP'||String(d||'').toUpperCase()==='BUY';return up?'BUY':'SELL';};
+  const vtSideCls=d=>{const up=String(d||'').toUpperCase()==='UP'||String(d||'').toUpperCase()==='BUY';return up?'buy':'sell';};
+  const vtPlCls=n=>n>0?'up':n<0?'down':'flat';
+  const vtSigned=n=>(n>=0?'+':'−')+money(Math.abs(Number(n)||0));
+
+  /* Funds on the account (deposit column). Same source as updateBalance(). */
+  function vtFunds(){
+    try{
+      const demo=(typeof accountMode!=='undefined'&&accountMode==='demo');
+      const v=demo?(typeof demoBalance!=='undefined'?demoBalance:0):(typeof balance!=='undefined'?balance:0);
+      return Number(v||0)||0;
+    }catch(e){return 0;}
+  }
+
+  /* Completed deals, straight from the data the app already keeps/loads. */
+  function vtDeals(){
+    const out=[];
+    try{
+      const demo=(typeof accountMode!=='undefined'&&accountMode==='demo');
+      if(demo){
+        const h=(typeof history!=='undefined'&&Array.isArray(history))?history:[];
+        h.forEach(t=>out.push({id:t.id,sym:t.symbol||'GOLF',dir:t.direction,vol:t.amount,
+          price:t.entryPrice!=null?t.entryPrice:t.entry_price,pl:Number(t.profit||0),
+          status:t.result||t.status||'',at:t.closed_at||t.at||t.opened_at||0}));
+        return out;
+      }
+      const h=Array.isArray(window.__vantaPosDeals)?window.__vantaPosDeals
+        :(Array.isArray(window.__vantaHomeHist)?window.__vantaHomeHist:[]);
+      h.forEach(t=>out.push({id:t.id,sym:t.symbol||'GOLF',dir:t.direction,vol:t.amount,
+        price:t.entry_price!=null?t.entry_price:t.price,pl:Number(t.profit||0),
+        status:t.status||'',at:t.closed_at||t.opened_at||0}));
+    }catch(e){}
+    return out;
+  }
+  function vtLoadDeals(force){
+    if(typeof accountMode!=='undefined'&&accountMode==='demo'){ window.__vantaPosDeals=null; return; }
+    if(typeof vantaApi!=='function')return;
+    const now=Date.now();
+    if(!force && window.__vantaPosDeals && (now-vantaDealsAt)<30000) return;
+    vantaDealsAt=now;
+    vantaApi('/api/trade/history').then(l=>{
+      window.__vantaPosDeals=Array.isArray(l)?l:[];
+      updatePosCard();
+    }).catch(()=>{});
+  }
+
+  function vtHead(cells){
+    return '<div class="vta-thead">'+cells.map(c=>'<span class="h-'+c[0]+'">'+c[1]+'</span>').join('')+'</div>';
+  }
+  function vtPlCell(pl,label){
+    return '<div class="vta-tc vt-pl '+vtPlCls(pl)+'" data-l="'+(label||'P/L')+'">'+vtSigned(pl)+'</div>';
+  }
+
   function ensurePosCard(){
     if(!mainEl) return;
     let pos=$('vtaPosCard');
     if(!pos){
       pos=document.createElement('section'); pos.id='vtaPosCard'; pos.className='vta-pos';
-      pos.innerHTML='<div class="vta-pos-head"><div class="vta-pos-title">Position</div><span class="vta-livechip"><i class="vta-live-dot"></i>LIVE</span>'
-        +'<button type="button" class="vta-close-trade" id="vtaCloseTrade" title="Close all open positions">Close Trade</button></div>'
-        +'<div class="vta-pos-grid">'
-        +'<div class="vta-pos-cell"><span>Invested</span><b id="vtaPInv">$0.00</b></div>'
-        +'<div class="vta-pos-cell"><span>Current Value</span><b id="vtaPVal">$0.00</b></div>'
-        +'<div class="vta-pos-cell"><span>Total Profit</span><b id="vtaPPnl">+$0.00</b></div>'
-        +'<div class="vta-pos-cell"><span>Percentage</span><b id="vtaPPct">+0.00%</b></div>'
-        +'<div class="vta-pos-cell"><span>Open Trades</span><b id="vtaPOpn">0</b></div>'
+      pos.innerHTML=
+        /* ---- tab bar ---- */
+        '<div class="vta-tbar">'
+        +VT_TABS.map(t=>'<button type="button" class="vta-tab'+(t[0]==='positions'?' active':'')
+          +'" data-pos-tab="'+t[0]+'" role="tab">'+t[1]+'<i class="vta-tcount" id="vtaCnt-'+t[0]+'">0</i></button>').join('')
+        +'<div class="vta-tbar-right">'
+        +'<span class="vta-tmeta" id="vtaPosMeta"><i class="vta-dot"></i>—</span>'
+        +'<button type="button" class="vta-close-trade" id="vtaCloseTrade" title="Close all open positions on this market">CLOSE ALL</button>'
+        +'</div></div>'
+        /* ---- account summary (dotted leaders) ---- */
+        +'<div class="vta-acct">'
+        +'<div class="vta-acct-row"><span class="vta-acct-l">Profit</span><span class="vta-acct-dots"></span><b class="vta-acct-v flat" id="vtaPProfit">+0.00</b></div>'
+        +'<div class="vta-acct-row"><span class="vta-acct-l">Deposit</span><span class="vta-acct-dots"></span><b class="vta-acct-v" id="vtaPDeposit">0.00</b></div>'
+        +'<div class="vta-acct-row"><span class="vta-acct-l">Swap</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPSwap">0.00</b></div>'
+        +'<div class="vta-acct-row"><span class="vta-acct-l">Commission</span><span class="vta-acct-dots"></span><b class="vta-acct-v zero" id="vtaPComm">0.00</b></div>'
+        +'<div class="vta-acct-row is-total"><span class="vta-acct-l">Balance</span><span class="vta-acct-dots"></span><b class="vta-acct-v" id="vtaPBalance">0.00</b></div>'
         +'</div>'
-        +'<div class="vta-pos-rows" id="vtaPosRows"></div>'
+        /* ---- POSITIONS ---- */
+        +'<div class="vta-pane vta-tbl-positions" data-pos-pane="positions">'
+        +'<div class="vta-scroll">'
+        +vtHead([['sym','Instrument'],['side','Side'],['vol','Volume'],['ep','Open'],['ar',''],['cur','Price'],['pl','P/L'],['time','Time'],['act','']])
+        +'<div id="vtaPosRows"></div></div></div>'
+        /* ---- ORDERS ---- */
+        +'<div class="vta-pane vta-tbl-orders" data-pos-pane="orders" hidden>'
+        +'<div class="vta-scroll">'
+        +vtHead([['sym','Instrument'],['side','Side'],['vol','Volume'],['price','Price'],['status','Status'],['time','Time'],['act','']])
+        +'<div id="vtaPosOrders"></div></div></div>'
+        /* ---- DEALS ---- */
+        +'<div class="vta-pane vta-tbl-deals" data-pos-pane="deals" hidden>'
+        +'<div class="vta-scroll">'
+        +vtHead([['sym','Instrument'],['side','Side'],['vol','Volume'],['price','Price'],['pl','Profit'],['time','Time']])
+        +'<div id="vtaPosDeals"></div></div></div>'
+        /* ---- footnote ---- */
         +'<div class="vta-pos-note" id="vtaPosNote">Buy while the candle is green, then SELL before the timer runs out to collect the live value. If the timer hits zero, the stake is gone.</div>';
       const openSection=q('.open-section');
       if(openSection && openSection.parentNode) openSection.parentNode.insertBefore(pos, openSection);
       else mainEl.appendChild(pos);
       /* One delegated handler for every per-position SELL button inside the card,
-         plus the Clear button on the saved last-trade result. */
+         the tab switcher, plus the Clear button on the saved last-trade result. */
       pos.addEventListener('click', ev=>{
+        const tab=ev.target.closest('[data-pos-tab]');
+        if(tab){
+          ev.stopPropagation();
+          vantaPosTab=tab.getAttribute('data-pos-tab')||'positions';
+          vtApplyTab();
+          return;
+        }
         const ct=ev.target.closest('#vtaCloseTrade');
         if(ct){
           ev.stopPropagation();
@@ -13024,24 +13286,32 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       });
     }
   }
+  function vtApplyTab(){
+    const pos=$('vtaPosCard'); if(!pos) return;
+    qa('[data-pos-tab]',pos).forEach(b=>b.classList.toggle('active', b.getAttribute('data-pos-tab')===vantaPosTab));
+    qa('[data-pos-pane]',pos).forEach(p=>{ p.hidden = p.getAttribute('data-pos-pane')!==vantaPosTab; });
+    if(vantaPosTab==='deals') vtLoadDeals(false);
+  }
+
   function updatePosCard(){
     if(!mainEl || mainEl.style.display==='none') return;
     ensurePosCard();
     const sym=window.vantaActiveCoin||'GOLF';
-    const tradesArr=(typeof trades!=='undefined'?trades:[]).filter(t=>(t.symbol||'GOLF')===sym);
+    const all=(typeof trades!=='undefined'&&Array.isArray(trades))?trades:[];
+    const tradesArr=all.filter(t=>(t.symbol||'GOLF')===sym);
     const price=(typeof currentPrice!=='undefined'&&!isNaN(currentPrice))?Number(currentPrice):0;
-    let invested=0, value=0, pl=0, pct=0;
-    const rows=[]; let rowsHtml='';
+    let invested=0, value=0, pl=0, pct=0, swap=0, comm=0;
+    const rows=[];
     tradesArr.forEach(t=>{
       const amt=Number(t.amount||0);
       const entry=Number(t.entryPrice||0);
       if(!amt)return;
-      const dir=t.direction==='UP'?1:-1;
       const val=(typeof closeValueFor==='function')?closeValueFor(t):amt;
-      invested+=amt;
       const pnl=val-amt;
-      value+=val; pl+=pnl;
-      rows.push({dir:dir>0?'BUY':'SELL', id:t.id, entry, amt, pnl, val});
+      invested+=amt; value+=val; pl+=pnl;
+      swap+=Number(t.swap||0); comm+=Number(t.commission||0);
+      rows.push({dir:vtSide(t.direction), id:t.id, sym:t.symbol||'GOLF', entry, amt, pnl, val,
+                 start:t.startTime, end:t.endTime});
     });
     pct=invested>0?(value/invested-1)*100:0;
     /* Nothing open anymore: keep the LAST settled trade on screen so the
@@ -13055,41 +13325,115 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       pct=Number(ls.pct||0);
     }
     const setN=(id,v)=>{const el=$(id); if(el) el.textContent=v;};
-    setN('vtaPInv',money(invested));
-    setN('vtaPVal',money(value));
-    const valEl=$('vtaPVal');
-    if(valEl) valEl.style.color=(invested>0)?((value>=invested)?'var(--up)':'var(--down)'):'';
-    setN('vtaPPnl',(pl>=0?'+':'')+money(pl));
-    const pnlEl=$('vtaPPnl'); if(pnlEl) pnlEl.style.color=pl>=0?'var(--up)':'var(--down)';
-    setN('vtaPPct',(pct>=0?'+':'')+pct.toFixed(2)+'%');
-    const pctEl=$('vtaPPct'); if(pctEl) pctEl.style.color=pct>=0?'var(--up)':'var(--down)';
-    setN('vtaPOpn',String(tradesArr.length));
+
+    /* ---- account summary: Profit / Deposit / Swap / Commission / Balance ---- */
+    const funds=vtFunds();
+    setN('vtaPProfit',vtSigned(pl));
+    const profitEl=$('vtaPProfit');
+    if(profitEl) profitEl.className='vta-acct-v '+vtPlCls(pl);
+    setN('vtaPDeposit',money(funds));
+    setN('vtaPSwap',money(swap));
+    setN('vtaPComm',money(comm));
+    const total=funds+pl;
+    setN('vtaPBalance',money(total));
+    const balEl=$('vtaPBalance');
+    if(balEl) balEl.className='vta-acct-v '+(pl>0?'up':pl<0?'down':'');
+    const meta=$('vtaPosMeta');
+    if(meta) meta.innerHTML='<i class="vta-dot"></i>'+esc(sym)+' <b>'+coinFmt(price)+'</b>';
+
+    setN('vtaCnt-positions',String(rows.length));
+    setN('vtaCnt-orders',String(all.length));
+    setN('vtaCnt-deals',String(vtDeals().length));
+
+    /* ---- POSITIONS: live open positions on the active market ---- */
     const rowsBox=$('vtaPosRows');
     if(rowsBox){
       let out='';
       if(__vantaLastSettled && !rows.length){
         const ls=__vantaLastSettled;
         const sold=ls.reason==='SOLD';
-        const tag=sold?(ls.direction==='UP'?'BUY':'SELL'):'EXPIRED';
-        out+='<div class="vta-pos-row"><span class="vtag '+(tag==='BUY'?'buy':tag==='SELL'?'sell':'exp')+'">'+tag+'</span>'
-          +'<span class="vmid">'+(sold?'Last sell closed':'Trade expired')+' • '+esc(ls.symbol||'GOLF')+' • '+(sold?'banked':'stake lost')+'</span>'
-          +'<span class="vval '+(ls.won?'upcolor':'downcolor')+'">'+money(ls.value)+'</span>'
-          +'<span class="vpl '+(ls.won?'up':'down')+'">'+(ls.won?'+':'−')+money(Math.abs(ls.profit))+' ('+(ls.won?'+':'−')+Math.abs(ls.pct||0).toFixed(2)+'%)</span>'
-          +'<button type="button" class="vclose" data-clear-last>Clear</button></div>';
+        const tag=sold?vtSide(ls.direction):'EXPIRED';
+        const cls=sold?vtSideCls(ls.direction):'exp';
+        out+='<div class="vta-tr settled">'
+          +'<div class="vta-tc vt-sym">'+esc(ls.symbol||'GOLF')+'<span class="vt-id">'
+          +(sold?'last sell closed':'trade expired')+'</span></div>'
+          +'<div class="vta-tc vt-side '+cls+'">'+tag+'</div>'
+          +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(ls.invested)+'</div>'
+          +'<div class="vta-tc vt-ep" data-l="OPEN">—</div>'
+          +'<div class="vta-tc vt-ar"></div>'
+          +'<div class="vta-tc vt-cur" data-l="VALUE">'+money(ls.value)+'</div>'
+          +vtPlCell(ls.profit)
+          +'<div class="vta-tc vt-time" data-l="TIME">'
+          +(Number(ls.pct||0)!==0?(ls.profit>=0?'+':'−')+Math.abs(Number(ls.pct||0)).toFixed(2)+'%':'—')+'</div>'
+          +'<div class="vta-tc vt-act"><button type="button" class="vta-x ghost" data-clear-last>CLEAR</button></div>'
+          +'</div>';
       }
       if(!rows.length){
-        out+='<div class="vd-empty">No open position on '+esc(sym)+'. Use BUY to stake and SELL to collect the live value.</div>';
+        out+='<div class="vta-empty">No open position on '+esc(sym)+'. Use BUY to stake and SELL to collect the live value.</div>';
       } else {
         out+=rows.map(r=>
-          '<div class="vta-pos-row"><span class="vtag '+(r.dir==='BUY'?'buy':'sell')+'">'+r.dir+'</span>'
-          +'<span class="vmid">'+esc(r.id)+' • entry '+coinFmt(r.entry)+' • mark '+coinFmt(price)+'</span>'
-          +'<span class="vval '+(r.pnl>=0?'upcolor':'downcolor')+'">'+money(r.val)+'</span>'
-          +'<span class="vpl '+(r.pnl>=0?'up':'down')+'">'+(r.pnl>=0?'+':'')+money(r.pnl)+'</span>'
-          +'<button type="button" class="vclose" data-exit="'+esc(r.id)+'">SELL</button></div>'
+          '<div class="vta-tr">'
+          +'<div class="vta-tc vt-sym">'+esc(r.sym)+'<span class="vt-id">'+esc(String(r.id))+'</span></div>'
+          +'<div class="vta-tc vt-side '+vtSideCls(r.dir)+'">'+r.dir+'</div>'
+          +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(r.amt)+'</div>'
+          +'<div class="vta-tc vt-ep" data-l="OPEN">'+coinFmt(r.entry)+'</div>'
+          +'<div class="vta-tc vt-ar">&rarr;</div>'
+          +'<div class="vta-tc vt-cur" data-l="PRICE">'+coinFmt(price||r.entry)+'</div>'
+          +vtPlCell(r.pnl)
+          +'<div class="vta-tc vt-time" data-l="TIME">'+vtStamp(r.start)+'</div>'
+          +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(r.id))+'">SELL</button></div>'
+          +'</div>'
         ).join('');
       }
       rowsBox.innerHTML=out;
     }
+
+    /* ---- ORDERS: every working order on the account ---- */
+    const ordBox=$('vtaPosOrders');
+    if(ordBox){
+      if(!all.length){
+        ordBox.innerHTML='<div class="vta-empty">No working orders.</div>';
+      } else {
+        const fmtLeft=(typeof formatTime==='function')?formatTime:null;
+        ordBox.innerHTML=all.map(t=>{
+          const left=t.endTime?Number(t.endTime)-Date.now():0;
+          const leftTxt=left>0?(fmtLeft?fmtLeft(left/1000):Math.round(left/1000)+'s'):'0s';
+          return '<div class="vta-tr">'
+            +'<div class="vta-tc vt-sym">'+esc(t.symbol||'GOLF')+'<span class="vt-id">'+esc(String(t.id))+'</span></div>'
+            +'<div class="vta-tc vt-side '+vtSideCls(t.direction)+'">'+vtSide(t.direction)+'</div>'
+            +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(t.amount)+'</div>'
+            +'<div class="vta-tc vt-price" data-l="PRICE">'+coinFmt(t.entryPrice)+'</div>'
+            +'<div class="vta-tc vt-status">OPEN</div>'
+            +'<div class="vta-tc vt-time" data-l="T−">'+leftTxt+'</div>'
+            +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(t.id))+'">CANCEL</button></div>'
+            +'</div>';
+        }).join('');
+      }
+    }
+
+    /* ---- DEALS: completed deals ---- */
+    const dealBox=$('vtaPosDeals');
+    if(dealBox){
+      const list=vtDeals();
+      if(!list.length){
+        dealBox.innerHTML='<div class="vta-empty">No deals yet.</div>';
+      } else {
+        dealBox.innerHTML=list.map(d=>
+          '<div class="vta-tr">'
+          +'<div class="vta-tc vt-sym">'+esc(d.sym)+'<span class="vt-id">'+esc(String(d.id))+'</span></div>'
+          +'<div class="vta-tc vt-side '+vtSideCls(d.dir)+'">'+vtSide(d.dir)+'</div>'
+          +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(d.vol)+'</div>'
+          +'<div class="vta-tc vt-price" data-l="PRICE">'+coinFmt(d.price)+'</div>'
+          +vtPlCell(d.pl)
+          +'<div class="vta-tc vt-time" data-l="TIME">'+vtStamp(d.at)+'</div>'
+          +'</div>'
+        ).join('');
+      }
+      if(vantaPosTab==='deals') vtLoadDeals(false);
+    }
+
+    vtApplyTab();
+
     const note=$('vtaPosNote');
     if(note) note.textContent=rows.length
       ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL to bank it before the timer ends; if the timer hits zero the stake is gone.'
@@ -13521,8 +13865,6 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
 }
 .open-sell:hover,.vclose:hover{background:rgba(246,70,93,.22);transform:translateY(-1px)}
 .open-sell{margin-top:5px}
-.vta-pos-row .vval.upcolor{color:var(--up)}
-.vta-pos-row .vval.downcolor{color:var(--down)}
 .vclose{margin-left:auto;flex:0 0 auto}
 </style>
 

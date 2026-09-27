@@ -32,6 +32,89 @@ class TradingError(Exception):
     pass
 
 
+# =============================================================================
+# Realized result classification — PROFIT and LOSS are two separate totals
+# =============================================================================
+# A closed trade has ONE signed `profit`. Reporting that signed number as
+# "PROFIT" is what produced a card reading "PROFIT -$681.01": a loss dressed up
+# as a profit, with a "Move to Wallet" button underneath it inviting the user
+# to transfer it. The classification below makes that impossible by never
+# producing a negative profit in the first place:
+#
+#     win   -> profit +$20.00   loss  $0.00
+#     loss  -> profit  $0.00    loss -$60.00
+#     mixed -> profit +$20.00   loss -$60.00     (never netted to -$40.00)
+#
+# `available` is `profit` minus whatever has already been moved into the wallet,
+# so it is the only figure "Move to Wallet" is ever allowed to act on.
+
+def _closed_trades(db: Session, user_id: str, symbol: str | None = None):
+    q = db.query(models.Trade).filter(
+        models.Trade.user_id == user_id,
+        models.Trade.status.in_([models.TradeStatus.WON, models.TradeStatus.LOST]),
+    )
+    if symbol:
+        q = q.filter(models.Trade.symbol == symbol.strip().upper())
+    return q.all()
+
+
+def realized_split(db: Session, user_id: str, symbol: str | None = None) -> dict:
+    """Realized trading result for `user_id` as separate profit / loss totals.
+
+    Returns profit >= 0, loss <= 0 and their net, plus `available` — the profit
+    that has not been moved to the wallet yet. Losses never reduce profit and
+    are never transferable, so a losing account reports $0.00 available rather
+    than a negative, un-transferable amount.
+
+    With no `symbol` the result also carries `by_symbol`, so per-coin figures
+    come from the very same classification pass as the total rather than a
+    second, independently-written one."""
+    profit = 0.0
+    loss = 0.0
+    available = 0.0
+    count = 0
+    by_symbol: dict[str, dict] = {}
+
+    for t in _closed_trades(db, user_id, symbol):
+        p = float(t.profit or 0.0)
+        sym = (t.symbol or "GOLF").strip().upper()
+        count += 1
+
+        if p > 0:
+            profit += p
+            if not t.profit_moved:
+                available += p
+        elif p < 0:
+            loss += p
+
+        if symbol is None:
+            row = by_symbol.setdefault(sym, {"profit": 0.0, "loss": 0.0, "available": 0.0})
+            if p > 0:
+                row["profit"] += p
+                if not t.profit_moved:
+                    row["available"] += p
+            elif p < 0:
+                row["loss"] += p
+
+    out = {
+        "profit": round(profit, 8),
+        "loss": round(loss, 8),
+        "net": round(profit + loss, 8),
+        "available": round(available, 8),
+        "count": count,
+    }
+    if symbol is None:
+        out["by_symbol"] = {
+            sym: {
+                "profit": round(row["profit"], 8),
+                "loss": round(row["loss"], 8),
+                "available": round(row["available"], 8),
+            }
+            for sym, row in by_symbol.items()
+        }
+    return out
+
+
 def open_trade(
     db: Session, user_id: str, direction: str, amount: float, duration_seconds: int, symbol: str = "GOLF"
 ) -> models.Trade:

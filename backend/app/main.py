@@ -72,6 +72,31 @@ def _migrate():
             conn.execute(text(f"UPDATE {table} SET {column} = 0 WHERE {column} IS NULL"))
             logging.info(f"[migrate] added {table}.{column} = 0 (wallet starts empty)")
 
+    # --- Realized profit classification --------------------------------------
+    # trades.profit_moved marks a winning trade whose profit has already been
+    # moved into the wallet. Every pre-existing trade predates the feature, so
+    # nothing has been moved yet and 0 is the correct backfill: their profit is
+    # still fully available to transfer.
+    #
+    # wallet_transfers.kind / .usd_value let the audit history tell a realized
+    # profit move (USDT out of trading, coin into the wallet) apart from an
+    # ordinary same-coin balance move. Existing rows predate the distinction, so
+    # they are ordinary balance moves.
+    more = [
+        ("trades", "profit_moved", "BOOLEAN DEFAULT 0 NOT NULL"),
+        ("wallet_transfers", "kind", "VARCHAR(20) DEFAULT 'BALANCE' NOT NULL"),
+        ("wallet_transfers", "usd_value", "FLOAT"),
+    ]
+    with engine.begin() as conn:
+        for table, column, decl in more:
+            if not insp.has_table(table):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            if column in existing:
+                continue
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {decl}"))
+            logging.info(f"[migrate] added {table}.{column}")
+
 
 _migrate()
 

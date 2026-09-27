@@ -209,6 +209,10 @@ class PlatformCoinOut(BaseModel):
     usdt_invested: float = 0.0
     current_value: float = 0.0
     unrealized_pnl: float = 0.0
+    # This coin's realized trading result, split so neither can be negative.
+    realized_profit: float = 0.0
+    realized_loss: float = 0.0
+    available_profit: float = 0.0
 
 
 class PlatformOverviewOut(BaseModel):
@@ -217,7 +221,41 @@ class PlatformOverviewOut(BaseModel):
     total_platform_value: float = 0.0
     total_usdt_invested: float = 0.0
     total_unrealized_pnl: float = 0.0
+    # Signed net of every closed trade. Kept for the Profit modal's history and
+    # for nothing that presents itself as "PROFIT" — the card reads the split
+    # figures below instead.
     total_trade_profit: float = 0.0
+    # PROFIT and LOSS as two separate, never-netted totals across every coin.
+    # realized_profit is >= 0 and realized_loss is <= 0 by construction.
+    realized_profit: float = 0.0
+    realized_loss: float = 0.0
+    # Realized profit not yet moved into a wallet — the only figure
+    # "Move to Wallet" may act on.
+    available_profit: float = 0.0
+
+
+# --- Realized profit -> wallet ------------------------------------------------
+
+class MoveProfitRequest(BaseModel):
+    """Which coin's realized profit to cash out. Defaults to the coin the
+    terminal is trading. No amount is accepted: the server decides how much is
+    transferable, so the client can never ask for a figure that includes a loss,
+    a stake, an unrealized value or an already-transferred profit."""
+
+    symbol: str = Field(default="GOLF", max_length=20)
+
+
+class MoveProfitOut(BaseModel):
+    ok: bool = True
+    symbol: str
+    usd_moved: float          # profit, in USDT, debited from TRADING
+    coin_amount: float        # credited to the SYMBOL wallet
+    price: float
+    direction: str = "TO_WALLET"
+    kind: str = "PROFIT"
+    trading_balance: float    # trading USDT after
+    wallet_balance: float     # SYMBOL wallet after
+    available_profit: float   # realized profit still movable — 0 right after a full move
 
 
 class UserSearchOut(BaseModel):

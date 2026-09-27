@@ -19,15 +19,17 @@ Every coin has two separate, separately persisted balances:
 
   * WALLET balance   (User.usdt_wallet_balance / User.golf_wallet_balance /
                       CoinBalance.wallet_balance)
-    Starts at 0 for every account. The ONLY thing that ever changes it is an
-    explicit user transfer — move_between_accounts() below, exposed as
-    POST /api/wallet/transfer. The Wallet page shows this.
+    Starts at 0 for every account. The ONLY things that ever change it are the
+    two explicit user transfers below: move_between_accounts(), exposed as
+    POST /api/wallet/transfer, and move_profit_to_wallet(), which bridges a
+    positive realized trade profit into the same coin's wallet. The Wallet page
+    shows this.
 
 They are never derived from one another, never synchronised, and a wallet
 balance is NEVER the trading balance, the total account balance, or a
 computed value of any kind. This module is the single gateway every feature
-reads and writes balances through, so there is exactly one balance system —
-not two competing ones.
+reads and writes balances through — including a trade profit being cashed out
+to the wallet — so there is exactly one balance system, not two competing ones.
 """
 from decimal import Decimal, ROUND_DOWN
 
@@ -260,6 +262,126 @@ def move_between_accounts(
         "amount": float(amount_dec),
         "direction": tx.direction.value,
         "trading_balance": float(get_balance(db, user, symbol)),
+        "wallet_balance": float(get_wallet_balance(db, user, symbol)),
+    }
+
+
+def move_profit_to_wallet(db: Session, user_id: str, symbol: str, usd_amount: float, price: float) -> dict:
+    """Moves positive realized trading profit into the SAME coin's wallet.
+
+    This is the one bridge from a trade result to the wallet, and it is
+    deliberately narrow:
+
+      * only `symbol` — the coin actually traded — is credited, so a GOLF
+        profit lands in the GOLF wallet and never in USDT or another coin;
+      * only a POSITIVE realized amount can arrive here. A negative amount is
+        rejected outright rather than normalised, so no code path can move a
+        loss or drive a ledger negative;
+      * the profit is denominated in USDT (that is where a settled payout is
+        credited), so trading USDT is debited and the equivalent quantity of
+        `symbol` is credited to the wallet at the authoritative price;
+      * the consumed trades are stamped `profit_moved` in the SAME transaction
+        as the two balance writes and the WalletTransfer row, so the very same
+        profit can never be transferred a second time.
+
+    Never called with client-supplied figures: the caller resolves the amount
+    from the closed-trade records and the price from market_service."""
+    symbol = (symbol or "").strip().upper()
+    if symbol not in SUPPORTED_SYMBOLS:
+        raise SwapError("Unsupported coin for transfer")
+
+    price = float(price or 0.0)
+    if price <= 0:
+        raise SwapError(f"Price unavailable for {symbol} right now — try again shortly")
+
+    usd_dec = _dec(usd_amount)
+    if usd_dec <= 0:
+        raise SwapError("Only a positive realized profit can be moved to your wallet")
+
+    try:
+        user = db.query(models.User).filter_by(id=user_id).with_for_update().first()
+    except Exception:
+        db.rollback()
+        user = db.query(models.User).filter_by(id=user_id).first()  # SQLite fallback
+    if not user:
+        raise SwapError("User not found")
+
+    # Lock the un-moved winners oldest-first so a second click cannot race the
+    # first one into spending the same profit.
+    winners = (
+        db.query(models.Trade)
+        .filter(
+            models.Trade.user_id == user_id,
+            models.Trade.symbol == symbol,
+            models.Trade.status.in_([models.TradeStatus.WON, models.TradeStatus.LOST]),
+            models.Trade.profit_moved.is_(False),
+        )
+        .order_by(models.Trade.settled_at.asc(), models.Trade.opened_at.asc())
+        .with_for_update()
+        .all()
+    )
+    available = sum(float(t.profit or 0.0) for t in winners if float(t.profit or 0.0) > 0)
+    if _dec(available) <= 0:
+        raise SwapError(f"No realized {symbol} profit available to move to your wallet")
+
+    # The profit can only be moved while it is still in the trading account. A
+    # user who already spent it gets to move whatever is left, never more.
+    trading_usdt = get_balance(db, user, "USDT")
+    usd = min(usd_dec, _dec(trading_usdt))
+    if usd <= 0:
+        raise SwapError(
+            "Your trading USDT balance is empty — this profit is no longer available to move"
+        )
+
+    coin_amount = _dec(float(usd) / price)
+    if coin_amount <= 0:
+        raise SwapError(f"Price unavailable for {symbol} right now — try again shortly")
+
+    # Spend the available profit oldest-first and stamp every trade it covers.
+    # A trade is stamped whole, so a profit that is only partially covered (the
+    # user already spent the rest) is recorded as moved rather than left
+    # claimable — the WalletTransfer row records exactly what did move.
+    left = usd
+    moved_trades = 0
+    for t in winners:
+        if left <= _dec(0):
+            break
+        p = float(t.profit or 0.0)
+        if p <= 0:
+            continue
+        left -= _dec(min(p, float(left)))
+        t.profit_moved = True
+        moved_trades += 1
+
+    usd_after = _dec(trading_usdt) - usd
+    wallet_after = _dec(get_wallet_balance(db, user, symbol)) + coin_amount
+
+    set_balance(db, user, "USDT", float(usd_after))
+    set_wallet_balance(db, user, symbol, float(wallet_after))
+
+    tx = models.WalletTransfer(
+        user_id=user_id,
+        symbol=symbol,
+        amount=coin_amount,
+        direction=models.WalletTransferDirection.TO_WALLET,
+        kind=models.WalletTransferKind.PROFIT.value,
+        usd_value=float(usd),
+        trading_balance_after=usd_after,
+        wallet_balance_after=wallet_after,
+    )
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return {
+        "id": tx.id,
+        "symbol": symbol,
+        "amount": float(coin_amount),
+        "usd_moved": float(usd),
+        "price": price,
+        "direction": tx.direction.value,
+        "kind": tx.kind,
+        "trades_settled": moved_trades,
+        "trading_balance": float(get_balance(db, user, "USDT")),
         "wallet_balance": float(get_wallet_balance(db, user, symbol)),
     }
 

@@ -5,10 +5,10 @@ walks, coin quantities from the user's recorded balances, and the
 investment cost basis from the user's own swap ledger (average-cost method)
 — never invented, never client-supplied.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import schemas, models, market_service, swap_service
+from .. import schemas, models, market_service, swap_service, trading_service
 from ..config import (
     PLATFORM_COINS, PLATFORM_COIN_NAMES, PLATFORM_COINS_LIVE,
 )
@@ -86,6 +86,17 @@ def platform_coins(
     ).all()
     total_trade_profit = sum(float(t.profit or 0.0) for t in closed)
 
+    # PROFIT and LOSS are reported as two separate, never-netted totals. The
+    # signed net above is the only place a single signed figure exists, and it
+    # is not what the PROFIT card reads — see trading_service.realized_split().
+    split = trading_service.realized_split(db, user_id)
+    by_symbol = split["by_symbol"]
+    for coin in coins:
+        per_coin = by_symbol.get(coin.symbol, {})
+        coin.realized_profit = per_coin.get("profit", 0.0)
+        coin.realized_loss = per_coin.get("loss", 0.0)
+        coin.available_profit = per_coin.get("available", 0.0)
+
     return schemas.PlatformOverviewOut(
         coins=coins,
         usdt_balance=round(float(user.usdt_balance) if user else 0.0, 2),
@@ -93,6 +104,68 @@ def platform_coins(
         total_usdt_invested=round(total_invested, 2),
         total_unrealized_pnl=round(total_unrealized, 2),
         total_trade_profit=round(total_trade_profit, 2),
+        realized_profit=split["profit"],
+        realized_loss=split["loss"],
+        available_profit=split["available"],
+    )
+
+
+@router.post("/move-profit", response_model=schemas.MoveProfitOut)
+def move_profit(
+    payload: schemas.MoveProfitRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Move the user's positive REALIZED profit into the SAME coin's wallet.
+
+    Powers the trading screen's "Move to Wallet" button, and is the only bridge
+    between a trade result and the wallet. Three things are deliberate:
+
+      * the amount is resolved here from the closed-trade records, so a request
+        cannot name a number at all. A loss, a stake, an unrealized value, the
+        trading balance and an already-transferred profit are all outside what
+        this can ever move;
+      * `realized_split` splits the result first, so a losing account has
+        $0.00 available and is refused here rather than being handed a negative
+        transfer;
+      * the destination is `symbol` — the coin actually traded — so a GOLF
+        profit lands in the GOLF wallet.
+
+    Trades settled as a loss are never eligible: only profit > 0 is summed, and
+    only a positive amount is accepted by swap_service.move_profit_to_wallet.
+    """
+    symbol = (payload.symbol or "GOLF").strip().upper()
+    split = trading_service.realized_split(db, user_id, symbol)
+    available = float(split["available"])
+    if available <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No realized {symbol} profit available to move to your wallet.",
+        )
+
+    try:
+        price = market_service.get_usd_price(db, symbol)
+    except Exception:
+        price = 0.0
+    if not price or price <= 0:
+        raise HTTPException(
+            status_code=400, detail=f"Price unavailable for {symbol} right now — try again shortly."
+        )
+
+    try:
+        result = swap_service.move_profit_to_wallet(db, user_id, symbol, available, price)
+    except swap_service.SwapError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    after = trading_service.realized_split(db, user_id, symbol)
+    return schemas.MoveProfitOut(
+        symbol=result["symbol"],
+        usd_moved=result["usd_moved"],
+        coin_amount=result["amount"],
+        price=result["price"],
+        trading_balance=result["trading_balance"],
+        wallet_balance=result["wallet_balance"],
+        available_profit=after["available"],
     )
 
 

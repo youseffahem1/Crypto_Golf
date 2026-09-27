@@ -2285,12 +2285,20 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
                         <span class="ic-badge">AVAILABLE</span>
                     </div>
 
-                    <div class="ic-value" id="icProfit">+$0.00</div>
+                    <!-- PROFIT is realized profit only and can never be negative:
+                         a losing trade reports $0.00 here and shows up in LOSS
+                         below, so there is never a "PROFIT -$X" to transfer. -->
+                    <div class="ic-value" id="icProfit">$0.00</div>
 
-                    <div class="ic-sub">Move your realized + open profit to the wallet, or trade it on GOLF/USDT.</div>
+                    <div class="ic-pl">
+                        <span class="ic-pl-k">LOSS</span>
+                        <span class="ic-pl-v" id="icLoss">$0.00</span>
+                    </div>
+
+                    <div class="ic-sub" id="icProfitSub">Realized profit on your closed trades. Only this amount can be moved to your wallet.</div>
 
                     <div class="ic-actions">
-                        <button class="ic-btn" id="icMoveBtn">Move to Wallet</button>
+                        <button class="ic-btn" id="icMoveBtn" disabled>Move to Wallet</button>
                         <button class="ic-btn ic-btn-ghost" id="icTradeBtn">Trade</button>
                     </div>
 
@@ -7134,6 +7142,76 @@ async function vantaHandleEntry() {
     return {usd:usd, lines:lines};
   };
 
+  /* ---- Realized PROFIT / LOSS, and cashing it out to the wallet -----------
+     Practice mode has no server ledger, so it mirrors the live rules exactly
+     (trading_service.realized_split + swap_service.move_profit_to_wallet)
+     against the practice store:
+       * PROFIT is the sum of POSITIVE closed-trade results, LOSS the sum of
+         negative ones. They are never netted, so a loss can never be shown as
+         a negative profit.
+       * `available` excludes profit that has already been moved, recorded per
+         trade id in __profitMoved — the practice mirror of the server's
+         trades.profit_moved flag, so the same profit can never be moved twice.
+       * A move credits the TRADED coin's wallet at the price that coin's own
+         swap used, so practice and live can never disagree by a round trip. */
+  function practiceMoved(){
+    var m=practice();
+    if(!m.__profitMoved || typeof m.__profitMoved!=='object') m.__profitMoved={};
+    return m;
+  }
+  function practiceRows(){
+    if(typeof window.vantaRealizedRows!=='function') return [];
+    try{ return window.vantaRealizedRows(); }catch(e){ return []; }
+  }
+  window.vantaPracticeRealizedSplit=function(sym){
+    var want=String(sym||'GOLF').toUpperCase();
+    var moved=practiceMoved().__profitMoved;
+    var profit=0, loss=0, available=0;
+    practiceRows().forEach(function(r){
+      if(want && String(r.sym||'GOLF').toUpperCase()!==want) return;
+      var p=Number(r.profit)||0;
+      if(p>0){ profit+=p; if(!moved[r.id]) available+=p; }
+      else if(p<0) loss+=p;
+    });
+    return {profit:profit, loss:loss, net:profit+loss, available:available};
+  };
+  window.vantaPracticeMoveProfit=function(sym, getPrice){
+    var s=String(sym||'GOLF').toUpperCase();
+    var m=practiceMoved();
+    var sp=window.vantaPracticeRealizedSplit(s);
+    var usd=Number(sp.available)||0;
+    /* A loss is not a negative transfer, it is simply nothing to move. */
+    if(!(usd>0)) return {usd:0, coins:0, sym:s};
+
+    var px=Number(getPrice?getPrice(s):0)||0;
+    if(!(px>0)) return {usd:0, coins:0, sym:s, noPrice:true};
+
+    /* The profit can only move while it is still in the practice trading
+       account, and never more than is there. */
+    var have=Number(typeof demoBalance!=='undefined'?demoBalance:0)||0;
+    var move=Math.min(usd, have);
+    if(!(move>0)) return {usd:0, coins:0, sym:s, nothingLeft:true};
+
+    var coins=move/px;
+    demoBalance=have-move;
+    if(typeof vantaSaveDemoBalance==='function') vantaSaveDemoBalance();
+    if(!m.__wallet || typeof m.__wallet!=='object') m.__wallet={};
+    m.__wallet[s]=Math.max(0,(Number(m.__wallet[s])||0)+coins);
+    /* Spend the available profit oldest-first and stamp every trade it covers,
+       so a second click finds nothing left to move. */
+    var left=move, rows=practiceRows().filter(function(r){
+      return String(r.sym||'GOLF').toUpperCase()===s && Number(r.profit)>0;
+    });
+    rows.forEach(function(r){
+      if(left<=1e-12) return;
+      var p=Number(r.profit)||0;
+      left-=Math.min(p,left);
+      m.__profitMoved[r.id]=true;
+    });
+    practiceSave(m);
+    return {usd:move, coins:coins, sym:s, price:px, usd_total:usd};
+  };
+
   function realBal(sym){
     try{
       var arr=window.vantaCoinBalances||coinBalances||null;
@@ -8279,44 +8357,85 @@ async function vantaHandleEntry() {
     return p>0?p:0;
   }
   window.vantaPlatformPrice=vantaPlatformPrice;
+
+  /* ---- Dashboard "Move to Wallet": realized trading profit -> wallet ------
+     This used to liquidate the whole platform holding into USDT, which had
+     nothing to do with profit: it cashed out the stake too, and it paid the
+     card's single signed number whether that number was a gain or a loss. It
+     now moves ONLY positive realized trading profit, and only into the wallet
+     of the coin actually traded. A loss produces no transfer at all.
+     The amount is never taken from the page — the server resolves it from the
+     closed-trade records, so nothing client-supplied can name a negative,
+     already-moved or unrealized figure. */
   window.vantaMoveProfitToWallet=function(){
     const btn=document.getElementById('icMoveBtn');
-    const old=btn?btn.textContent:'';
-    const busy=txt=>{ if(btn){ btn.disabled=true; btn.textContent=txt; } };
-
-    if(typeof accountMode!=='undefined' && accountMode==='demo'){
-      const sell=typeof window.vantaPracticeLiquidate==='function'
-        ? window.vantaPracticeLiquidate(vantaPlatformPrice)
-        : {usd:0, lines:[]};
-      if(!(sell.usd>0)){
-        toast('No practice platform holdings to move yet — buy a platform coin first.');
-        return;
-      }
-      busy('Moving…');
-      demoBalance=(Number(demoBalance)||0)+sell.usd;
-      if(typeof vantaSaveDemoBalance==='function') vantaSaveDemoBalance();
-      toast('Moved '+money(sell.usd)+' to your practice wallet — '+sell.lines.join(' · '));
-      if(btn){ btn.disabled=false; btn.textContent=old; }
-      if(typeof updateBalance==='function') updateBalance();
+    if(!btn) return;
+    /* The button is already disabled when there is no positive profit, so this
+       is the backstop for a click that raced the last refresh. */
+    if(btn.dataset.vantaBusy==='1') return;
+    const sym=String((window.vantaActiveCoin||'GOLF')||'GOLF').toUpperCase();
+    const old=btn.textContent;
+    const busy=txt=>{ btn.dataset.vantaBusy='1'; btn.disabled=true; btn.textContent=txt; };
+    const done=()=>{
+      delete btn.dataset.vantaBusy;
+      btn.textContent=old;
+      /* Leave the enabled/disabled state to the next refresh, which knows the
+         profit that is genuinely left. */
+      btn.disabled=true;
+    };
+    const repaint=()=>{
+      try{ if(typeof updateBalance==='function') updateBalance(); }catch(e){}
+      try{ if(typeof refreshBalance==='function') refreshBalance(); }catch(e){}
+      try{ if(window.vantaRefreshDashboard) window.vantaRefreshDashboard(); }catch(e){}
+      try{ if(window.vantaRefreshWalletSplit) window.vantaRefreshWalletSplit(); }catch(e){}
       try{ if(window.vantaSyncWalletUI) window.vantaSyncWalletUI(); }catch(e){}
       try{ if(window.vantaRefreshInfoCards) window.vantaRefreshInfoCards(); }catch(e){}
       try{ if(window.vantaSyncPosCard) window.vantaSyncPosCard(); }catch(e){}
+    };
+
+    if(typeof accountMode!=='undefined' && accountMode==='demo'){
+      const r=typeof window.vantaPracticeMoveProfit==='function'
+        ? window.vantaPracticeMoveProfit(sym, vantaPlatformPrice)
+        : {usd:0, coins:0, sym:sym};
+      if(!(Number(r&&r.usd)>0)){
+        toast(r&&r.noPrice
+          ? ('Price unavailable for '+sym+' right now — try again shortly.')
+          : (r&&r.nothingLeft
+              ? ('This '+sym+' profit is no longer in your practice trading balance.')
+              : ('No realized '+sym+' profit available to move to your wallet.')));
+        done();
+        return;
+      }
+      busy('Moving…');
+      toast(money(r.usd)+' '+sym+' profit was successfully transferred to your '+sym+' wallet.');
+      done();
+      repaint();
       return;
     }
 
     if(typeof vantaToken!=='function' || !vantaToken()){ toast('Log in to move profit to your wallet.'); return; }
     busy('Moving…');
-    vantaApi('/api/platform/liquidate',{method:'POST',headers:{'Content-Type':'application/json'}})
+    vantaApi('/api/platform/move-profit',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({symbol:sym})
+    })
       .then(r=>{
         const usd=Number(r&&r.usd_moved)||0;
-        toast(usd>0?('Moved '+money(usd)+' to your wallet.'):'No platform holdings left to move.');
-        if(typeof refreshBalance==='function') refreshBalance();
-        try{ if(window.vantaRefreshDashboard) window.vantaRefreshDashboard(); }catch(e){}
-        try{ if(window.vantaRefreshInfoCards) window.vantaRefreshInfoCards(); }catch(e){}
-        try{ if(window.vantaSyncWalletUI) window.vantaSyncWalletUI(); }catch(e){}
+        const got=String((r&&r.symbol)||sym).toUpperCase();
+        if(usd>0){
+          toast(money(usd)+' '+got+' profit was successfully transferred to your '+got+' wallet.');
+        } else {
+          toast('No realized '+got+' profit available to move to your wallet.');
+        }
+        done();
+        repaint();
       })
-      .catch(e=>toast((e&&e.message)||'Move failed — try again.'))
-      .finally(()=>{ if(btn){ btn.disabled=false; btn.textContent=old; } });
+      .catch(e=>{
+        toast((e&&e.message)||'Move failed — try again.');
+        done();
+        repaint();
+      });
   };
 
   /* ---- Dashboard balance card quick actions (delegated) ---- */
@@ -13872,6 +13991,14 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   window.vantaNoteRealizedTrade=vtNoteRealized;
   window.vantaSeedRealizedTrades=vtSeedRealized;
   window.vantaRealizedTotals=vtRealizedTotals;
+  /* The raw per-trade rows, so the dashboard's PROFIT / LOSS card splits the
+     SAME records this summary does (per coin, for the same-coin wallet move)
+     instead of keeping a second, separately-maintained tally. */
+  window.vantaRealizedRows=function(){
+    return vtRealized.map(function(r){
+      return {id:r.id, sym:r.sym, profit:Number(r.profit)||0};
+    });
+  };
 
   function vtHead(cells){
     return '<div class="vta-thead">'+cells.map(c=>'<span class="h-'+c[0]+'">'+c[1]+'</span>').join('')+'</div>';
@@ -14372,6 +14499,33 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 .ic-profit .ic-value{color:#1ee68d;text-shadow:0 0 22px rgba(24,223,130,.35)}
 .ic-market .ic-value{color:#e5ddff}
 .ic-value.neg{color:#ff4d69 !important;text-shadow:none}
+/* LOSS sits beside PROFIT as its own red figure. It is a SEPARATE total: a
+   losing trade is never netted into PROFIT, it is reported here in full. */
+.ic-pl{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.ic-pl-k{
+  flex:0 0 auto;
+  font-size:9px;
+  letter-spacing:.16em;
+  font-weight:900;
+  color:#8a93b1;
+}
+.ic-pl-v{
+  flex:1 1 auto;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:-.01em;
+  color:#6d7590;
+}
+.ic-pl-v.down{color:#ff4d69}
 .ic-sub{font-size:11px;color:#8a93b1;line-height:1.45}
 .ic-total{font-size:11.5px;color:#cdd2e3;font-weight:600}
 .ic-msg{font-size:12px;font-weight:800;color:#1ee68d}
@@ -14395,6 +14549,17 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 }
 .ic-btn:hover{filter:brightness(1.07)}
 .ic-btn:active{transform:translateY(1px)}
+/* No positive realized profit means nothing is transferable, so the button is
+   genuinely disabled rather than clickable-then-refused. */
+.ic-btn:disabled,
+.ic-btn[disabled]{
+  cursor:not-allowed;
+  filter:grayscale(.85);
+  opacity:.4;
+  box-shadow:none;
+}
+.ic-btn:disabled:hover,
+.ic-btn[disabled]:hover{filter:grayscale(.85) brightness(1)}
 .ic-btn.ic-btn-ghost{
   color:#cdd5ff;
   background:rgba(114,135,255,.12);
@@ -14510,6 +14675,9 @@ html,body{overflow-x:hidden;max-width:100%}
   .ic-label{font-size:6.5px;letter-spacing:.06em}
   .ic-badge{font-size:6.5px;padding:2px 5px}
   .ic-value{font-size:17px}
+  .ic-pl{gap:4px}
+  .ic-pl-k{font-size:6.5px;letter-spacing:.06em}
+  .ic-pl-v{font-size:10px}
   .ic-total,.ic-msg,.ic-sub{font-size:8px}
   .ic-actions{gap:4px;margin-top:0}
   .ic-btn{padding:6px 3px;font-size:8px;border-radius:7px;white-space:nowrap}
@@ -14660,6 +14828,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     var n = Number(v) || 0;
     var s = n < 0 ? '-' : '';
     var a = Math.abs(n);
+    /* Zero is an amount of money, not a vanishing fraction, so it reads as
+       $0.00. This is the "no realized profit" case on the PROFIT card and it
+       has to say $0.00 — never a bare $0, and never a negative. */
+    if (!(a > 0)) return '$0.00';
     if (a >= 1000) return s + '$' + a.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     if (a >= 1) return s + '$' + a.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4});
     return s + '$' + a.toLocaleString('en-US',{maximumFractionDigits:8});
@@ -14677,6 +14849,82 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   function setText(id, txt){ var el = byId(id); if (el) el.textContent = txt; }
   function setNeg(id, neg){ var el = byId(id); if (el) el.classList.toggle('neg', !!neg); }
 
+  /* The coin the terminal is currently trading. The card reports THIS coin's
+     realized result and "Move to Wallet" credits THIS coin's wallet, so the
+     figure under PROFIT is always exactly the amount the button will move. */
+  function activeSymbol(){ return String((window.vantaActiveCoin || 'GOLF') || 'GOLF').toUpperCase(); }
+
+  /* Live: the server already split the result per coin (realized_profit /
+     realized_loss / available_profit), so nothing is recomputed here.
+     A coin that is absent from the platform list is not a tradeable
+     instrument and therefore has no realized result of its own — it reports
+     zero rather than borrowing the account total, so the card can never show
+     an amount the "Move to Wallet" button would be unable to move. */
+  function liveSplit(p, sym){
+    var list=(p && Array.isArray(p.coins))?p.coins:null;
+    if(list){
+      for(var i=0;i<list.length;i++){
+        var c=list[i];
+        if(c && String(c.symbol||'').toUpperCase()===sym){
+          return {profit:Number(c.realized_profit)||0, loss:Number(c.realized_loss)||0,
+                  available:Number(c.available_profit)||0};
+        }
+      }
+      return {profit:0, loss:0, available:0};
+    }
+    return {profit:Number(p&&p.realized_profit)||0, loss:Number(p&&p.realized_loss)||0,
+            available:Number(p&&p.available_profit)||0};
+  }
+
+  /* "Move to Wallet" is only ever enabled by a positive realized profit. A
+     refresh must not re-enable it while a transfer is in flight. */
+  function setMoveAvailability(available, sym){
+    var btn=byId('icMoveBtn');
+    if(!btn) return;
+    if(btn.dataset.vantaBusy==='1') return;
+    if(!(available>0)){
+      btn.disabled=true;
+      btn.title='No positive realized profit to move';
+      return;
+    }
+    btn.disabled=false;
+    btn.title='Move '+usd(available)+' of realized '+sym+' profit into your '+sym+' wallet';
+  }
+
+  /* PROFIT and LOSS are two separate totals and are never netted, so a loss can
+     never be rendered as a negative profit:
+        win   -> PROFIT +$20.00   LOSS  $0.00
+        loss  -> PROFIT  $0.00    LOSS -$60.00
+        mixed -> PROFIT +$20.00   LOSS -$60.00     (not a netted -$40.00)
+     The clamps below are a contract, not a display trick — the sign is decided
+     by WHICH total a result lands in, not by the sign of a netted number. That
+     is why `neg` is never applied to the PROFIT value: it stays the card's
+     existing green profit styling, and a positive profit can never be red. */
+  function writeResult(sp, sym){
+    var profit=Math.max(0, Number(sp && sp.profit)||0);
+    var loss=Math.min(0, Number(sp && sp.loss)||0);
+    var available=Math.max(0, Number(sp && sp.available)||0);
+
+    setText('icProfit', (profit>0?'+':'')+usd(profit));
+
+    var lossEl=byId('icLoss');
+    if(lossEl){
+      lossEl.textContent = loss<0 ? ('\u2212'+usd(Math.abs(loss))) : usd(0);
+      lossEl.className = 'ic-pl-v'+(loss<0?' down':'');
+    }
+
+    var sub=byId('icProfitSub');
+    if(sub){
+      sub.textContent = available>0
+        ? 'Move '+usd(available)+' of realized '+sym+' profit into your '+sym+' wallet.'
+        : (loss<0
+            ? 'No profit to move \u2014 closed '+sym+' trades are down '+usd(Math.abs(loss))+'.'
+            : 'No realized '+sym+' profit to move yet.');
+    }
+
+    setMoveAvailability(available, sym);
+  }
+
   function refreshInfoCards(){
     var platPromise = (typeof vantaApi === 'function')
       ? vantaApi('/api/platform/coins').catch(function(){ return null; })
@@ -14692,58 +14940,58 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
         window.__vantaPlatCoins = p.coins;
       }
       var isDemo = (typeof accountMode !== 'undefined' && accountMode === 'demo');
+      var sym = activeSymbol();
       if (isDemo) {
-        /* Practice has no server ledger, so the same three numbers come from
-           the practice cost book plus the authoritative prices. Only coins in
-           the book count: the seeded VWD_PRACTICE starter holdings were never
-           paid for, so counting them would invent a fake "Invested" figure. */
+        /* Practice has no server ledger, so INVESTED still comes from the
+           practice cost book plus the authoritative prices. Only coins in the
+           book count: the seeded VWD_PRACTICE starter holdings were never paid
+           for, so counting them would invent a fake "Invested" figure. */
         var held = (typeof window.vantaPracticeCoins === 'function') ? window.vantaPracticeCoins() : {};
         var book = (held && held.__cost && typeof held.__cost === 'object') ? held.__cost : {};
-        var realized = Number((held && held.__realized) || 0);
-        var value = 0, invested = 0, unrealized = 0;
-        Object.keys(book).forEach(function (sym) {
-          var row = book[sym];
+        var value = 0, invested = 0;
+        Object.keys(book).forEach(function (s) {
+          var row = book[s];
           if (!row) return;
-          var qty = Math.min(Number(row.coins) || 0, Number(held[sym]) || 0);
+          var qty = Math.min(Number(row.coins) || 0, Number(held[s]) || 0);
           if (!(qty > 0)) return;
-          var px = (typeof window.vantaPlatformPrice === 'function') ? Number(window.vantaPlatformPrice(sym)) || 0 : 0;
+          var px = (typeof window.vantaPlatformPrice === 'function') ? Number(window.vantaPlatformPrice(s)) || 0 : 0;
           if (!(px > 0)) {
             var plist = Array.isArray(window.__vantaPlatCoins) ? window.__vantaPlatCoins : [];
             for (var i = 0; i < plist.length; i++) {
-              if (plist[i] && String(plist[i].symbol).toUpperCase() === sym) { px = Number(plist[i].price) || 0; break; }
+              if (plist[i] && String(plist[i].symbol).toUpperCase() === s) { px = Number(plist[i].price) || 0; break; }
             }
           }
-          if (!(px > 0)) px = Number((window.vantaServerPrices || {})[sym]) || 0;
+          if (!(px > 0)) px = Number((window.vantaServerPrices || {})[s]) || 0;
           if (!(px > 0)) return;
           var basis = (Number(row.usdt) || 0) * (qty / ((Number(row.coins) || qty)));
-          var val = qty * px;
-          value += val; invested += basis; unrealized += (val - basis);
+          value += qty * px; invested += basis;
         });
-        var open = (typeof trades !== 'undefined' && Array.isArray(trades)) ? trades : [];
-        var demoPL = 0;
-        open.forEach(function (t) {
-          if (!t) return;
-          demoPL += (typeof closeValueFor === 'function' ? closeValueFor(t) : Number(t.amount) || 0) - (Number(t.amount) || 0);
-        });
-        var profit = realized + unrealized + demoPL;
         var made = value - invested;
-        setText('icProfit', sign(profit) + usd(profit));
-        setNeg('icProfit', profit < 0);
         setText('icInvested', usd(invested));
         setText('icInvestedTotal', 'Total: ' + usd(value));
         setText('icInvestedMsg', 'You made ' + sign(made) + usd(made));
         setNeg('icInvestedMsg', made < 0);
-      } else if (p && typeof p.total_trade_profit !== 'undefined') {
-        var profit = (Number(p.total_trade_profit) || 0) + (Number(p.total_unrealized_pnl) || 0);
+
+        /* PROFIT / LOSS come from the closed-trade records through the same
+           split the live backend applies, so practice and live can never
+           disagree about which total a result belongs to. An open position's
+           floating P/L and a platform holding's unrealized value are excluded
+           on purpose: neither is realized, so neither is transferable. */
+        writeResult(
+          (typeof window.vantaPracticeRealizedSplit === 'function')
+            ? window.vantaPracticeRealizedSplit(sym)
+            : { profit: 0, loss: 0, available: 0 },
+          sym
+        );
+      } else if (p && typeof p.realized_profit !== 'undefined') {
         var invested = Number(p.total_usdt_invested) || 0;
         var total = Number(p.total_platform_value) || 0;
         var made = total - invested;
-        setText('icProfit', sign(profit) + usd(profit));
-        setNeg('icProfit', profit < 0);
         setText('icInvested', usd(invested));
         setText('icInvestedTotal', 'Total: ' + usd(total));
         setText('icInvestedMsg', 'You made ' + sign(made) + usd(made));
         setNeg('icInvestedMsg', made < 0);
+        writeResult(liveSplit(p, sym), sym);
       }
       var g = res[1];
       if (g && typeof g.market_cap_usdt !== 'undefined') {

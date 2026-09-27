@@ -125,6 +125,12 @@ class Trade(Base):
     duration_seconds = Column(Integer, nullable=False)
     status = Column(Enum(TradeStatus), default=TradeStatus.OPEN, nullable=False)
     profit = Column(Float, nullable=True)  # signed: positive on WON, negative (=-amount) on LOST
+    # A winning trade's profit may be moved into the wallet exactly once. This
+    # flag is what makes that a guarantee rather than a UI convention: the
+    # moment the profit is transferred the trade is stamped, and every later
+    # "available profit" query simply stops counting it. A losing trade is
+    # never stamped and is never transferable.
+    profit_moved = Column(Boolean, default=False, nullable=False)
     opened_at = Column(DateTime, default=datetime.utcnow)
     closes_at = Column(DateTime, nullable=False)
     settled_at = Column(DateTime, nullable=True)
@@ -201,12 +207,33 @@ class WalletTransferDirection(str, enum.Enum):
     TO_TRADING = "TO_TRADING"    # wallet -> trading account
 
 
+class WalletTransferKind(str, enum.Enum):
+    """What kind of explicit move a WalletTransfer row records.
+
+    A profit move is not a balance move: it debits the TRADING account in USDT
+    (where a settled trade's profit actually sits) and credits the WALLET in the
+    traded coin, so it needs to be distinguishable from an ordinary same-coin
+    transfer in the history.
+    """
+
+    PROFIT = "PROFIT"          # realized trading profit -> same-coin wallet
+    BALANCE = "BALANCE"        # an ordinary trading <-> wallet balance move
+
+
 class WalletTransfer(Base):
     """Audit row for every explicit move between the trading account and the
     wallet. Because the wallet starts at 0 and nothing auto-synchronises it,
     this table is the complete, authoritative history of how the wallet got
     funded. Written in the SAME transaction as the two balance updates, so a
-    wallet can never move without a matching row."""
+    wallet can never move without a matching row.
+
+    For an ordinary BALANCE move `amount` is the quantity of `symbol` that
+    crossed over and `*_balance_after` are that same coin's two ledgers. For a
+    PROFIT move the profit is denominated in USDT, so `amount` is the quantity
+    of `symbol` credited to the wallet, `usd_value` is the USDT debited from
+    trading, `trading_balance_after` is the trading USDT balance and
+    `wallet_balance_after` is the coin's wallet balance.
+    """
 
     __tablename__ = "wallet_transfers"
 
@@ -215,6 +242,8 @@ class WalletTransfer(Base):
     symbol = Column(String, nullable=False, index=True)
     amount = Column(Numeric(24, 8), nullable=False)          # always positive
     direction = Column(Enum(WalletTransferDirection), nullable=False)
+    kind = Column(String, default=WalletTransferKind.BALANCE.value, nullable=False)
+    usd_value = Column(Float, nullable=True)                 # PROFIT moves only
     trading_balance_after = Column(Numeric(24, 8), nullable=False)
     wallet_balance_after = Column(Numeric(24, 8), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

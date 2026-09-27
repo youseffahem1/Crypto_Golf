@@ -190,7 +190,6 @@ check('a double click is refused while busy', /vantaBusy==='1'\) return/.test(mo
 check('a second submit cannot interleave', /if\(vpmBusy\) return/.test(moveSrc), true);
 check('it refreshes the trading UI', /vantaRefreshInfoCards/.test(moveSrc), true);
 check('it refreshes the wallet UI', /vantaRefreshWalletSplit/.test(moveSrc), true);
-check('it refreshes the profit source list', /icSrcInvalidate/.test(moveSrc), true);
 check('it offers only tradeable coins', /tradeable!==false/.test(moveSrc), true);
 /* ONE PIN for the account: the move goes through the same gate Convert uses, so a
    PIN created on either surface is the PIN the other one asks for. */

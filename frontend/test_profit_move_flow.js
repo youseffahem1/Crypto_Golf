@@ -77,7 +77,7 @@ function El(id) {
 }
 
 const els = {};
-for (const id of ['icProfit', 'icLoss', 'icProfitSub', 'icMoveBtn', 'icProfitSrc', 'icProfitSrcList',
+for (const id of ['icProfit', 'icLoss', 'icProfitSub', 'icMoveBtn',
   'vantaProfitMove', 'vpmTitle', 'vpmSub', 'vpmStep1', 'vpmStep2', 'vpmCoinStep',
   'vpmCoins', 'vpmSrc', 'vpmAmount', 'vpmTo', 'vpmNext', 'vpmCancel']) els[id] = El(id);
 /* classList needs its backing set bound to the element it belongs to. */
@@ -140,6 +140,11 @@ const PIN_GATE = {
     this.open = false;
     this._action(pin);
   },
+  /* The user closed the shared dialog without answering it: no request at all. */
+  cancel() {
+    this.open = false;
+    if (this.opts && typeof this.opts.onCancel === 'function') this.opts.onCancel();
+  },
 };
 
 const sandbox = {
@@ -174,7 +179,6 @@ const sandbox = {
   vantaSyncPosCard: () => {},
   updateBalance: () => {},
   refreshBalance: () => {},
-  icSrcInvalidate: () => {},
 };
 sandbox.window = sandbox;
 sandbox.window.vantaCoinBalances = null;
@@ -194,41 +198,28 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
 
 (async function run() {
 
-  console.log('[1] the card renders PROFIT with no "+" and lists where it came from');
+  console.log('[1] the card renders PROFIT with no "+"');
   page.writeResult({ profit: 25, loss: -10, available: 20 }, 'GOLF');
   check('PROFIT has no plus sign', els.icProfit.textContent, '$25.00');
   ok('and never a minus either', !/[-+]\$/.test(els.icProfit.textContent));
   check('LOSS still shows its own sign', els.icLoss.textContent, '\u2212$10.00');
+  check('the subline names the amount that can move', /Move \$20\.00/.test(els.icProfitSub.textContent), true);
   await tick(); await tick();
-  ok('the source disclosure is shown', els.icProfitSrc.hidden === false);
-  /* Two GOLF winners came back (t-1 +$20, t-2 +$5, t-2 already moved). The
-     GOLF loser (t-3) and the BTC trade (t-4) are not this card's profit. */
-  const label = els.icProfitSrc.innerHTML;
-  check('the summary counts only this coin\'s winning trades',
-    /2 winning trades/.test(label), true);
-  ok('and says how much is still to move', /1 still to move/.test(label));
-  const src = els.icProfitSrcList.innerHTML;
-  ok('the first winning trade is listed', /t-1/.test(src) && /\$20\.00/.test(src));
-  ok('the already-moved one is listed too', /t-2/.test(src) && /\$5\.00/.test(src));
-  ok('the already-moved one is marked as moved', /moved/.test(src));
-  ok('the losing trade is not offered as profit', !/t-3/.test(src));
-  ok('another coin\'s trade is not mixed in', !/t-4/.test(src));
   ok('the untradeable coin is not offered', !/DOGE2/.test(els.vpmCoins.innerHTML));
 
-  console.log('\n[1b] the source list is a disclosure, not always-on clutter');
-  /* Seed the stub from the real markup so the initial state under test is the
-     one the page actually ships, not a guess made here. */
-  const shipped = html.match(/id="icProfitSrc"[^>]*aria-expanded="(\w+)"/);
-  check('the markup ships it collapsed', shipped ? shipped[1] : null, 'false');
-  els.icProfitSrc.setAttribute('aria-expanded', shipped ? shipped[1] : 'false');
-  check('it starts collapsed', els.icProfitSrc.getAttribute('aria-expanded'), 'false');
-  check('and the rows are hidden', els.icProfitSrcList.hidden, true);
-  fire('icProfitSrc', 'click');
-  check('clicking expands it', els.icProfitSrc.getAttribute('aria-expanded'), 'true');
-  check('and reveals the rows', els.icProfitSrcList.hidden, false);
-  fire('icProfitSrc', 'click');
-  check('clicking again collapses it', els.icProfitSrc.getAttribute('aria-expanded'), 'false');
-  check('and hides them again', els.icProfitSrcList.hidden, true);
+  console.log('\n[1b] the per-trade source list is gone from the page for good');
+  /* It was a disclosure under the PROFIT figure listing the closed trades behind
+     it. The client asked for it to be deleted outright, so this asserts the
+     absence in all three places it used to live: markup, styles, and logic. */
+  check('no ic-src class in the markup', /class="[^"]*\bic-src\b/.test(html), false);
+  check('no ic-src class in the styles', /\bic-src[\s{.:[]/.test(html), false);
+  check('no icProfitSrc element', /id="icProfitSrc"/.test(html), false);
+  check('no icProfitSrcList element', /id="icProfitSrcList"/.test(html), false);
+  check('no renderer left behind', /renderProfitSource|refreshProfitSource/.test(html), false);
+  check('no cache invalidator left behind', /icSrcInvalidate/.test(html), false);
+  check('no source-row styles left behind', /ic-src-row|ic-src-more|ic-src-caret|ic-src-amt/.test(html), false);
+  check('the subline that replaced it still renders', /id="icProfitSub"/.test(html), true);
+  check('and the card still moves the money', /id="icMoveBtn"/.test(html), true);
 
   console.log('\n[2] clicking Move opens the dialog on the COIN step');
   check('the button is enabled', els.icMoveBtn.disabled, false);
@@ -283,6 +274,44 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
   check('and no PIN set call of its own', /api\/wallet\/pin/.test(moveSrc), false);
   check('it only ever asks through the shared gate', /window\.vantaRequirePin\(/.test(moveSrc), true);
 
+  console.log('\n[5b] the PIN prompt is ON TOP of the dialog that opened it');
+  /* The bug this guards: the PIN field rendered UNDER the Move dialog, so it was
+     visible through the blur but could not be clicked or typed into. Every modal
+     on the page is a fixed layer, so what decides this is z-index alone. */
+  const layerOf = id => {
+    const m = html.match(new RegExp('#' + id + '\\{[^}]*z-index:(\\d+)'));
+    return m ? Number(m[1]) : null;
+  };
+  const zPin = layerOf('vantaPinModal'), zMove = layerOf('vantaProfitMove');
+  ok('the PIN prompt has a z-index', zPin !== null);
+  ok('the Move dialog has a z-index', zMove !== null);
+  check('and the PIN prompt is above the Move dialog', zPin > zMove, true);
+  /* Not just above this one: it is the last thing asked for on any protected
+     action, so it has to beat every other overlay on the page. */
+  const layers = [...html.matchAll(/z-index:(\d+)/g)].map(m => Number(m[1]));
+  check('it is the topmost layer of all', zPin, Math.max(...layers));
+  check('the shared prompt is still a real element', /id="vantaPinModal"/.test(html), true);
+
+  console.log('\n[5c] dismissing the PIN prompt does not strand the Move dialog');
+  els.icMoveBtn.dataset.vantaAvail = '20';
+  page.open();
+  await tick(); await tick();
+  els.vpmCoins.coins = [btc];
+  fire('vpmCoins', 'click', { target: { closest: () => btc }, preventDefault() {} });
+  fire('vpmNext', 'click');
+  check('the button waits on the PIN', els.vpmNext.textContent, 'Checking PIN…');
+  check('and is disabled meanwhile', els.vpmNext.disabled, true);
+  ok('the flow was told what to do on a cancel', typeof PIN_GATE.opts.onCancel === 'function');
+  const sentBefore = moveReqs().length;
+  PIN_GATE.cancel();
+  check('the button is usable again', els.vpmNext.disabled, false);
+  check('and says Continue, not "Checking PIN"', els.vpmNext.textContent, 'Continue');
+  check('the coin choice was kept', page.dest(), 'BTC');
+  check('and nothing was sent', moveReqs().length, sentBefore);
+  check('the dialog is still open, on the coin step', els.vpmCoinStep.hidden, false);
+  fire('vpmCancel', 'click');
+  check('the dialog can be cancelled', modalOpen(), false);
+
   console.log('\n[6] a move the server refuses moves nothing and says why');
   els.icMoveBtn.dataset.vantaAvail = '20';
   TOASTS.length = 0;
@@ -298,6 +327,7 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
   check('no success message was shown', TOASTS.length, 1);
   check('the reason reached the user', /Invalid PIN/.test(TOASTS[TOASTS.length - 1]), true);
   check('the dialog stayed open to try again', modalOpen(), true);
+  fire('vpmCancel', 'click');
 
   console.log('\n[6b] a lockout is reported as such, not as a wrong PIN');
   TOASTS.length = 0;
@@ -339,12 +369,12 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
   check('a later move asks for the existing PIN instead', PIN_GATE.opts.loginButton, 'Move to wallet');
   /* Which of the two labels the user actually sees is the SHARED dialog's call,
      made from whether the account already has a PIN — not the move flow's. */
-  const pinSrc = slice('function openPin(action, opts){', 'function closePin(){');
+  const pinSrc = slice('function openPin(action, opts){', 'function closePin(dismissed){');
   check('it shows the create label only when there is no PIN yet',
     /mode===\'setup\' \? o\.setupButton : o\.loginButton/.test(pinSrc), true);
   check('and it decides that from the stored PIN', /mode=exists\?\'login\':\'setup\'/.test(pinSrc), true);
+  PIN_GATE.cancel();
   fire('vpmCancel', 'click');
-  check('the dialog can be cancelled', modalOpen(), false);
 
   console.log('\n[8] nothing is moveable when there is no positive profit');
   page.writeResult({ profit: 0, loss: -60, available: 0 }, 'GOLF');

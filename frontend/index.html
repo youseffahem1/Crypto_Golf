@@ -2297,13 +2297,6 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 
                     <div class="ic-sub" id="icProfitSub">Realized profit on your closed trades. Only this amount can be moved to your wallet.</div>
 
-                    <!-- The client asked to see WHERE the profit came from, not
-                         just the total, so the card discloses the closed trades
-                         that produced it. Every row is a real record from
-                         /api/trade/history; nothing here is invented. -->
-                    <button type="button" class="ic-src" id="icProfitSrc" aria-expanded="false" hidden></button>
-                    <div class="ic-src-list" id="icProfitSrcList" hidden></div>
-
                     <div class="ic-actions">
                         <button class="ic-btn" id="icMoveBtn" disabled>Move to Wallet</button>
                         <button class="ic-btn ic-btn-ghost" id="icTradeBtn">Trade</button>
@@ -7857,7 +7850,13 @@ async function vantaHandleEntry() {
 
 
 <style id="vanta-security-signals-css">
-#vantaPinModal{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(15,18,32,.55);backdrop-filter:blur(14px)}
+/* The PIN prompt is the LAST thing asked for on any protected action, so it has to
+   be the topmost layer on the page — above the Convert sheet (100000), above the
+   Move-profit dialog (100001) and above the deposit sheets (100500). It used to
+   sit at 100000, which only worked for Convert because that one happens to be
+   earlier in the document; opened from anything higher, the PIN field rendered
+   UNDER the dialog that opened it and could not be clicked or typed into. */
+#vantaPinModal{position:fixed;inset:0;z-index:100600;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(15,18,32,.55);backdrop-filter:blur(14px)}
 #vantaPinModal.open{display:flex;animation:vpinIn .22s ease}
 .vpin-card{width:min(390px,94vw);padding:30px;border-radius:26px;border:1px solid var(--line);background:#fff;box-shadow:0 30px 80px rgba(15,23,42,.18);text-align:center}
 .vpin-icon{width:54px;height:54px;margin:0 auto 14px;border-radius:18px;display:grid;place-items:center;background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.22);font-size:23px}
@@ -7974,7 +7973,7 @@ async function vantaHandleEntry() {
   const title=document.getElementById('vpinTitle'), text=document.getElementById('vpinText'), error=document.getElementById('vpinError');
   const submit=document.getElementById('vpinSubmit'), cancel=document.getElementById('vpinCancel');
   const dots=[...document.querySelectorAll('.vpin-dot')];
-  let pendingAction=null, mode='login', busy=false, pinState=null;
+  let pendingAction=null, pendingCancel=null, mode='login', busy=false, pinState=null;
   const practice=()=>(typeof accountMode!=='undefined' && accountMode==='demo');
   const signedIn=()=>(typeof vantaToken==='function' && !!vantaToken());
   const validPin=v=>/^\d{4,5}$/.test(v);
@@ -8008,6 +8007,9 @@ async function vantaHandleEntry() {
     const o=opts||{};
     pinStatus().then(exists=>{
       pendingAction=action||null; mode=exists?'login':'setup';
+      /* Told when the prompt is dismissed, so a caller that disabled a button
+         while waiting does not leave it stuck forever behind a closed dialog. */
+      pendingCancel=(typeof o.onCancel==='function')?o.onCancel:null;
       modal.classList.add('open'); input.value=''; error.textContent=''; renderDots();
       title.textContent=(o.title) || (mode==='setup'?'Create Wallet PIN':'Confirm Wallet PIN');
       text.textContent=(mode==='setup' ? o.setupText : o.loginText) || o.text || (mode==='setup'
@@ -8019,7 +8021,14 @@ async function vantaHandleEntry() {
       requestAnimationFrame(()=>input.focus());
     });
   }
-  function closePin(){modal.classList.remove('open');pendingAction=null;}
+  /* `dismissed` is true only when the user closed the prompt without answering
+     it, so the caller's onCancel fires there and nowhere else. */
+  function closePin(dismissed){
+    modal.classList.remove('open');
+    const c=pendingCancel;
+    pendingAction=null; pendingCancel=null;
+    if(dismissed && c) c();
+  }
   function say(msg){error.textContent=msg||'';}
 
   function unlock(){
@@ -8063,7 +8072,15 @@ async function vantaHandleEntry() {
   }
   input?.addEventListener('input',()=>{input.value=input.value.replace(/\D/g,'').slice(0,5);say('');renderDots();});
   input?.addEventListener('keydown',e=>{if(e.key==='Enter')unlock();});
-  submit?.addEventListener('click',unlock); cancel?.addEventListener('click',closePin);
+  submit?.addEventListener('click',unlock);
+  cancel?.addEventListener('click',()=>closePin(true));
+  /* Backdrop and Escape dismiss the prompt the same way the Cancel button does,
+     so a caller waiting on it is always told, and never left holding a disabled
+     button. */
+  modal?.addEventListener('click',e=>{ if(e.target===modal) closePin(true); });
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && modal?.classList.contains('open')) closePin(true);
+  });
   // Exposed only for Wallet actions. There is NO login PIN and NO Trading PIN.
   /* ONE account PIN, one dialog, one meaning. Convert, the wallet and the profit
      transfer all come through here, so the PIN the user creates on the first
@@ -8653,7 +8670,6 @@ async function vantaHandleEntry() {
     try{ if(window.vantaSyncWalletUI) window.vantaSyncWalletUI(); }catch(e){}
     try{ if(window.vantaRefreshInfoCards) window.vantaRefreshInfoCards(); }catch(e){}
     try{ if(window.vantaSyncPosCard) window.vantaSyncPosCard(); }catch(e){}
-    try{ if(typeof window.icSrcInvalidate==='function') window.icSrcInvalidate(); }catch(e){}
   }
 
   /* Report what actually landed, using the numbers the server returned rather
@@ -8716,6 +8732,7 @@ async function vantaHandleEntry() {
     if(typeof window.vantaRequirePin!=='function'){ toast('Log in to move profit to your wallet.'); return; }
     vpmRenderSummary();
     const btn=vpm('vpmNext');
+    const restore=()=>{ if(btn){ btn.disabled=false; btn.textContent='Continue'; } };
     if(btn){ btn.disabled=true; btn.textContent='Checking PIN…'; }
     /* The prompt itself is the shared dialog, so the step pills say "you are on
        the PIN now" while the digits are being typed over there. */
@@ -8730,7 +8747,10 @@ async function vantaHandleEntry() {
       setupButton:'Create PIN & move',
       loginButton:'Move to wallet',
       setupText:'Choose any 4–5 digit PIN for this account — the same one Convert asks for — and your profit moves straight away.',
-      loginText:'Enter the PIN for this account — the same one Convert asks for — and your profit moves straight away.'
+      loginText:'Enter the PIN for this account — the same one Convert asks for — and your profit moves straight away.',
+      /* Closing the prompt without answering leaves the coin choice intact, and
+         the button usable, so the move can simply be tried again. */
+      onCancel:restore
     });
   }
 
@@ -14918,80 +14938,9 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   box-shadow:none;
 }
 
-/* --- WHERE THE PROFIT CAME FROM ---------------------------------------
-   The client asked to be shown the source of the profit, not just the
-   number, so the card names the closed trades that produced it. It is a
-   disclosure: a one-line summary that expands into the per-trade list.
-   Every row is a real record the server returned — the summary count is
-   the number of rows actually in the list, never a made-up number, and
-   a trade whose profit is already in the wallet is marked as moved
-   instead of being silently offered again. */
-.ic-src{
-  display:block;
-  width:100%;
-  text-align:left;
-  margin:7px 0 0;
-  padding:6px 8px;
-  border-radius:10px;
-  border:1px solid rgba(24,223,130,.22);
-  background:rgba(24,223,130,.07);
-  color:#8fe9bf;
-  font-family:inherit;
-  font-size:10px;
-  font-weight:800;
-  letter-spacing:.02em;
-  line-height:1.4;
-  cursor:pointer;
-  transition:background .15s ease,border-color .15s ease;
-}
-.ic-src:hover{background:rgba(24,223,130,.13);border-color:rgba(24,223,130,.4)}
-.ic-src[hidden]{display:none}
-.ic-src-caret{
-  display:inline-block;
-  margin-inline-start:6px;
-  font-size:8px;
-  color:#1ee68d;
-  transition:transform .15s ease;
-}
-.ic-src[aria-expanded="true"] .ic-src-caret{transform:rotate(90deg)}
-.ic-src-list{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  margin:6px 0 0;
-  padding:7px 8px;
-  border-radius:10px;
-  border:1px solid rgba(24,223,130,.14);
-  background:rgba(8,17,31,.55);
-}
-.ic-src-list[hidden]{display:none}
-.ic-src-row{
-  display:flex;
-  align-items:baseline;
-  gap:6px;
-  font-size:10px;
-  line-height:1.4;
-  color:#cdd2e3;
-}
-.ic-src-row .ic-src-amt{
-  flex:0 0 auto;
-  margin-inline-start:auto;
-  font-weight:900;
-  color:#1ee68d;
-  font-variant-numeric:tabular-nums;
-}
-.ic-src-row.moved{opacity:.5}
-.ic-src-row.moved .ic-src-amt{color:#6d7590;text-decoration:line-through}
-.ic-src-more{
-  font-size:9.5px;
-  color:#8a93b1;
-  font-weight:800;
-  padding-top:1px;
-}
-
 /* ==========================================================
    TRADE STRIP — BALANCE | TRADE AMOUNT | TRADE
-========================================================== */
+   ========================================================== */
 .trade-strip{
   display:grid;
   grid-template-columns:minmax(150px,1.1fr) minmax(210px,1.5fr) 150px;
@@ -15270,7 +15219,6 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   function sign(n){ return n > 0 ? '+' : (n < 0 ? '' : ''); }
   function setText(id, txt){ var el = byId(id); if (el) el.textContent = txt; }
   function setNeg(id, neg){ var el = byId(id); if (el) el.classList.toggle('neg', !!neg); }
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
   /* The coin the terminal is currently trading. The card reports THIS coin's
      realized result and "Move to Wallet" credits THIS coin's wallet, so the
@@ -15355,111 +15303,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     }
 
     setMoveAvailability(available, sym);
-    refreshProfitSource(sym);
   }
-
-  /* ---------- WHERE THE PROFIT CAME FROM ----------
-     The client asked to be shown the SOURCE of the profit, not only the
-     total, so the card names the closed trades behind it.
-
-     Both the total above and this list come from the same records, so the
-     list can never contradict the number. Nothing here is invented: a row
-     exists only because a real closed trade came back from the server, and
-     the "n trades" count is literally the number of rows rendered. When
-     there are no winning trades the disclosure stays hidden instead of
-     showing an empty shell.
-
-     Live: /api/trade/history, which now carries profit_moved, so a trade
-     already transferred to the wallet is shown struck through and is NOT
-     offered as movable a second time.
-     Practice: the same realized ledger the practice total is split from. */
-  var _icSrcAt=0, _icSrcKey='', _icSrcRows=[];
-  var IC_SRC_MAX=4;
-
-  function icSrcWhen(ts){
-    var t=Date.parse(/\dZ$/.test(String(ts||''))?String(ts):String(ts)+'Z');
-    if(!t) return '';
-    var d=new Date(t), mins=Math.floor((Date.now()-t)/60000);
-    if(mins<1) return 'just now';
-    if(mins<60) return mins+'m ago';
-    if(mins<1440) return Math.floor(mins/60)+'h ago';
-    return d.getDate()+'/'+(d.getMonth()+1);
-  }
-
-  /* Practice rows, shaped to the same shape as the server's so the renderer
-     below has exactly one code path. `at` is 0 when practice has no settled
-     timestamp, and the renderer then simply omits the time rather than
-     inventing one. */
-  function icSrcPractice(sym){
-    var moved=(typeof window.vantaPracticeMovedMap==='function')?window.vantaPracticeMovedMap():{};
-    var rows=(typeof window.vantaRealizedRows==='function')?window.vantaRealizedRows():[];
-    return rows.filter(function(r){
-      return String(r.sym||'').toUpperCase()===sym && Number(r.profit||0)>0;
-    }).map(function(r){
-      return {id:String(r.id||''), symbol:sym, side:'', profit:Number(r.profit)||0,
-              settled_at:Number(r.at)||0, profit_moved:!!moved[String(r.id||'')]};
-    });
-  }
-
-  function renderProfitSource(sym, rows){
-    var btn=byId('icProfitSrc'), box=byId('icProfitSrcList');
-    if(!btn||!box) return;
-    if(!rows.length){ btn.hidden=true; box.hidden=true; box.innerHTML=''; return; }
-
-    var open=(btn.getAttribute('aria-expanded')==='true');
-    var movedCount=rows.filter(function(t){ return t.profit_moved; }).length;
-    var movable=rows.length-movedCount;
-    var label=rows.length+(rows.length===1?' winning trade ':' winning trades ');
-    label+=(movedCount
-      ? '\u00b7 '+movable+' still to move'
-      : '\u00b7 all still to move');
-    btn.innerHTML=esc(label)+'<span class="ic-src-caret">\u25b6</span>';
-    btn.hidden=false;
-
-    var shown=rows.slice(0, IC_SRC_MAX);
-    var html=shown.map(function(t){
-      var when=icSrcWhen(t.settled_at);
-      var side=t.side==='UP'?'BUY':t.side==='SELL'?'SELL':'';
-      var head=String(t.symbol||sym)+(side?' \u00b7 '+side:'')+(when?' \u00b7 '+when:'');
-      return '<div class="ic-src-row'+(t.profit_moved?' moved':'')+'">'
-        +'<span>#'+esc(String(t.id==null?'':t.id).slice(-6)||'\u2014')+'</span>'
-        +'<span>'+esc(head)+'</span>'
-        +'<span class="ic-src-amt">'+usd(t.profit)+'</span></div>';
-    }).join('');
-    if(rows.length>IC_SRC_MAX){
-      html+='<div class="ic-src-more">+'+(rows.length-IC_SRC_MAX)+' more winning '
-        +'trade'+(rows.length-IC_SRC_MAX===1?'':'s')+'</div>';
-    }
-    if(btn.__srcHtml!==html){ btn.__srcHtml=html; box.innerHTML=html; }
-    box.hidden=!open;
-  }
-
-  function refreshProfitSource(sym){
-    sym=String(sym||'GOLF').toUpperCase();
-    var btn=byId('icProfitSrc');
-    var demo=(typeof accountMode!=='undefined'&&accountMode==='demo');
-    if(demo || typeof vantaApi!=='function'){
-      renderProfitSource(sym, icSrcPractice(sym));
-      return;
-    }
-    /* Reuse the last response for a few seconds: writeResult runs on every
-       poll, and re-fetching per tick would hammer /api/trade/history. A move
-       clears the cache so the "moved" marks appear immediately. */
-    var fresh=(Date.now()-_icSrcAt)<4000;
-    if(fresh && _icSrcKey===sym){ renderProfitSource(sym, _icSrcRows); return; }
-    vantaApi('/api/trade/history').then(function(h){
-      _icSrcAt=Date.now(); _icSrcKey=sym;
-      _icSrcRows=(Array.isArray(h)?h:[]).filter(function(t){
-        return String(t.symbol||'').toUpperCase()===sym && Number(t.profit||0)>0;
-      }).sort(function(a,b){
-        return (Date.parse(b.settled_at||b.opened_at||'')||0)-(Date.parse(a.settled_at||a.opened_at||'')||0);
-      });
-      if(String(activeSymbol()).toUpperCase()!==sym) return;  /* stale */
-      renderProfitSource(sym, _icSrcRows);
-    }).catch(function(){ if(btn) btn.hidden=true; });
-  }
-
-  function icSrcInvalidate(){ _icSrcAt=0; }
 
   function refreshInfoCards(){
     var platPromise = (typeof vantaApi === 'function')
@@ -15540,10 +15384,6 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     });
   }
   window.vantaRefreshInfoCards = refreshInfoCards;
-  /* Lets the Move dialog drop the cached trade list after a transfer, so the
-     "already moved" marks on the source list appear without waiting out the
-     short cache window. */
-  window.icSrcInvalidate = icSrcInvalidate;
 
   function padIsVisible(){
     return !!mainEl && getComputedStyle(mainEl).display !== 'none';
@@ -15569,18 +15409,6 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   });
   wire(byId('icTradeBtn'), scrollToTrade);
   wire(byId('stripTradeBtn'), scrollToTrade);
-
-  /* The source disclosure: a plain toggle, so it stays keyboard reachable and
-     announces its state. The list markup is rebuilt by renderProfitSource, so
-     the toggle only flips the flag. */
-  wire(byId('icProfitSrc'), function(){
-    var b=byId('icProfitSrc');
-    if(!b) return;
-    var open=(b.getAttribute('aria-expanded')==='true');
-    b.setAttribute('aria-expanded', open?'false':'true');
-    var box=byId('icProfitSrcList');
-    if(box) box.hidden=open;
-  });
 
   setInterval(function(){
     if (padIsVisible()) refreshInfoCards();

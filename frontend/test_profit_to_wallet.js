@@ -30,8 +30,12 @@ function slice(fromMarker, toMarker) {
    defines them. */
 const renderSrc = slice('if (window.__vantaDashboardCards) return;', 'function refreshInfoCards(){');
 
-/* The whole "Move to Wallet" handler, exactly as the page defines it. */
-const moveSrc = slice('window.vantaMoveProfitToWallet=function(){',
+/* The whole "Move to Wallet" feature, exactly as the page defines it: the
+   two-step dialog markup helpers, the coin list loader, the PIN submit and the
+   wiring. The marker includes the ": realized trading profit" part because a
+   DIFFERENT feature above it — the whole-holding USDT cash-out, which keeps its
+   own endpoint and is intentionally left alone — starts with the same words. */
+const moveSrc = slice('"Move to Wallet": realized trading profit',
   '/* ---- Dashboard balance card quick actions (delegated) ---- */');
 
 /* The practice-mode split + move, exactly as the page defines them. */
@@ -77,12 +81,12 @@ check('only LOSS gets a red class', /lossEl\.className = 'ic-pl-v'/.test(renderS
 
 console.log('\n[1] CASE 1 — a profit: PROFIT +$20.00, LOSS $0.00, move enabled');
 render({ profit: 20, loss: 0, available: 20 });
-check('PROFIT', els.icProfit.textContent, '+$20.00');
+check('PROFIT', els.icProfit.textContent, '$20.00');
 check('PROFIT is not red', /(^|\s)neg(\s|$)/.test(els.icProfit.className), false);
 check('LOSS', els.icLoss.textContent, '$0.00');
 check('LOSS is not red', /down/.test(els.icLoss.className), false);
 check('Move to Wallet enabled', btn.disabled, false);
-check('button names the coin', /GOLF wallet/.test(btn.title), true);
+check('button explains the two-step action', /confirm with your wallet PIN/.test(btn.title), true);
 
 console.log('\n[2] the reported bug — a loss can never render as a negative PROFIT');
 render({ profit: 0, loss: -681.01, available: 0 });
@@ -100,15 +104,15 @@ check('the sub-line says there is nothing to move', /No profit to move/.test(els
 
 console.log('\n[4] CASE 3 — profit and loss from different trades are never netted');
 render({ profit: 20, loss: -60, available: 20 });
-check('PROFIT stays +$20.00', els.icProfit.textContent, '+$20.00');
+check('PROFIT stays $20.00', els.icProfit.textContent, '$20.00');
 check('LOSS is the full -$60.00', els.icLoss.textContent, '\u2212$60.00');
-check('not netted to -$40.00', els.icProfit.textContent, '+$20.00');
+check('not netted to -$40.00', els.icProfit.textContent, '$20.00');
 check('only the profit is transferable', btn.disabled, false);
 check('button offers exactly the profit', /\$20\.00/.test(btn.title), true);
 
 console.log('\n[5] CASE 4 — after a move, available is $0 so nothing can move again');
 render({ profit: 20, loss: 0, available: 0 });
-check('the profit total is history, not a balance', els.icProfit.textContent, '+$20.00');
+check('the profit total is history, not a balance', els.icProfit.textContent, '$20.00');
 check('Move to Wallet disabled', btn.disabled, true);
 check('the sub-line says nothing is available', /No realized GOLF profit to move yet/.test(els.icProfitSub.textContent), true);
 
@@ -131,7 +135,7 @@ sandbox.vantaActiveCoin = null;
 check('defaults to GOLF', api.activeSymbol(), 'GOLF');
 sandbox.vantaActiveCoin = 'GOLF';
 render({ profit: 30, loss: 0, available: 30 });
-check('button names the traded coin', /GOLF wallet/.test(btn.title), true);
+check('button names the traded coin', /GOLF profit/.test(btn.title), true);
 
 console.log('\n[9] the live figures come from the server, per coin, already split');
 const p = {
@@ -165,18 +169,30 @@ btn.dataset.vantaBusy = '';
 api.setMoveAvailability(0, 'GOLF');
 check('re-disabled once there is no profit', btn.disabled, true);
 
-console.log('\n[11] the button posts the coin and never names an amount');
-check('posts to the profit endpoint', /\/api\/platform\/move-profit/.test(moveSrc), true);
-check('sends the traded symbol', /JSON\.stringify\(\{symbol:sym\}\)/.test(moveSrc), true);
-check('no amount is sent by the client', /amount:/.test(moveSrc), false);
+console.log('\n[11] the button opens Select Coin -> PIN, and only then moves');
+/* The old assertions here matched the source text of a handler that moved money
+   the instant it was clicked. That is exactly what the client asked to change, so
+   this section no longer pattern-matches: it runs the real dialog code out of the
+   file, against a stub DOM, and inspects the request it actually makes. */
+check('the dialog exists in the page', /id="vantaProfitMove"/.test(html), true);
+check('it has a coin step', /id="vpmCoinStep"/.test(html), true);
+check('it has a PIN step', /id="vpmPinStep"/.test(html), true);
+check('it posts to the profit endpoint', /\/api\/platform\/move-profit/.test(moveSrc), true);
+check('it sends the traded symbol', /symbol:vpmSym/.test(moveSrc), true);
+check('it sends the CHOSEN destination', /dest_symbol:vpmDest/.test(moveSrc), true);
+check('it sends the PIN for the server to verify', /pin:pin/.test(moveSrc), true);
+check('no amount is sent by the client', /\bamount:/.test(moveSrc), false);
 check('it no longer liquidates the whole holding', /api\/platform\/liquidate/.test(moveSrc), false);
 check('it re-reads the active coin', /vantaActiveCoin/.test(moveSrc), true);
 check('a double click is refused while busy', /vantaBusy==='1'\) return/.test(moveSrc), true);
-check('a re-entrant click is impossible', /btn\.dataset\.vantaBusy='1'/.test(moveSrc), true);
-check('success uses the existing toast', /toast\(money\(usd\)/.test(moveSrc), true);
-check('the toast names the profit and the coin', /successfully transferred to your/.test(moveSrc), true);
+check('a second submit cannot interleave', /if\(vpmBusy\) return/.test(moveSrc), true);
 check('it refreshes the trading UI', /vantaRefreshInfoCards/.test(moveSrc), true);
 check('it refreshes the wallet UI', /vantaRefreshWalletSplit/.test(moveSrc), true);
+check('it refreshes the profit source list', /icSrcInvalidate/.test(moveSrc), true);
+check('it offers only tradeable coins', /tradeable!==false/.test(moveSrc), true);
+check('a wrong PIN is reported in the dialog, not swallowed', /Incorrect PIN/.test(moveSrc), true);
+check('a lockout is surfaced to the user', /Too many/.test(moveSrc), true);
+check('an account with no PIN is offered the create step', /!vpmHasPin/.test(moveSrc), true);
 
 console.log('\n[12] practice mode applies the same rules');
 check('practice splits profit and loss', /window\.vantaPracticeRealizedSplit=function/.test(practiceSrc), true);
@@ -186,7 +202,9 @@ check('practice never nets them', !/available=profit\+loss/.test(practiceSrc), t
 check('a moved profit stops being available', /__profitMoved/.test(practiceSrc), true);
 check('a non-positive move is refused', /if\(!\(usd>0\)\) return \{usd:0/.test(practiceSrc), true);
 check('practice never moves more than it holds', /Math\.min\(usd, have\)/.test(practiceSrc), true);
-check('practice credits the traded coin wallet', /m\.__wallet\[s\]/.test(practiceSrc), true);
+check('with no choice, the default is the traded coin', /var d=String\(destSymbol\|\|s\)\.toUpperCase\(\)/.test(practiceSrc), true);
+check('a chosen coin is credited at ITS own price', /getPrice\(d\)/.test(practiceSrc), true);
+check('the credited coin is the chosen one', /m\.__wallet\[d\]/.test(practiceSrc), true);
 check('the card reads the practice split', /vantaPracticeRealizedSplit\(sym\)/.test(html), true);
 
 console.log('\n[13] the trading and wallet ledgers stay separate');

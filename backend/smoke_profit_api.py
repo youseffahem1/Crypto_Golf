@@ -18,6 +18,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH}"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import models  # noqa: E402
+from app import auth  # noqa: E402
 from app.database import SessionLocal, engine, Base  # noqa: E402
 from app.config import PLATFORM_COINS  # noqa: E402
 from app import main as app_main  # noqa: E402
@@ -65,6 +66,22 @@ db.commit()
 db.refresh(user)
 db.refresh(other)
 
+# Every account that moves profit needs a stored Wallet PIN: the move endpoint
+# verifies it before it touches a balance. The digits are never stored, so the
+# hash is written here exactly as the setup endpoint writes it.
+PIN = "4321"
+
+
+def set_pin(u):
+    u.pin_hash = auth.hash_pin(PIN)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+for _u in (user, other):
+    set_pin(_u)
+
 client = TestClient(app_main.app)
 
 # Resolve the guarded dependencies once, BEFORE any swap, so the original
@@ -96,6 +113,14 @@ def restore():
         d.call = orig
 
 
+def move(payload=None):
+    """POST /move-profit as the authenticated user, carrying that account's PIN.
+
+    The amount is never part of the body — that is the point of the endpoint —
+    so this helper only ever forwards a symbol and an optional destination."""
+    return client.post("/api/platform/move-profit", json=dict(payload or {}, pin=PIN))
+
+
 print("\n[1] the move endpoint requires authentication")
 r = client.post("/api/platform/move-profit", json={"symbol": "GOLF"})
 check("unauthenticated is rejected", r.status_code in (401, 403), True)
@@ -124,11 +149,12 @@ try:
     check("net is not what PROFIT reports", body["total_trade_profit"] != body["realized_profit"], True)
 
     print("\n[4] CASE 3 â€” profit and loss are never netted for the transfer")
-    r = client.post("/api/platform/move-profit", json={"symbol": "GOLF"})
+    r = move({"symbol": "GOLF"})
     check("HTTP 200", r.status_code, 200)
     mv = r.json()
     approx("exactly the +$20 moved, not the -$40 net", mv["usd_moved"], 20.0)
     check("the credited coin is the traded coin", mv["symbol"], "GOLF")
+    check("the destination defaults to the traded coin", mv["dest_symbol"], "GOLF")
     check("kind", mv["kind"], "PROFIT")
     check("direction", mv["direction"], "TO_WALLET")
     approx("trading USDT debited", mv["trading_balance"], 980.0)
@@ -137,7 +163,7 @@ try:
 
     print("\n[5] CASE 4 â€” the same profit cannot be transferred again")
     approx("available is now 0", mv["available_profit"], 0.0)
-    r2 = client.post("/api/platform/move-profit", json={"symbol": "GOLF"})
+    r2 = move({"symbol": "GOLF"})
     check("the second attempt is refused", r2.status_code, 400)
     check("with a clear reason", "No realized GOLF profit" in r2.json()["detail"], True)
     bal = client.get("/api/wallet/balances").json()
@@ -158,9 +184,10 @@ try:
     db.add(solo)
     db.commit()
     db.refresh(solo)
+    set_pin(solo)
     settled(solo, "GOLF", -60.0)
     authed(solo)
-    r = client.post("/api/platform/move-profit", json={"symbol": "GOLF"})
+    r = move({"symbol": "GOLF"})
     check("refused with 400", r.status_code, 400)
     bal = client.get("/api/wallet/balances").json()
     approx("trading untouched", bal["trading"]["USDT"], 1000.0)
@@ -172,7 +199,7 @@ try:
     print("\n[8] the destination really is the coin being traded")
     settled(solo, "GOLF", 30.0)
     settled(solo, "NOVA", 70.0)
-    r = client.post("/api/platform/move-profit", json={"symbol": "GOLF"})
+    r = move({"symbol": "GOLF"})
     mv = r.json()
     approx("only GOLF's own profit moved", mv["usd_moved"], 30.0)
     bal = client.get("/api/wallet/balances").json()
@@ -183,15 +210,25 @@ try:
             if c["symbol"] == "NOVA"][0]["available_profit"], 70.0)
 
     print("\n[9] the endpoint never accepts a client-chosen amount")
-    r = client.post("/api/platform/move-profit",
-                    json={"symbol": "NOVA", "amount": 999999})
+    r = move({"symbol": "NOVA", "amount": 999999})
     mv = r.json()
     check("the amount field is ignored", mv["usd_moved"], 70.0)
     check("only the recorded profit moved", mv["usd_moved"] != 999999, True)
 
     print("\n[10] an untradeable coin is refused, not silently zeroed")
-    r = client.post("/api/platform/move-profit", json={"symbol": "DOGE2"})
+    r = move({"symbol": "DOGE2"})
     check("refused with 400", r.status_code, 400)
+
+    print("\n[10b] an untradeable DESTINATION is refused too")
+    before = client.get("/api/wallet/balances").json()
+    n_before = len(client.get("/api/wallet/transfers").json()["transfers"])
+    r = move({"symbol": "GOLF", "dest_symbol": "DOGE2"})
+    check("refused with 400", r.status_code, 400)
+    after = client.get("/api/wallet/balances").json()
+    check("trading unchanged by the refusal", after["trading"], before["trading"])
+    check("wallets unchanged by the refusal", after["wallet"], before["wallet"])
+    check("no extra transfer recorded",
+          len(client.get("/api/wallet/transfers").json()["transfers"]), n_before)
 
     print("\n[11] the default symbol is the coin the terminal trades")
     # A fresh account: every earlier case deliberately drained its GOLF profit,
@@ -200,13 +237,15 @@ try:
     db.add(dflt)
     db.commit()
     db.refresh(dflt)
+    set_pin(dflt)
     settled(dflt, "NOVA", 90.0)
     settled(dflt, "GOLF", 5.0)
     authed(dflt)
-    r = client.post("/api/platform/move-profit", json={})
+    r = move({})
     check("HTTP 200", r.status_code, 200)
     mv = r.json()
     check("defaults to GOLF", mv["symbol"], "GOLF")
+    check("and credits the GOLF wallet by default", mv["dest_symbol"], "GOLF")
     approx("and moves GOLF's profit, not NOVA's", mv["usd_moved"], 5.0)
     bal = client.get("/api/wallet/balances").json()
     approx("GOLF wallet funded", bal["wallet"]["GOLF"], mv["coin_amount"])
@@ -216,7 +255,7 @@ try:
     authed(other)
     body = client.get("/api/platform/coins").json()
     approx("a fresh account has no profit", body["realized_profit"], 0.0)
-    r = client.post("/api/platform/move-profit", json={"symbol": "GOLF"})
+    r = move({"symbol": "GOLF"})
     check("and nothing to move", r.status_code, 400)
 finally:
     restore()

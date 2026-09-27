@@ -266,33 +266,48 @@ def move_between_accounts(
     }
 
 
-def move_profit_to_wallet(db: Session, user_id: str, symbol: str, usd_amount: float, price: float) -> dict:
-    """Moves positive realized trading profit into the SAME coin's wallet.
+def move_profit_to_wallet(
+    db: Session,
+    user_id: str,
+    symbol: str,
+    usd_amount: float,
+    price: float,
+    dest_symbol: str | None = None,
+) -> dict:
+    """Moves positive realized trading profit into a wallet.
 
     This is the one bridge from a trade result to the wallet, and it is
     deliberately narrow:
 
-      * only `symbol` — the coin actually traded — is credited, so a GOLF
-        profit lands in the GOLF wallet and never in USDT or another coin;
+      * `symbol` is the coin actually TRADED, and it is the only thing that
+        selects which trades are spent. The destination is `dest_symbol` when
+        given, and otherwise `symbol` itself — so a GOLF profit still lands in
+        the GOLF wallet by default, and picking a different coin is the sole
+        thing the new parameter changes;
+      * `price` must be the DESTINATION coin's USD price (the caller resolves
+        it with market_service.get_usd_price), because `usd_amount` is USDT and
+        the wallet is credited in coin. A GOLF profit moved into a BTC wallet
+        credits usd/btc_price BTC, never usd GOLF;
       * only a POSITIVE realized amount can arrive here. A negative amount is
         rejected outright rather than normalised, so no code path can move a
         loss or drive a ledger negative;
-      * the profit is denominated in USDT (that is where a settled payout is
-        credited), so trading USDT is debited and the equivalent quantity of
-        `symbol` is credited to the wallet at the authoritative price;
       * the consumed trades are stamped `profit_moved` in the SAME transaction
         as the two balance writes and the WalletTransfer row, so the very same
         profit can never be transferred a second time.
 
-    Never called with client-supplied figures: the caller resolves the amount
-    from the closed-trade records and the price from market_service."""
+    Never called with a client-supplied amount or price: the caller resolves the
+    amount from the closed-trade records and the price from market_service."""
     symbol = (symbol or "").strip().upper()
     if symbol not in SUPPORTED_SYMBOLS:
         raise SwapError("Unsupported coin for transfer")
 
+    dest = (dest_symbol or symbol).strip().upper()
+    if dest not in SUPPORTED_SYMBOLS:
+        raise SwapError("Unsupported destination coin for transfer")
+
     price = float(price or 0.0)
     if price <= 0:
-        raise SwapError(f"Price unavailable for {symbol} right now — try again shortly")
+        raise SwapError(f"Price unavailable for {dest} right now — try again shortly")
 
     usd_dec = _dec(usd_amount)
     if usd_dec <= 0:
@@ -335,7 +350,7 @@ def move_profit_to_wallet(db: Session, user_id: str, symbol: str, usd_amount: fl
 
     coin_amount = _dec(float(usd) / price)
     if coin_amount <= 0:
-        raise SwapError(f"Price unavailable for {symbol} right now — try again shortly")
+        raise SwapError(f"Price unavailable for {dest} right now — try again shortly")
 
     # Spend the available profit oldest-first and stamp every trade it covers.
     # A trade is stamped whole, so a profit that is only partially covered (the
@@ -354,14 +369,17 @@ def move_profit_to_wallet(db: Session, user_id: str, symbol: str, usd_amount: fl
         moved_trades += 1
 
     usd_after = _dec(trading_usdt) - usd
-    wallet_after = _dec(get_wallet_balance(db, user, symbol)) + coin_amount
+    wallet_after = _dec(get_wallet_balance(db, user, dest)) + coin_amount
 
     set_balance(db, user, "USDT", float(usd_after))
-    set_wallet_balance(db, user, symbol, float(wallet_after))
+    set_wallet_balance(db, user, dest, float(wallet_after))
 
+    # The ledger row records the coin that was actually credited, which is the
+    # destination — the same column the wallet balance lives in, so the history
+    # can always be read back against the balance it changed.
     tx = models.WalletTransfer(
         user_id=user_id,
-        symbol=symbol,
+        symbol=dest,
         amount=coin_amount,
         direction=models.WalletTransferDirection.TO_WALLET,
         kind=models.WalletTransferKind.PROFIT.value,
@@ -375,6 +393,7 @@ def move_profit_to_wallet(db: Session, user_id: str, symbol: str, usd_amount: fl
     return {
         "id": tx.id,
         "symbol": symbol,
+        "dest_symbol": dest,
         "amount": float(coin_amount),
         "usd_moved": float(usd),
         "price": price,
@@ -382,7 +401,7 @@ def move_profit_to_wallet(db: Session, user_id: str, symbol: str, usd_amount: fl
         "kind": tx.kind,
         "trades_settled": moved_trades,
         "trading_balance": float(get_balance(db, user, "USDT")),
-        "wallet_balance": float(get_wallet_balance(db, user, symbol)),
+        "wallet_balance": float(get_wallet_balance(db, user, dest)),
     }
 
 

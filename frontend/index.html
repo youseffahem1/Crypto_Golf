@@ -2297,6 +2297,13 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 
                     <div class="ic-sub" id="icProfitSub">Realized profit on your closed trades. Only this amount can be moved to your wallet.</div>
 
+                    <!-- The client asked to see WHERE the profit came from, not
+                         just the total, so the card discloses the closed trades
+                         that produced it. Every row is a real record from
+                         /api/trade/history; nothing here is invented. -->
+                    <button type="button" class="ic-src" id="icProfitSrc" aria-expanded="false" hidden></button>
+                    <div class="ic-src-list" id="icProfitSrcList" hidden></div>
+
                     <div class="ic-actions">
                         <button class="ic-btn" id="icMoveBtn" disabled>Move to Wallet</button>
                         <button class="ic-btn ic-btn-ghost" id="icTradeBtn">Trade</button>
@@ -7175,7 +7182,10 @@ async function vantaHandleEntry() {
     });
     return {profit:profit, loss:loss, net:profit+loss, available:available};
   };
-  window.vantaPracticeMoveProfit=function(sym, getPrice){
+  window.vantaPracticeMovedMap=function(){
+    try{ return practiceMoved().__profitMoved||{}; }catch(e){ return {}; }
+  };
+  window.vantaPracticeMoveProfit=function(sym, getPrice, destSymbol){
     var s=String(sym||'GOLF').toUpperCase();
     var m=practiceMoved();
     var sp=window.vantaPracticeRealizedSplit(s);
@@ -7183,20 +7193,25 @@ async function vantaHandleEntry() {
     /* A loss is not a negative transfer, it is simply nothing to move. */
     if(!(usd>0)) return {usd:0, coins:0, sym:s};
 
-    var px=Number(getPrice?getPrice(s):0)||0;
-    if(!(px>0)) return {usd:0, coins:0, sym:s, noPrice:true};
+    /* The profit may be received in a chosen coin. With no choice it stays the
+       traded coin at that coin's own price, which is exactly the old behaviour;
+       a chosen coin is credited at ITS price, mirroring the server. */
+    var d=String(destSymbol||s).toUpperCase();
+
+    var px=Number(getPrice?getPrice(d):0)||0;
+    if(!(px>0)) return {usd:0, coins:0, sym:s, dest:d, noPrice:true};
 
     /* The profit can only move while it is still in the practice trading
        account, and never more than is there. */
     var have=Number(typeof demoBalance!=='undefined'?demoBalance:0)||0;
     var move=Math.min(usd, have);
-    if(!(move>0)) return {usd:0, coins:0, sym:s, nothingLeft:true};
+    if(!(move>0)) return {usd:0, coins:0, sym:s, dest:d, nothingLeft:true};
 
     var coins=move/px;
     demoBalance=have-move;
     if(typeof vantaSaveDemoBalance==='function') vantaSaveDemoBalance();
     if(!m.__wallet || typeof m.__wallet!=='object') m.__wallet={};
-    m.__wallet[s]=Math.max(0,(Number(m.__wallet[s])||0)+coins);
+    m.__wallet[d]=Math.max(0,(Number(m.__wallet[d])||0)+coins);
     /* Spend the available profit oldest-first and stamp every trade it covers,
        so a second click finds nothing left to move. */
     var left=move, rows=practiceRows().filter(function(r){
@@ -7209,7 +7224,7 @@ async function vantaHandleEntry() {
       m.__profitMoved[r.id]=true;
     });
     practiceSave(m);
-    return {usd:move, coins:coins, sym:s, price:px, usd_total:usd};
+    return {usd:move, coins:coins, sym:s, dest:d, price:px, usd_total:usd};
   };
 
   function realBal(sym){
@@ -7833,6 +7848,38 @@ async function vantaHandleEntry() {
 .vpin-cancel:active{transform:scale(.98)}
 .vpin-error{height:16px;color:var(--down);font-size:11px;margin-top:9px}
 .vfx-pin-note{font-size:10.5px;color:var(--muted);margin-top:10px;text-align:center}
+
+/* ---- Move profit to wallet: choose the coin, then confirm with the PIN -----
+   The client asked for this to be a real two-step action rather than a button
+   that moves money the moment it is clicked: pick the coin, then prove it is
+   you with the wallet PIN. Both steps live in one dialog so the amount being
+   moved stays on screen while the PIN is typed, and the coin cannot be
+   swapped between the decision and the confirmation.
+
+   The amount shown in step 2 is a live estimate from the real price feed; the
+   server recomputes it from the closed trades and its own price, so the
+   estimate is never what decides the amount credited. */
+#vantaProfitMove{position:fixed;inset:0;z-index:100001;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(15,18,32,.55);backdrop-filter:blur(14px)}
+#vantaProfitMove.open{display:flex;animation:vpinIn .22s ease}
+.vpm-card{width:min(430px,94vw);max-height:88vh;overflow:auto;padding:26px;border-radius:26px;border:1px solid var(--line);background:#fff;box-shadow:0 30px 80px rgba(15,23,42,.18);text-align:center}
+.vpm-card h2{margin:0 0 6px;font-size:19px;color:var(--text)}
+.vpm-sub{margin:0 0 16px;color:var(--muted);font-size:12px;line-height:1.55}
+.vpm-steps{display:flex;gap:6px;justify-content:center;margin:0 0 18px;padding:0;list-style:none}
+.vpm-step{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:900;letter-spacing:.1em;color:var(--muted);padding:5px 10px;border-radius:99px;border:1px solid var(--line)}
+.vpm-step.on{color:#fff;background:linear-gradient(135deg,var(--gold),#1d4ed8);border-color:transparent}
+.vpm-step.done{color:var(--up);border-color:rgba(37,99,235,.25)}
+.vpm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:7px;max-height:230px;overflow:auto;padding:2px}
+.vpm-coin{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 6px;border-radius:14px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-family:inherit;cursor:pointer;transition:.15s}
+.vpm-coin:hover{border-color:rgba(37,99,235,.4);transform:translateY(-1px)}
+.vpm-coin[aria-pressed="true"]{border-color:var(--gold);background:rgba(37,99,235,.1);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.vpm-coin .vpm-sym{font-size:12px;font-weight:900;letter-spacing:.02em}
+.vpm-coin .vpm-px{font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+.vpm-src{font-size:10px;color:var(--muted);margin:0 0 12px}
+.vpm-amount{font-size:26px;font-weight:900;letter-spacing:-.02em;color:var(--up);font-variant-numeric:tabular-nums;margin:0 0 2px}
+.vpm-to{font-size:11px;color:var(--muted);margin:0 0 16px}
+.vpm-back{width:100%;height:44px;margin-top:8px;border:1px solid var(--line);border-radius:14px;background:transparent;color:var(--muted);font-family:inherit;font-weight:800;cursor:pointer;font-size:12px}
+.vpm-back:hover{border-color:rgba(37,99,235,.4);color:var(--text)}
+.vpm-card .vpin-dots{margin-bottom:14px}
 </style>
 
 <div id="vantaPinModal" aria-modal="true" role="dialog">
@@ -7847,34 +7894,141 @@ async function vantaHandleEntry() {
     <button id="vpinCancel" class="vpin-cancel">Cancel</button>
   </section>
 </div>
+
+<!-- Move realized trading profit into the wallet: pick the coin, then the PIN. -->
+<div id="vantaProfitMove" aria-modal="true" role="dialog">
+  <section class="vpm-card">
+    <h2 id="vpmTitle">Move profit to wallet</h2>
+    <p class="vpm-sub" id="vpmSub">Choose the coin you want to receive your profit in.</p>
+
+    <ol class="vpm-steps">
+      <li class="vpm-step on" id="vpmStep1">1 · COIN</li>
+      <li class="vpm-step" id="vpmStep2">2 · PIN</li>
+    </ol>
+
+    <div id="vpmCoinStep">
+      <div class="vpm-grid" id="vpmCoins"></div>
+      <p class="vpm-src" id="vpmSrc"></p>
+    </div>
+
+    <div id="vpmPinStep" hidden>
+      <div class="vpm-amount" id="vpmAmount">$0.00</div>
+      <div class="vpm-to" id="vpmTo"></div>
+      <div class="vpin-dots" id="vpmDots"><i class="vpin-dot"></i><i class="vpin-dot"></i><i class="vpin-dot"></i><i class="vpin-dot"></i><i class="vpin-dot"></i></div>
+      <input id="vpmPin" class="vpin-input" type="password" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="•••••">
+      <div class="vpin-error" id="vpmError"></div>
+    </div>
+
+    <button id="vpmNext" class="vpin-submit">Continue</button>
+    <button id="vpmBack" class="vpm-back" hidden>Back</button>
+    <button id="vpmCancel" class="vpin-cancel">Cancel</button>
+  </section>
+</div>
 <script id="vanta-security-signals-js">
+/* ---- Wallet PIN dialog: the server is the only place a PIN lives -----------
+   This used to keep the PIN in localStorage in plain text and compare it in
+   the browser, which meant the "protected" wallet was only as private as the
+   machine: any script on the page, any browser extension and anyone with the
+   profile could read the digits back. It also meant the PIN was one shared
+   browser-wide value, not per account.
+
+   Now the digits go to the server, which keeps only a bcrypt hash, and the
+   browser never persists them. Create goes to POST /api/wallet/pin, confirm
+   goes to POST /api/wallet/pin/verify. Both are scoped to the signed-in
+   account by the bearer token, and both share the server's per-account
+   lockout, so this dialog cannot be used to guess a PIN.
+
+   A PIN left behind by the old build is migrated once, on the first check:
+   it is sent to the server to be hashed, and the plain-text copy is deleted
+   immediately. If that request fails the old value is kept, so a user is
+   never locked out of their own wallet by a network blip.
+
+   Practice mode has no server, so it keeps a local copy as before; that data
+   is demo money only and is namespaced per browser profile.                     */
 (function(){
-  const PIN_KEY='vanta_demo_pin_v1';
+  const PIN_KEY='vanta_demo_pin_v1';   // practice mode only, see note above
   const modal=document.getElementById('vantaPinModal'), input=document.getElementById('vpinInput');
   const title=document.getElementById('vpinTitle'), text=document.getElementById('vpinText'), error=document.getElementById('vpinError');
   const submit=document.getElementById('vpinSubmit'), cancel=document.getElementById('vpinCancel');
   const dots=[...document.querySelectorAll('.vpin-dot')];
-  let pendingAction=null, mode='login';
-  const hasPin=()=>!!localStorage.getItem(PIN_KEY);
+  let pendingAction=null, mode='login', busy=false, pinState=null;
+  const practice=()=>(typeof accountMode!=='undefined' && accountMode==='demo');
+  const signedIn=()=>(typeof vantaToken==='function' && !!vantaToken());
   const validPin=v=>/^\d{4,5}$/.test(v);
+  const hasPin=()=>practice() ? !!localStorage.getItem(PIN_KEY) : !!pinState;
   function renderDots(){dots.forEach((d,i)=>d.classList.toggle('on',i<input.value.length));}
+
+  /* Has this account stored a PIN? Cached for the session, because every
+     protected action needs it. Practice answers from its own store. */
+  function pinStatus(){
+    if(practice() || pinState!=null) return Promise.resolve(hasPin());
+    if(!signedIn()) return Promise.resolve(false);
+    return vantaApi('/api/wallet/pin').then(r=>{
+      pinState=!!(r&&r.has_pin);
+      /* One-time hand-off of a PIN the old build left in plain text. */
+      const legacy=localStorage.getItem(PIN_KEY);
+      if(legacy && validPin(legacy)){
+        return vantaApi('/api/wallet/pin',{method:'POST',body:{pin:legacy}})
+          .then(()=>{ localStorage.removeItem(PIN_KEY); })
+          .catch(()=>{ /* keep it; the next check will try again */ });
+      }
+      return null;
+    }).catch(()=>false);
+  }
+  window.vantaPinStatus=pinStatus;
+
   function openPin(action){
-    pendingAction=action||null; mode=hasPin()?'login':'setup';
-    modal.classList.add('open'); input.value=''; error.textContent=''; renderDots();
-    title.textContent=mode==='setup'?'Create Wallet PIN':'Confirm Wallet PIN';
-    text.textContent=mode==='setup'?'Create a 4–5 digit PIN for protected wallet swaps.':'Enter your 4–5 digit wallet PIN to continue.';
-    submit.textContent=mode==='setup'?'Save PIN':'Confirm'; cancel.style.display='block';
-    requestAnimationFrame(()=>input.focus());
+    if(typeof vantaRequirePin!=='function') return;
+    pinStatus().then(exists=>{
+      pendingAction=action||null; mode=exists?'login':'setup';
+      modal.classList.add('open'); input.value=''; error.textContent=''; renderDots();
+      title.textContent=mode==='setup'?'Create Wallet PIN':'Confirm Wallet PIN';
+      text.textContent=mode==='setup'
+        ? 'Create a 4–5 digit PIN. It is stored as a hash and never kept in this browser.'
+        : 'Enter your 4–5 digit wallet PIN to continue.';
+      submit.textContent=mode==='setup'?'Save PIN':'Confirm'; cancel.style.display='block';
+      requestAnimationFrame(()=>input.focus());
+    });
   }
   function closePin(){modal.classList.remove('open');pendingAction=null;}
+  function say(msg){error.textContent=msg||'';}
+
   function unlock(){
+    if(busy) return;
     const v=input.value;
-    if(!validPin(v)){error.textContent='Use exactly 4 or 5 digits.';return;}
-    if(mode==='setup') localStorage.setItem(PIN_KEY,v);
-    else if(v!==localStorage.getItem(PIN_KEY)){error.textContent='Incorrect PIN. Try again.';input.value='';renderDots();return;}
-    const a=pendingAction; closePin(); if(typeof a==='function')a();
+    if(!validPin(v)){say('Use exactly 4 or 5 digits.');return;}
+    const a=pendingAction;
+    busy=true; submit.disabled=true; say('');
+    const done=()=>{ busy=false; submit.disabled=false; };
+
+    if(practice()){
+      /* No server in practice: same behaviour as before. */
+      if(mode==='setup'){ localStorage.setItem(PIN_KEY,v); done(); closePin(); if(typeof a==='function')a(); return; }
+      if(v!==localStorage.getItem(PIN_KEY)){ done(); say('Incorrect PIN. Try again.'); input.value=''; renderDots(); return; }
+      done(); closePin(); if(typeof a==='function')a(); return;
+    }
+
+    if(!signedIn()){
+      done(); closePin();
+      if(typeof showToast==='function') showToast('Log in to use your wallet PIN.');
+      return;
+    }
+
+    const path=mode==='setup' ? '/api/wallet/pin' : '/api/wallet/pin/verify';
+    vantaApi(path,{method:'POST',body:{pin:v}})
+      .then(()=>{
+        pinState=true; done(); closePin();
+        if(typeof a==='function')a();
+      })
+      .catch(e=>{
+        done();
+        const why=(e&&e.message)||'';
+        if(/Too many|locked|again in/i.test(why)){ say(why); return; }
+        if(mode==='login'){ say('Incorrect PIN. Try again.'); input.value=''; renderDots(); return; }
+        say(why||'Could not save your PIN. Try again.');
+      });
   }
-  input?.addEventListener('input',()=>{input.value=input.value.replace(/\D/g,'').slice(0,5);renderDots();});
+  input?.addEventListener('input',()=>{input.value=input.value.replace(/\D/g,'').slice(0,5);say('');renderDots();});
   input?.addEventListener('keydown',e=>{if(e.key==='Enter')unlock();});
   submit?.addEventListener('click',unlock); cancel?.addEventListener('click',closePin);
   // Exposed only for Wallet actions. There is NO login PIN and NO Trading PIN.
@@ -8359,84 +8513,246 @@ async function vantaHandleEntry() {
   window.vantaPlatformPrice=vantaPlatformPrice;
 
   /* ---- Dashboard "Move to Wallet": realized trading profit -> wallet ------
+     The client asked for this to be a real action with a real confirmation, so
+     the card's button no longer moves money the instant it is clicked. It opens
+     a two-step dialog: pick the coin the profit is received in, then prove it
+     is you with the wallet PIN. The transfer happens only after both.
+
+     What is NOT taken from the page is the amount. The server resolves the USD
+     profit from the closed-trade records, refuses anything already moved or
+     unrealized, re-reads the destination price itself and records the transfer
+     in the existing wallet ledger. The figure shown here is an estimate from
+     the live price feed, for the user's benefit only.
+
      This used to liquidate the whole platform holding into USDT, which had
      nothing to do with profit: it cashed out the stake too, and it paid the
      card's single signed number whether that number was a gain or a loss. It
-     now moves ONLY positive realized trading profit, and only into the wallet
-     of the coin actually traded. A loss produces no transfer at all.
-     The amount is never taken from the page — the server resolves it from the
-     closed-trade records, so nothing client-supplied can name a negative,
-     already-moved or unrealized figure. */
-  window.vantaMoveProfitToWallet=function(){
-    const btn=document.getElementById('icMoveBtn');
-    if(!btn) return;
-    /* The button is already disabled when there is no positive profit, so this
-       is the backstop for a click that raced the last refresh. */
-    if(btn.dataset.vantaBusy==='1') return;
-    const sym=String((window.vantaActiveCoin||'GOLF')||'GOLF').toUpperCase();
-    const old=btn.textContent;
-    const busy=txt=>{ btn.dataset.vantaBusy='1'; btn.disabled=true; btn.textContent=txt; };
-    const done=()=>{
-      delete btn.dataset.vantaBusy;
-      btn.textContent=old;
-      /* Leave the enabled/disabled state to the next refresh, which knows the
-         profit that is genuinely left. */
-      btn.disabled=true;
-    };
-    const repaint=()=>{
-      try{ if(typeof updateBalance==='function') updateBalance(); }catch(e){}
-      try{ if(typeof refreshBalance==='function') refreshBalance(); }catch(e){}
-      try{ if(window.vantaRefreshDashboard) window.vantaRefreshDashboard(); }catch(e){}
-      try{ if(window.vantaRefreshWalletSplit) window.vantaRefreshWalletSplit(); }catch(e){}
-      try{ if(window.vantaSyncWalletUI) window.vantaSyncWalletUI(); }catch(e){}
-      try{ if(window.vantaRefreshInfoCards) window.vantaRefreshInfoCards(); }catch(e){}
-      try{ if(window.vantaSyncPosCard) window.vantaSyncPosCard(); }catch(e){}
-    };
+     moves ONLY positive realized trading profit, and a loss produces no
+     transfer at all. */
 
-    if(typeof accountMode!=='undefined' && accountMode==='demo'){
-      const r=typeof window.vantaPracticeMoveProfit==='function'
-        ? window.vantaPracticeMoveProfit(sym, vantaPlatformPrice)
-        : {usd:0, coins:0, sym:sym};
-      if(!(Number(r&&r.usd)>0)){
-        toast(r&&r.noPrice
-          ? ('Price unavailable for '+sym+' right now — try again shortly.')
-          : (r&&r.nothingLeft
-              ? ('This '+sym+' profit is no longer in your practice trading balance.')
-              : ('No realized '+sym+' profit available to move to your wallet.')));
-        done();
-        return;
-      }
-      busy('Moving…');
-      toast(money(r.usd)+' '+sym+' profit was successfully transferred to your '+sym+' wallet.');
-      done();
-      repaint();
+  const vpm=$=>document.getElementById($);
+  const VPM_COINS_FALLBACK=['USDT','USDC','BTC','ETH','SOL','TRX','BNB','XRP','DOGE','ADA','LINK','LTC','GOLF','NOVA','ABC'];
+  let vpmSym='GOLF', vpmDest='GOLF', vpmCoins=[], vpmHasPin=false, vpmBusy=false;
+
+  const vpmUsd=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const vpmCoin=v=>{const n=Number(v||0);return n>=1000?n.toFixed(2):n.toFixed(8).replace(/0+$/,'').replace(/\.$/,'');};
+  const vpmPriceOf=s=>{
+    if(typeof vantaPlatformPrice==='function'){const p=Number(vantaPlatformPrice(s))||0;if(p>0)return p;}
+    const pl=Array.isArray(window.__vantaPlatCoins)?window.__vantaPlatCoins:[];
+    for(const c of pl){if(c&&String(c.symbol).toUpperCase()===s){const p=Number(c.price)||0;if(p>0)return p;}}
+    return 0;
+  };
+
+  /* Real, tradeable coins only. A coin the market will not price cannot be a
+     destination, so it is not offered; DOGE2 and anything else flagged
+     untradeable is left out rather than failing after the PIN is typed. */
+  function vpmLoadCoins(){
+    const demo=(typeof accountMode!=='undefined'&&accountMode==='demo');
+    if(!demo && typeof vantaApi==='function' && vantaApi.length){
+      return vantaApi('/api/platform/coins').then(r=>{
+        const list=(r&&Array.isArray(r.coins))?r.coins:[];
+        const out=list.filter(c=>c && c.tradeable!==false)
+                      .map(c=>({sym:String(c.symbol||'').toUpperCase(), px:Number(c.price)||0}))
+                      .filter(c=>c.sym);
+        if(out.length){ window.__vantaPlatCoins=list; return out; }
+        return null;
+      }).catch(()=>null).then(fallback);
+    }
+    return Promise.resolve(fallback());
+
+    function fallback(){
+      /* No server list available (practice, or the request failed): the same
+         catalog the rest of the page uses, priced from the running price map. */
+      const list=Array.isArray(window.VANTACOINS)?window.VANTACOINS:[];
+      const out=(list.length?list.map(c=>String(c.sym).toUpperCase()):VPM_COINS_FALLBACK.slice())
+        .map(s=>({sym:s, px:vpmPriceOf(s)}));
+      return out;
+    }
+  }
+
+  function vpmAvailable(){
+    const btn=document.getElementById('icMoveBtn');
+    if(btn && btn.dataset.vantaAvail) return Number(btn.dataset.vantaAvail)||0;
+    return 0;
+  }
+
+  function vpmRenderCoins(){
+    const grid=vpm('vpmCoins');
+    if(!grid) return;
+    grid.innerHTML=vpmCoins.map(c=>
+      '<button type="button" class="vpm-coin" data-sym="'+esc(c.sym)+'" aria-pressed="'+(c.sym===vpmDest)+'">'
+      +'<span class="vpm-sym">'+esc(c.sym)+'</span>'
+      +'<span class="vpm-px">'+(c.px>0?vpmUsd(c.px):'—')+'</span></button>').join('');
+  }
+
+  function vpmRenderPinStep(){
+    const usd=vpmAvailable();
+    const px=vpmPriceOf(vpmDest);
+    const coins=px>0?usd/px:0;
+    vpm('vpmAmount').textContent=vpmUsd(usd);
+    vpm('vpmTo').textContent=px>0
+      ? ('≈ '+vpmCoin(coins)+' '+vpmDest+'  ·  at '+vpmUsd(px)+' each')
+      : ('Price unavailable for '+vpmDest+' right now.');
+    vpm('vpmTitle').textContent=vpmHasPin?'Confirm your wallet PIN':'Create your wallet PIN';
+    vpm('vpmSub').textContent=vpmHasPin
+      ? ('Enter the 4–5 digit PIN for this account to move '+vpmUsd(usd)+' of profit into your '+vpmDest+' wallet.')
+      : ('Set a 4–5 digit PIN for this account. It is stored as a hash, never in this browser.');
+    vpm('vpmNext').textContent=vpmHasPin?'Move to wallet':'Create PIN & move';
+    vpmPinDots();
+  }
+
+  function vpmPinDots(){
+    const pin=vpm('vpmPin'), dots=[...(document.querySelectorAll('#vpmDots .vpin-dot'))];
+    dots.forEach((d,i)=>d.classList.toggle('on',i<(pin?pin.value.length:0)));
+  }
+
+  function vpmShow(step){
+    const two=step===2;
+    vpm('vpmCoinStep').hidden=two;
+    vpm('vpmPinStep').hidden=!two;
+    vpm('vpmBack').hidden=!two;
+    vpm('vpmStep1').className='vpm-step'+(two?' done':' on');
+    vpm('vpmStep2').className='vpm-step'+(two?' on':'');
+    if(two){ vpmRenderPinStep(); requestAnimationFrame(()=>vpm('vpmPin').focus()); }
+  }
+
+  function vpmClose(){ (vpm('vantaProfitMove')||{}).classList && vpm('vantaProfitMove').classList.remove('open'); }
+
+  function vpmRepaint(){
+    try{ if(typeof updateBalance==='function') updateBalance(); }catch(e){}
+    try{ if(typeof refreshBalance==='function') refreshBalance(); }catch(e){}
+    try{ if(window.vantaRefreshDashboard) window.vantaRefreshDashboard(); }catch(e){}
+    try{ if(window.vantaRefreshWalletSplit) window.vantaRefreshWalletSplit(); }catch(e){}
+    try{ if(window.vantaSyncWalletUI) window.vantaSyncWalletUI(); }catch(e){}
+    try{ if(window.vantaRefreshInfoCards) window.vantaRefreshInfoCards(); }catch(e){}
+    try{ if(window.vantaSyncPosCard) window.vantaSyncPosCard(); }catch(e){}
+    try{ if(typeof window.icSrcInvalidate==='function') window.icSrcInvalidate(); }catch(e){}
+  }
+
+  /* Report what actually landed, using the numbers the server returned rather
+     than the estimate that was on screen. */
+  function vpmReport(r, sym){
+    const usd=Number(r&&r.usd_moved)||0;
+    const dest=String((r&&r.dest_symbol)||r&&r.symbol||vpmDest).toUpperCase();
+    const coins=Number(r&&r.coin_amount)||0;
+    if(usd>0){
+      toast(vpmUsd(usd)+' of '+sym+' profit moved to your '+dest+' wallet'
+        +(coins>0?(' ('+vpmCoin(coins)+' '+dest+')'):'')+'.');
+    } else {
+      toast('No realized '+sym+' profit available to move to your wallet.');
+    }
+  }
+
+  function vpmSubmit(){
+    if(vpmBusy) return;
+    const demo=(typeof accountMode!=='undefined'&&accountMode==='demo');
+    const pin=vpm('vpmPin').value;
+    const err=vpm('vpmError');
+    err.textContent='';
+
+    if(demo){
+      const store=localStorage.getItem('vanta_demo_pin_v1');
+      if(!/^\d{4,5}$/.test(pin)){ err.textContent='Use exactly 4 or 5 digits.'; return; }
+      if(vpmHasPin && pin!==store){ err.textContent='Incorrect PIN. Try again.'; vpm('vpmPin').value=''; vpmPinDots(); return; }
+      vpmBusy=true; vpm('vpmNext').disabled=true;
+      const r=(typeof window.vantaPracticeMoveProfit==='function')
+        ? window.vantaPracticeMoveProfit(vpmSym, vantaPlatformPrice, vpmDest) : {usd:0};
+      vpmBusy=false; vpm('vpmNext').disabled=false;
+      vpmClose(); vpmRepaint();
+      toast(r&&r.noPrice ? ('Price unavailable for '+vpmDest+' right now — try again shortly.')
+        : (r&&r.nothingLeft ? ('This '+vpmSym+' profit is no longer in your practice trading balance.')
+        : (Number(r&&r.usd)>0
+            ? (vpmUsd(r.usd)+' of '+vpmSym+' profit moved to your '+vpmDest+' wallet ('
+               +vpmCoin(r.coins)+' '+vpmDest+').')
+            : ('No realized '+vpmSym+' profit available to move to your wallet.'))));
       return;
     }
 
     if(typeof vantaToken!=='function' || !vantaToken()){ toast('Log in to move profit to your wallet.'); return; }
-    busy('Moving…');
-    vantaApi('/api/platform/move-profit',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({symbol:sym})
-    })
-      .then(r=>{
-        const usd=Number(r&&r.usd_moved)||0;
-        const got=String((r&&r.symbol)||sym).toUpperCase();
-        if(usd>0){
-          toast(money(usd)+' '+got+' profit was successfully transferred to your '+got+' wallet.');
-        } else {
-          toast('No realized '+got+' profit available to move to your wallet.');
-        }
-        done();
-        repaint();
-      })
-      .catch(e=>{
-        toast((e&&e.message)||'Move failed — try again.');
-        done();
-        repaint();
-      });
+    if(!/^\d{4,5}$/.test(pin)){ err.textContent='Use exactly 4 or 5 digits.'; return; }
+
+    vpmBusy=true; vpm('vpmNext').disabled=true; err.textContent='';
+    /* An account with no PIN yet creates one first, then moves. Both calls are
+       scoped to the signed-in account by the bearer token. */
+    const step=!vpmHasPin
+      ? vantaApi('/api/wallet/pin',{method:'POST',body:{pin:pin}}).then(()=>
+          vantaApi('/api/platform/move-profit',{method:'POST',body:{symbol:vpmSym,dest_symbol:vpmDest,pin:pin}}))
+      : vantaApi('/api/platform/move-profit',{method:'POST',body:{symbol:vpmSym,dest_symbol:vpmDest,pin:pin}});
+
+    step.then(r=>{
+      vpmBusy=false; vpm('vpmNext').disabled=false;
+      vpmHasPin=true;
+      vpmClose(); vpmReport(r, vpmSym); vpmRepaint();
+    }).catch(e=>{
+      vpmBusy=false; vpm('vpmNext').disabled=false;
+      const why=(e&&e.message)||'';
+      if(/Too many|again in|locked/i.test(why)){ err.textContent=why; return; }
+      if(vpmHasPin){
+        err.textContent=/invalid|incorrect|wrong/i.test(why)?'Incorrect PIN. Try again.':(why||'Move failed — try again.');
+        if(/invalid|incorrect|wrong/i.test(why)){ vpm('vpmPin').value=''; vpmPinDots(); }
+        return;
+      }
+      err.textContent=why||'Could not set your PIN. Try again.';
+    });
+  }
+
+  window.vantaMoveProfitToWallet=function(){
+    const btn=document.getElementById('icMoveBtn');
+    if(!btn) return;
+    /* Already disabled when there is no positive profit; this is the backstop
+       for a click that raced the last refresh. */
+    if(btn.dataset.vantaBusy==='1') return;
+    if(!(vpmAvailable()>0)){ toast('No realized profit available to move to your wallet.'); return; }
+
+    vpmSym=String((window.vantaActiveCoin||'GOLF')||'GOLF').toUpperCase();
+    vpmDest=vpmSym;
+    vpmBusy=false;
+    const pin=vpm('vpmPin');
+    if(pin) pin.value='';
+    vpm('vpmError').textContent='';
+    vpm('vpmSrc').textContent='Profit from your closed '+vpmSym+' trades.';
+    (vpm('vantaProfitMove')||{}).classList && vpm('vantaProfitMove').classList.add('open');
+    vpmShow(1);
+
+    /* Has this account a PIN already? Decides whether step 2 asks to confirm
+       one or to create the first one. Never blocks the coin list. */
+    const known=(typeof window.vantaPinStatus==='function')?window.vantaPinStatus():Promise.resolve(false);
+    Promise.all([vpmLoadCoins(), known]).then(([coins,hasPin])=>{
+      vpmCoins=coins;
+      vpmHasPin=!!hasPin;
+      if(!vpmCoins.some(c=>c.sym===vpmDest)) vpmDest=vpmCoins.length?vpmCoins[0].sym:vpmSym;
+      vpmRenderCoins();
+      vpm('vpmSub').textContent='Choose the coin you want to receive your profit in.';
+      vpm('vpmNext').textContent='Continue';
+    }).catch(()=>{
+      vpmCoins=VPM_COINS_FALLBACK.map(s=>({sym:s,px:vpmPriceOf(s)}));
+      vpmRenderCoins();
+    });
   };
+
+  /* ---- Move-profit dialog wiring ---- */
+  (function(){
+    const grid=vpm('vpmCoins');
+    if(grid){
+      grid.addEventListener('click',e=>{
+        const b=e.target&&e.target.closest?e.target.closest('.vpm-coin'):null;
+        if(!b) return;
+        vpmDest=String(b.dataset.sym||'').toUpperCase();
+        [...grid.querySelectorAll('.vpm-coin')].forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.sym===vpmDest)));
+      });
+    }
+    vpm('vpmNext')?.addEventListener('click',()=>{
+      /* Step 1 advances to the PIN; step 2 performs the move. */
+      if(!vpm('vpmPinStep').hidden){ vpmSubmit(); return; }
+      vpmShow(2);
+    });
+    vpm('vpmBack')?.addEventListener('click',()=>vpmShow(1));
+    vpm('vpmCancel')?.addEventListener('click',vpmClose);
+    vpm('vantaProfitMove')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) vpmClose(); });
+    const pin=vpm('vpmPin');
+    pin?.addEventListener('input',()=>{ pin.value=pin.value.replace(/\D/g,'').slice(0,5); vpm('vpmError').textContent=''; vpmPinDots(); });
+    pin?.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); vpmSubmit(); } });
+  })();
 
   /* ---- Dashboard balance card quick actions (delegated) ---- */
   document.addEventListener('click',(ev)=>{
@@ -9163,6 +9479,12 @@ html[data-theme="dark"] .vw-icon{background:rgba(59,130,246,.14)!important;color
 .vpin-card{background:var(--panel)!important;border:1px solid var(--line)!important;box-shadow:0 30px 80px var(--shadow)!important;color:var(--text)!important}
 .vpin-icon{background:rgba(37,99,235,.1)!important;border:1px solid rgba(37,99,235,.22)!important}
 html[data-theme="dark"] .vpin-icon{background:rgba(59,130,246,.14)!important;border-color:rgba(59,130,246,.28)!important}
+html[data-theme="dark"] .vpm-card{background:var(--panel)!important;border:1px solid var(--line)!important;box-shadow:0 30px 80px var(--shadow)!important;color:var(--text)!important}
+html[data-theme="dark"] .vpm-coin{background:var(--panel-2)!important;border-color:var(--line)!important;color:var(--text)!important}
+html[data-theme="dark"] .vpm-coin[aria-pressed="true"]{border-color:var(--gold)!important;background:rgba(59,130,246,.16)!important}
+html[data-theme="dark"] .vpm-step{background:var(--panel-2)!important;border-color:var(--line)!important}
+html[data-theme="dark"] .vpm-step.on{background:linear-gradient(135deg,var(--gold),#1d4ed8)!important;border-color:transparent!important;color:#fff!important}
+html[data-theme="dark"] .vpm-back{background:transparent!important;color:var(--muted)!important}
 
 /* GOLF modal (dark) */
 html[data-theme="dark"] .golf-invest-sheet{background:linear-gradient(145deg,#111c3a,#0b1124)!important}
@@ -14567,6 +14889,77 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   box-shadow:none;
 }
 
+/* --- WHERE THE PROFIT CAME FROM ---------------------------------------
+   The client asked to be shown the source of the profit, not just the
+   number, so the card names the closed trades that produced it. It is a
+   disclosure: a one-line summary that expands into the per-trade list.
+   Every row is a real record the server returned — the summary count is
+   the number of rows actually in the list, never a made-up number, and
+   a trade whose profit is already in the wallet is marked as moved
+   instead of being silently offered again. */
+.ic-src{
+  display:block;
+  width:100%;
+  text-align:left;
+  margin:7px 0 0;
+  padding:6px 8px;
+  border-radius:10px;
+  border:1px solid rgba(24,223,130,.22);
+  background:rgba(24,223,130,.07);
+  color:#8fe9bf;
+  font-family:inherit;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.02em;
+  line-height:1.4;
+  cursor:pointer;
+  transition:background .15s ease,border-color .15s ease;
+}
+.ic-src:hover{background:rgba(24,223,130,.13);border-color:rgba(24,223,130,.4)}
+.ic-src[hidden]{display:none}
+.ic-src-caret{
+  display:inline-block;
+  margin-inline-start:6px;
+  font-size:8px;
+  color:#1ee68d;
+  transition:transform .15s ease;
+}
+.ic-src[aria-expanded="true"] .ic-src-caret{transform:rotate(90deg)}
+.ic-src-list{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  margin:6px 0 0;
+  padding:7px 8px;
+  border-radius:10px;
+  border:1px solid rgba(24,223,130,.14);
+  background:rgba(8,17,31,.55);
+}
+.ic-src-list[hidden]{display:none}
+.ic-src-row{
+  display:flex;
+  align-items:baseline;
+  gap:6px;
+  font-size:10px;
+  line-height:1.4;
+  color:#cdd2e3;
+}
+.ic-src-row .ic-src-amt{
+  flex:0 0 auto;
+  margin-inline-start:auto;
+  font-weight:900;
+  color:#1ee68d;
+  font-variant-numeric:tabular-nums;
+}
+.ic-src-row.moved{opacity:.5}
+.ic-src-row.moved .ic-src-amt{color:#6d7590;text-decoration:line-through}
+.ic-src-more{
+  font-size:9.5px;
+  color:#8a93b1;
+  font-weight:800;
+  padding-top:1px;
+}
+
 /* ==========================================================
    TRADE STRIP — BALANCE | TRADE AMOUNT | TRADE
 ========================================================== */
@@ -14882,20 +15275,25 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     var btn=byId('icMoveBtn');
     if(!btn) return;
     if(btn.dataset.vantaBusy==='1') return;
+    /* Published for the Move dialog, which shows the amount on its PIN step.
+       It is the same figure the card displays, and either way the server
+       recomputes it — this is never the value that gets credited. */
+    btn.dataset.vantaAvail=String(Math.max(0, Number(available)||0));
+    btn.dataset.vantaSym=String(sym||'');
     if(!(available>0)){
       btn.disabled=true;
       btn.title='No positive realized profit to move';
       return;
     }
     btn.disabled=false;
-    btn.title='Move '+usd(available)+' of realized '+sym+' profit into your '+sym+' wallet';
+    btn.title='Choose a coin and confirm with your wallet PIN to move '+usd(available)+' of realized '+sym+' profit';
   }
 
   /* PROFIT and LOSS are two separate totals and are never netted, so a loss can
      never be rendered as a negative profit:
-        win   -> PROFIT +$20.00   LOSS  $0.00
-        loss  -> PROFIT  $0.00    LOSS -$60.00
-        mixed -> PROFIT +$20.00   LOSS -$60.00     (not a netted -$40.00)
+        win   -> PROFIT $20.00    LOSS  $0.00
+        loss  -> PROFIT $0.00     LOSS -$60.00
+        mixed -> PROFIT $20.00    LOSS -$60.00     (not a netted -$40.00)
      The clamps below are a contract, not a display trick — the sign is decided
      by WHICH total a result lands in, not by the sign of a netted number. That
      is why `neg` is never applied to the PROFIT value: it stays the card's
@@ -14905,7 +15303,11 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     var loss=Math.min(0, Number(sp && sp.loss)||0);
     var available=Math.max(0, Number(sp && sp.available)||0);
 
-    setText('icProfit', (profit>0?'+':'')+usd(profit));
+    /* PROFIT is a plain amount, never a signed delta: the client asked for the
+       "+" to go, so it is simply the money. The card's green styling is left
+       exactly as it was, so a positive profit still reads as a gain — and since
+       `neg` is never applied here, it can never render red either. */
+    setText('icProfit', usd(profit));
 
     var lossEl=byId('icLoss');
     if(lossEl){
@@ -14923,7 +15325,111 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     }
 
     setMoveAvailability(available, sym);
+    refreshProfitSource(sym);
   }
+
+  /* ---------- WHERE THE PROFIT CAME FROM ----------
+     The client asked to be shown the SOURCE of the profit, not only the
+     total, so the card names the closed trades behind it.
+
+     Both the total above and this list come from the same records, so the
+     list can never contradict the number. Nothing here is invented: a row
+     exists only because a real closed trade came back from the server, and
+     the "n trades" count is literally the number of rows rendered. When
+     there are no winning trades the disclosure stays hidden instead of
+     showing an empty shell.
+
+     Live: /api/trade/history, which now carries profit_moved, so a trade
+     already transferred to the wallet is shown struck through and is NOT
+     offered as movable a second time.
+     Practice: the same realized ledger the practice total is split from. */
+  var _icSrcAt=0, _icSrcKey='', _icSrcRows=[];
+  var IC_SRC_MAX=4;
+
+  function icSrcWhen(ts){
+    var t=Date.parse(/\dZ$/.test(String(ts||''))?String(ts):String(ts)+'Z');
+    if(!t) return '';
+    var d=new Date(t), mins=Math.floor((Date.now()-t)/60000);
+    if(mins<1) return 'just now';
+    if(mins<60) return mins+'m ago';
+    if(mins<1440) return Math.floor(mins/60)+'h ago';
+    return d.getDate()+'/'+(d.getMonth()+1);
+  }
+
+  /* Practice rows, shaped to the same shape as the server's so the renderer
+     below has exactly one code path. `at` is 0 when practice has no settled
+     timestamp, and the renderer then simply omits the time rather than
+     inventing one. */
+  function icSrcPractice(sym){
+    var moved=(typeof window.vantaPracticeMovedMap==='function')?window.vantaPracticeMovedMap():{};
+    var rows=(typeof window.vantaRealizedRows==='function')?window.vantaRealizedRows():[];
+    return rows.filter(function(r){
+      return String(r.sym||'').toUpperCase()===sym && Number(r.profit||0)>0;
+    }).map(function(r){
+      return {id:String(r.id||''), symbol:sym, side:'', profit:Number(r.profit)||0,
+              settled_at:Number(r.at)||0, profit_moved:!!moved[String(r.id||'')]};
+    });
+  }
+
+  function renderProfitSource(sym, rows){
+    var btn=byId('icProfitSrc'), box=byId('icProfitSrcList');
+    if(!btn||!box) return;
+    if(!rows.length){ btn.hidden=true; box.hidden=true; box.innerHTML=''; return; }
+
+    var open=(btn.getAttribute('aria-expanded')==='true');
+    var movedCount=rows.filter(function(t){ return t.profit_moved; }).length;
+    var movable=rows.length-movedCount;
+    var label=rows.length+(rows.length===1?' winning trade ':' winning trades ');
+    label+=(movedCount
+      ? '\u00b7 '+movable+' still to move'
+      : '\u00b7 all still to move');
+    btn.innerHTML=esc(label)+'<span class="ic-src-caret">\u25b6</span>';
+    btn.hidden=false;
+
+    var shown=rows.slice(0, IC_SRC_MAX);
+    var html=shown.map(function(t){
+      var when=icSrcWhen(t.settled_at);
+      var side=t.side==='UP'?'BUY':t.side==='SELL'?'SELL':'';
+      var head=String(t.symbol||sym)+(side?' \u00b7 '+side:'')+(when?' \u00b7 '+when:'');
+      return '<div class="ic-src-row'+(t.profit_moved?' moved':'')+'">'
+        +'<span>#'+esc(String(t.id==null?'':t.id).slice(-6)||'\u2014')+'</span>'
+        +'<span>'+esc(head)+'</span>'
+        +'<span class="ic-src-amt">'+usd(t.profit)+'</span></div>';
+    }).join('');
+    if(rows.length>IC_SRC_MAX){
+      html+='<div class="ic-src-more">+'+(rows.length-IC_SRC_MAX)+' more winning '
+        +'trade'+(rows.length-IC_SRC_MAX===1?'':'s')+'</div>';
+    }
+    if(btn.__srcHtml!==html){ btn.__srcHtml=html; box.innerHTML=html; }
+    box.hidden=!open;
+  }
+
+  function refreshProfitSource(sym){
+    sym=String(sym||'GOLF').toUpperCase();
+    var btn=byId('icProfitSrc');
+    var demo=(typeof accountMode!=='undefined'&&accountMode==='demo');
+    if(demo || typeof vantaApi!=='function'){
+      renderProfitSource(sym, icSrcPractice(sym));
+      return;
+    }
+    /* Reuse the last response for a few seconds: writeResult runs on every
+       poll, and re-fetching per tick would hammer /api/trade/history. A move
+       clears the cache so the "moved" marks appear immediately. */
+    var fresh=(Date.now()-_icSrcAt)<4000;
+    if(fresh && _icSrcKey===sym){ renderProfitSource(sym, _icSrcRows); return; }
+    vantaApi('/api/trade/history').then(function(h){
+      _icSrcAt=Date.now(); _icSrcKey=sym;
+      _icSrcRows=(Array.isArray(h)?h:[]).filter(function(t){
+        return String(t.symbol||'').toUpperCase()===sym && Number(t.profit||0)>0;
+      }).sort(function(a,b){
+        return (Date.parse(b.settled_at||b.opened_at||'')||0)-(Date.parse(a.settled_at||a.opened_at||'')||0);
+      });
+      if(String(activeSymbol()).toUpperCase()!==sym) return;  /* stale */
+      renderProfitSource(sym, _icSrcRows);
+    }).catch(function(){ if(btn) btn.hidden=true; });
+  }
+
+  function icSrcInvalidate(){ _icSrcAt=0; }
 
   function refreshInfoCards(){
     var platPromise = (typeof vantaApi === 'function')
@@ -15004,6 +15510,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     });
   }
   window.vantaRefreshInfoCards = refreshInfoCards;
+  /* Lets the Move dialog drop the cached trade list after a transfer, so the
+     "already moved" marks on the source list appear without waiting out the
+     short cache window. */
+  window.icSrcInvalidate = icSrcInvalidate;
 
   function padIsVisible(){
     return !!mainEl && getComputedStyle(mainEl).display !== 'none';
@@ -15029,6 +15539,18 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   });
   wire(byId('icTradeBtn'), scrollToTrade);
   wire(byId('stripTradeBtn'), scrollToTrade);
+
+  /* The source disclosure: a plain toggle, so it stays keyboard reachable and
+     announces its state. The list markup is rebuilt by renderProfitSource, so
+     the toggle only flips the flag. */
+  wire(byId('icProfitSrc'), function(){
+    var b=byId('icProfitSrc');
+    if(!b) return;
+    var open=(b.getAttribute('aria-expanded')==='true');
+    b.setAttribute('aria-expanded', open?'false':'true');
+    var box=byId('icProfitSrcList');
+    if(box) box.hidden=open;
+  });
 
   setInterval(function(){
     if (padIsVisible()) refreshInfoCards();

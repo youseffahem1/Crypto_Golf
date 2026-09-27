@@ -86,6 +86,11 @@ class TradeOut(BaseModel):
     duration_seconds: int
     status: str
     profit: Optional[float] = None
+    # Whether this trade's profit has already been moved into a wallet. Without
+    # it a client cannot tell the profit still available to transfer from the
+    # profit already spent, so the card could not show where its figure came
+    # from.
+    profit_moved: bool = False
     opened_at: datetime
     closes_at: datetime
     settled_at: Optional[datetime] = None
@@ -186,6 +191,13 @@ class WalletTransferItem(BaseModel):
     symbol: str
     amount: float
     direction: str
+    # Both already exist on the WalletTransfer row. They are what let the history
+    # tell a realized-PROFIT move apart from an ordinary same-coin balance
+    # move, and what says how much the coin was worth in USDT at the time.
+    # Optional, so pre-existing rows that predate the distinction read as an
+    # ordinary balance move rather than failing.
+    kind: str = "BALANCE"
+    usd_value: Optional[float] = None
     created_at: datetime
 
     class Config:
@@ -237,25 +249,79 @@ class PlatformOverviewOut(BaseModel):
 # --- Realized profit -> wallet ------------------------------------------------
 
 class MoveProfitRequest(BaseModel):
-    """Which coin's realized profit to cash out. Defaults to the coin the
-    terminal is trading. No amount is accepted: the server decides how much is
-    transferable, so the client can never ask for a figure that includes a loss,
-    a stake, an unrealized value or an already-transferred profit."""
+    """Which coin's realized profit to cash out, and into which wallet.
+
+    Defaults to the coin the terminal is trading. No amount is accepted: the
+    server decides how much is transferable, so the client can never ask for a
+    figure that includes a loss, a stake, an unrealized value or an
+    already-transferred profit.
+
+    `dest_symbol` is the wallet the user picked. Omit it and the profit lands in
+    the traded coin's wallet exactly as before; supply it and the server
+    validates it against the real coin list and credits that wallet instead, at
+    that coin's own authoritative price.
+
+    `pin` is the account's Wallet PIN. It is verified server-side against the
+    authenticated user's own hash, before any balance is read or written."""
 
     symbol: str = Field(default="GOLF", max_length=20)
+    dest_symbol: Optional[str] = Field(default=None, max_length=20)
+    pin: str = Field(default="", max_length=32)
 
 
 class MoveProfitOut(BaseModel):
     ok: bool = True
-    symbol: str
-    usd_moved: float          # profit, in USDT, debited from TRADING
-    coin_amount: float        # credited to the SYMBOL wallet
-    price: float
+    symbol: str                # the coin that was TRADED (profit source)
+    dest_symbol: str           # the wallet that was actually credited
+    usd_moved: float           # profit, in USDT, debited from TRADING
+    coin_amount: float         # credited to the DEST wallet
+    price: float               # destination coin's USD price used
     direction: str = "TO_WALLET"
     kind: str = "PROFIT"
-    trading_balance: float    # trading USDT after
-    wallet_balance: float     # SYMBOL wallet after
-    available_profit: float   # realized profit still movable — 0 right after a full move
+    trades_settled: int = 0    # closed trades stamped profit_moved by this move
+    trading_balance: float     # trading USDT after
+    wallet_balance: float      # DEST wallet after
+    available_profit: float    # realized profit still movable — 0 right after a full move
+
+
+# --- Per-account Wallet PIN ----------------------------------------------------
+
+class WalletPinStatusOut(BaseModel):
+    """Whether this account has stored a Wallet PIN yet. The hash is never
+    returned — the page only needs to know which step to show."""
+
+    has_pin: bool
+
+
+class WalletPinSetRequest(BaseModel):
+    """Create or replace the caller's own Wallet PIN.
+
+    `current_pin` is required to REPLACE an existing PIN, so a stolen session
+    alone cannot silently take the wallet over by setting a new PIN."""
+
+    pin: str = Field(min_length=4, max_length=5)
+    current_pin: Optional[str] = Field(default=None, max_length=32)
+
+
+class WalletPinSetOut(BaseModel):
+    ok: bool = True
+    has_pin: bool = True
+
+
+class WalletPinVerifyRequest(BaseModel):
+    """Check the signed-in account's own PIN without moving anything.
+
+    `max_length` is generous on purpose: the real gate for a 4-5 digit PIN is
+    `auth.valid_pin_format`, and this field must not reject a too-LONG PIN with
+    a validation error before the caller gets the normal "invalid PIN" answer.
+    An over-long PIN is still refused, just with one consistent message."""
+
+    pin: str = Field(max_length=256)
+
+
+class WalletPinVerifyOut(BaseModel):
+    ok: bool
+    has_pin: bool = True
 
 
 class UserSearchOut(BaseModel):

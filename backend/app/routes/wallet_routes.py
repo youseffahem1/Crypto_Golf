@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import schemas, models, deposit_monitor, swap_service
+from .. import schemas, models, deposit_monitor, swap_service, auth
 from ..config import (
     PLATFORM_COINS, NORMAL_WALLET_COINS, DEPOSIT_ADDRESSES, WITHDRAW_ADDRESSES,
 )
@@ -9,6 +9,89 @@ from ..database import get_db
 from ..auth import get_current_user_id
 
 router = APIRouter(prefix="/api/wallet", tags=["wallet"])
+
+
+# --- Per-account Wallet PIN ----------------------------------------------------
+# One stored PIN per account, hashed with the same bcrypt context as
+# password_hash. The user id comes from the bearer token and NEVER from the
+# request body, so one account can never set, read or check another's PIN.
+
+@router.get("/pin", response_model=schemas.WalletPinStatusOut)
+def wallet_pin_status(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """Whether this account has a Wallet PIN stored, so the page knows whether to
+    show the create step or the confirm step. The hash itself is never returned."""
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    return schemas.WalletPinStatusOut(has_pin=bool(user.pin_hash))
+
+
+@router.post("/pin", response_model=schemas.WalletPinSetOut)
+def wallet_pin_set(
+    payload: schemas.WalletPinSetRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Store the caller's own Wallet PIN as a bcrypt hash.
+
+    Creating the first PIN needs nothing but the session. Replacing an existing
+    one additionally needs `current_pin`, so a hijacked session cannot quietly
+    take over the wallet by setting a new PIN.
+
+    The digits are never persisted, never logged and never echoed back."""
+    user = db.query(models.User).filter_by(id=user_id).with_for_update().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found.")
+
+    if not auth.valid_pin_format(payload.pin):
+        raise HTTPException(status_code=400, detail="PIN must be exactly 4 or 5 digits.")
+
+    if user.pin_hash:
+        if not payload.current_pin:
+            raise HTTPException(
+                status_code=400, detail="Enter your current PIN to change it."
+            )
+        # Route the existing PIN through the same gate every other PIN check
+        # uses, so changing the PIN cannot be used to slip past the lockout:
+        # a wrong current PIN still counts as an attempt and a locked account
+        # still cannot change its PIN.
+        err = auth.check_wallet_pin(user_id, payload.current_pin, user.pin_hash)
+        if err:
+            raise HTTPException(status_code=400, detail=err)
+
+    user.pin_hash = auth.hash_pin(payload.pin)
+    db.commit()
+    # Keep the per-user attempt history from leaking into the new PIN's life.
+    auth.clear_pin_failures(user_id)
+    return schemas.WalletPinSetOut(ok=True, has_pin=True)
+
+
+@router.post("/pin/verify", response_model=schemas.WalletPinVerifyOut)
+def wallet_pin_verify(
+    payload: schemas.WalletPinVerifyRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Check the caller's own Wallet PIN without changing anything.
+
+    This is the verification primitive the PIN dialog needs so it can stop
+    keeping a plaintext copy of the PIN in the browser: the dialog asks the
+    server, the server answers. It is the same `check_wallet_pin` used by the
+    profit transfer, sharing one attempt counter and one lockout, so a caller
+    cannot get unlimited guesses by alternating between the two.
+
+    It moves no money, and it deliberately reveals nothing beyond whether this
+    PIN is the right one for the signed-in account. An account that has no PIN
+    at all is told so rather than silently passing."""
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    if not user.pin_hash:
+        return schemas.WalletPinVerifyOut(ok=False, has_pin=False)
+    err = auth.check_wallet_pin(user_id, payload.pin, user.pin_hash)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return schemas.WalletPinVerifyOut(ok=True, has_pin=True)
 
 
 def _explorer_url(tx_hash: str) -> str:
@@ -101,6 +184,11 @@ def wallet_transfer_history(db: Session = Depends(get_db), user_id: str = Depend
         schemas.WalletTransferItem(
             id=r.id, symbol=r.symbol, amount=float(r.amount or 0.0),
             direction=r.direction.value if hasattr(r.direction, "value") else r.direction,
+            # Read off the row so a realized-profit move is distinguishable from
+            # an ordinary balance move, and so the USD value it was worth is
+            # visible. Rows that predate the distinction fall back to BALANCE.
+            kind=r.kind.value if hasattr(r.kind, "value") else (r.kind or "BALANCE"),
+            usd_value=(float(r.usd_value) if r.usd_value is not None else None),
             created_at=r.created_at,
         )
         for r in rows

@@ -8,7 +8,7 @@ investment cost basis from the user's own swap ledger (average-cost method)
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import schemas, models, market_service, swap_service, trading_service
+from .. import schemas, models, market_service, swap_service, trading_service, auth
 from ..config import (
     PLATFORM_COINS, PLATFORM_COIN_NAMES, PLATFORM_COINS_LIVE,
 )
@@ -116,11 +116,15 @@ def move_profit(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Move the user's positive REALIZED profit into the SAME coin's wallet.
+    """Move the user's positive REALIZED profit into a chosen wallet.
 
     Powers the trading screen's "Move to Wallet" button, and is the only bridge
-    between a trade result and the wallet. Three things are deliberate:
+    between a trade result and the wallet. Five things are deliberate:
 
+      * the Wallet PIN is checked FIRST, against the row belonging to the
+        authenticated user, before a single balance is read or written — so a
+        wrong PIN cannot leave a partial transfer behind, and there is no
+        ordering in which the money moves and the check is skipped;
       * the amount is resolved here from the closed-trade records, so a request
         cannot name a number at all. A loss, a stake, an unrealized value, the
         trading balance and an already-transferred profit are all outside what
@@ -128,12 +132,24 @@ def move_profit(
       * `realized_split` splits the result first, so a losing account has
         $0.00 available and is refused here rather than being handed a negative
         transfer;
-      * the destination is `symbol` — the coin actually traded — so a GOLF
-        profit lands in the GOLF wallet.
+      * `symbol` is the coin traded and so selects which trades are spent;
+      * the destination is `dest_symbol` when given, else `symbol`, and is
+        validated against the real coin list either way.
 
     Trades settled as a loss are never eligible: only profit > 0 is summed, and
     only a positive amount is accepted by swap_service.move_profit_to_wallet.
     """
+    # 1. The PIN, before anything else happens.
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Account not found.")
+    pin_error = auth.check_wallet_pin(user_id, payload.pin, user.pin_hash)
+    if pin_error:
+        # Nothing has been written at this point, so an invalid PIN moves no
+        # money and changes no balance.
+        raise HTTPException(status_code=400, detail=pin_error)
+
+    # 2. The source: the coin traded, and the profit still un-moved.
     symbol = (payload.symbol or "GOLF").strip().upper()
     split = trading_service.realized_split(db, user_id, symbol)
     available = float(split["available"])
@@ -143,26 +159,40 @@ def move_profit(
             detail=f"No realized {symbol} profit available to move to your wallet.",
         )
 
+    # 3. The destination: the user's pick, or the traded coin by default.
+    dest = (payload.dest_symbol or symbol).strip().upper()
+    if dest not in market_service.SUPPORTED_SYMBOLS:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported destination coin: {dest}."
+        )
+
+    # 4. The price is the DESTINATION coin's, because the profit is USDT and the
+    #    wallet is credited in coin. This is the same conversion the wallet
+    #    already uses everywhere else — no second rate is invented here.
     try:
-        price = market_service.get_usd_price(db, symbol)
+        price = market_service.get_usd_price(db, dest)
     except Exception:
         price = 0.0
     if not price or price <= 0:
         raise HTTPException(
-            status_code=400, detail=f"Price unavailable for {symbol} right now — try again shortly."
+            status_code=400, detail=f"Price unavailable for {dest} right now — try again shortly."
         )
 
     try:
-        result = swap_service.move_profit_to_wallet(db, user_id, symbol, available, price)
+        result = swap_service.move_profit_to_wallet(
+            db, user_id, symbol, available, price, dest
+        )
     except swap_service.SwapError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     after = trading_service.realized_split(db, user_id, symbol)
     return schemas.MoveProfitOut(
         symbol=result["symbol"],
+        dest_symbol=result["dest_symbol"],
         usd_moved=result["usd_moved"],
         coin_amount=result["amount"],
         price=result["price"],
+        trades_settled=result["trades_settled"],
         trading_balance=result["trading_balance"],
         wallet_balance=result["wallet_balance"],
         available_profit=after["available"],

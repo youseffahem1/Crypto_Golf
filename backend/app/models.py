@@ -18,6 +18,12 @@ class User(Base):
     id = Column(String, primary_key=True, default=gen_id)
     email = Column(String, nullable=False, unique=True, index=True)
     password_hash = Column(String, nullable=False)
+    # The account's 4–5 digit Wallet PIN, stored ONLY as a bcrypt hash — the
+    # exact mechanism password_hash already uses (see auth.hash_password). It
+    # is never stored, logged or returned in plaintext. NULL means the account
+    # has not set a PIN yet, which is the state of every pre-existing row, so
+    # the column is nullable and needs no backfill.
+    pin_hash = Column(String, nullable=True)
     label = Column(String, nullable=True)
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

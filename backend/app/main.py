@@ -145,6 +145,12 @@ def _migrate():
             conn.execute(text(f"UPDATE {table} SET {column} = 0 WHERE {column} IS NULL"))
         logging.info(f"[migrate] added {table}.{column} = 0 (wallet starts empty)")
 
+    # --- Per-account Wallet PIN ------------------------------------------------
+    # Adds the stored side of the Wallet PIN the page already collects: the
+    # hash only, never the digits. Additive and nullable, so every pre-existing
+    # row is simply "no PIN set yet" and no data is read, rewritten or removed.
+    _add_column("users", "pin_hash", "VARCHAR(255)")
+
     # --- Realized profit classification --------------------------------------
     # trades.profit_moved marks a winning trade whose profit has already been
     # moved into the wallet. Every pre-existing trade predates the feature, so

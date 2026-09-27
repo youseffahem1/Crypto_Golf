@@ -15241,6 +15241,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   function sign(n){ return n > 0 ? '+' : (n < 0 ? '' : ''); }
   function setText(id, txt){ var el = byId(id); if (el) el.textContent = txt; }
   function setNeg(id, neg){ var el = byId(id); if (el) el.classList.toggle('neg', !!neg); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
   /* The coin the terminal is currently trading. The card reports THIS coin's
      realized result and "Move to Wallet" credits THIS coin's wallet, so the

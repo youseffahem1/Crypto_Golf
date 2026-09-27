@@ -66,6 +66,12 @@ def realized_split(db: Session, user_id: str, symbol: str | None = None) -> dict
     are never transferable, so a losing account reports $0.00 available rather
     than a negative, un-transferable amount.
 
+    `profit` is the all-time realized total and deliberately still counts a
+    winner whose profit has already been transferred: moving money to the wallet
+    does not rewrite the trading history. `available` is the part of it that is
+    still movable, and it is what the PROFIT card reads — see the card in
+    frontend/index.html, which is the one place that shows $0.00 after a move.
+
     With no `symbol` the result also carries `by_symbol`, so per-coin figures
     come from the very same classification pass as the total rather than a
     second, independently-written one."""

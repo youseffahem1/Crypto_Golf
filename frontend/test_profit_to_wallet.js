@@ -111,10 +111,14 @@ check('only the profit is transferable', btn.disabled, false);
 check('button offers exactly the profit', /\$20\.00/.test(btn.title), true);
 
 console.log('\n[5] CASE 4 — after a move, available is $0 so nothing can move again');
-render({ profit: 20, loss: 0, available: 0 });
-check('the profit total is history, not a balance', els.icProfit.textContent, '$20.00');
-check('Move to Wallet disabled', btn.disabled, true);
-check('the sub-line says nothing is available', /No realized GOLF profit to move yet/.test(els.icProfitSub.textContent), true);
+  render({ profit: 20, loss: 0, available: 0 });
+  /* The ledger keeps the $20.00 as history; this card follows the money, which
+     is what the client asked for. `available` is 0, so the figure is $0.00 and
+     the sub-line says where the profit went instead of leaving $0.00 unexplained. */
+  check('the card follows the money, not the history', els.icProfit.textContent, '$0.00');
+  check('Move to Wallet disabled', btn.disabled, true);
+  check('the sub-line says the profit is already in the wallet',
+    /already in your wallet/.test(els.icProfitSub.textContent), true);
 
 console.log('\n[6] only a POSITIVE realized amount is ever treated as transferable');
 [[0, false], [-1, false], [NaN, false], [0.004, true], [20, true]].forEach(([v, want]) => {

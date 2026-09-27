@@ -15277,15 +15277,24 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
      is why `neg` is never applied to the PROFIT value: it stays the card's
      existing green profit styling, and a positive profit can never be red. */
   function writeResult(sp, sym){
-    var profit=Math.max(0, Number(sp && sp.profit)||0);
-    var loss=Math.min(0, Number(sp && sp.loss)||0);
     var available=Math.max(0, Number(sp && sp.available)||0);
+    var loss=Math.min(0, Number(sp && sp.loss)||0);
 
-    /* PROFIT is a plain amount, never a signed delta: the client asked for the
+    /* THIS card is the one place that follows the money instead of the history.
+       It reads `available` — the realized profit that has not left for the
+       wallet yet — not the all-time `profit` the ledger keeps. So the moment a
+       move succeeds, PROFIT drops to $0.00 here, and a later reload agrees,
+       because the server still reports that nothing is left to move.
+
+       Nothing else changes: the account summary, the trade history and
+       `total_trade_profit` all keep the full record, so a transfer parks the
+       profit in the wallet without ever rewriting what was earned.
+
+       PROFIT is a plain amount, never a signed delta: the client asked for the
        "+" to go, so it is simply the money. The card's green styling is left
-       exactly as it was, so a positive profit still reads as a gain — and since
-       `neg` is never applied here, it can never render red either. */
-    setText('icProfit', usd(profit));
+       exactly as it was, and since `neg` is never applied here, it can never
+       render red either. */
+    setText('icProfit', usd(available));
 
     var lossEl=byId('icLoss');
     if(lossEl){
@@ -15295,11 +15304,16 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
 
     var sub=byId('icProfitSub');
     if(sub){
+      var earned=Number(sp && sp.profit)||0;
       sub.textContent = available>0
         ? 'Move '+usd(available)+' of realized '+sym+' profit into your '+sym+' wallet.'
-        : (loss<0
-            ? 'No profit to move \u2014 closed '+sym+' trades are down '+usd(Math.abs(loss))+'.'
-            : 'No realized '+sym+' profit to move yet.');
+        : (earned>0
+            /* PROFIT reads $0.00 here, so say where it went rather than leaving
+               the client to wonder. LOSS keeps its own figure on the card. */
+            ? 'All '+usd(earned)+' of '+sym+' profit is already in your wallet.'
+            : (loss<0
+                ? 'No profit to move \u2014 closed '+sym+' trades are down '+usd(Math.abs(loss))+'.'
+                : 'No realized '+sym+' profit to move yet.'));
     }
 
     setMoveAvailability(available, sym);

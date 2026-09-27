@@ -198,14 +198,34 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
 
 (async function run() {
 
-  console.log('[1] the card renders PROFIT with no "+"');
+  console.log('[1] the card renders the PROFIT that is still movable, with no "+"');
   page.writeResult({ profit: 25, loss: -10, available: 20 }, 'GOLF');
-  check('PROFIT has no plus sign', els.icProfit.textContent, '$25.00');
+  check('PROFIT is the amount the button will move, not the all-time total',
+    els.icProfit.textContent, '$20.00');
   ok('and never a minus either', !/[-+]\$/.test(els.icProfit.textContent));
   check('LOSS still shows its own sign', els.icLoss.textContent, '\u2212$10.00');
   check('the subline names the amount that can move', /Move \$20\.00/.test(els.icProfitSub.textContent), true);
   await tick(); await tick();
   ok('the untradeable coin is not offered', !/DOGE2/.test(els.vpmCoins.innerHTML));
+
+  console.log('\n[1a] once the profit is moved, THIS card reads $0.00');
+  /* The client asked for the figure to zero after a transfer, and only on this
+     card: the ledger keeps the all-time profit, the card follows the money. The
+     server reports available_profit 0, so a reload lands on the same place. */
+  page.writeResult({ profit: 25, loss: -10, available: 0 }, 'GOLF');
+  check('PROFIT reads $0.00 after the move', els.icProfit.textContent, '$0.00');
+  ok('LOSS is untouched by a move', els.icLoss.textContent === '\u2212$10.00');
+  check('and the button is disabled with nothing left',
+    els.icMoveBtn.disabled, true);
+  check('the subline says the profit is already in the wallet',
+    /already in your wallet/.test(els.icProfitSub.textContent), true);
+  /* An account that never earned anything reads differently, so the two states
+     can never be mistaken for each other. */
+  page.writeResult({ profit: 0, loss: 0, available: 0 }, 'GOLF');
+  check('a never-earned profit still reads as "not yet"',
+    /No realized GOLF profit to move yet/.test(els.icProfitSub.textContent), true);
+  page.writeResult({ profit: 25, loss: -10, available: 20 }, 'GOLF');
+  check('PROFIT is back for the rest of the flow', els.icProfit.textContent, '$20.00');
 
   console.log('\n[1b] the per-trade source list is gone from the page for good');
   /* It was a disclosure under the PROFIT figure listing the closed trades behind

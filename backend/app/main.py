@@ -32,6 +32,83 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 
+def _columns(table):
+    """Reflected column definitions for `table`, or None if it does not exist.
+
+    A fresh Inspector is built on every call on purpose. The DDL below runs its
+    own transactions, so reusing one long-lived Inspector would reflect a
+    snapshot taken before those changes and the "does this column already
+    exist?" guard would be answering from stale information."""
+    insp = inspect(engine)
+    if not insp.has_table(table):
+        return None
+    return {c["name"]: c for c in insp.get_columns(table)}
+
+
+def _add_column(table, column, decl):
+    """Add one column if it is missing, in its own transaction.
+
+    One statement per transaction is deliberate: a failed ALTER aborts the whole
+    surrounding PostgreSQL transaction, so batching unrelated columns together
+    means a single bad declaration silently rolls back every other column in
+    the batch (they are then re-attempted on the next boot, but the deployment
+    that ran them stays broken until then)."""
+    existing = _columns(table)
+    if existing is None or column in existing:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {decl}"))
+    logging.info(f"[migrate] added {table}.{column}")
+
+
+# Dialects that can change an existing column's type constraints in place.
+# SQLite (the local/dev default) has no boolean type and no ALTER COLUMN at
+# all, so on a SQLite database the broken `DEFAULT 0` is already the correct
+# representation of FALSE and there is nothing to repair there — the NULL
+# backfill still runs, being plain DML that works on every backend.
+_ALTERABLE_DIALECTS = ("postgresql", "mysql", "mariadb")
+
+
+def _migrate_profit_moved():
+    """Bring trades.profit_moved to a real BOOLEAN, however the database got
+    there.
+
+    An earlier build declared it `BOOLEAN DEFAULT 0`. SQLite stores that happily
+    (dynamic typing) so it did land there, but PostgreSQL rejects it outright:
+
+        ERROR: column "profit_moved" is of type boolean but default expression
+               is of type integer
+
+    A rejected DDL is rolled back, so on PostgreSQL the column is simply absent
+    and gets created correctly below. Any database where the broken form did
+    apply instead is repaired in place rather than skipped, so all databases
+    converge on the one declaration in models.py. The NOT NULL part is not
+    cosmetic: the profit-to-wallet guard is `profit_moved IS FALSE`
+    (swap_service.move_realized_profit) and a NULL row does not match that
+    predicate, so NULLs would let the same profit be moved into a wallet twice.
+    """
+    existing = _columns("trades")
+    if existing is None:
+        return
+    if "profit_moved" not in existing:
+        _add_column("trades", "profit_moved", "BOOLEAN DEFAULT FALSE NOT NULL")
+        return
+
+    # The column is already there (a pre-fix database, or a later rebuild):
+    # re-assert the correct definition. Both statements are no-ops when the
+    # column is already exactly as declared in models.py.
+    nullable = existing["profit_moved"].get("nullable", True)
+    with engine.begin() as conn:
+        if nullable:
+            conn.execute(text("UPDATE trades SET profit_moved = FALSE WHERE profit_moved IS NULL"))
+            logging.info("[migrate] trades.profit_moved: backfilled NULLs")
+        if engine.dialect.name in _ALTERABLE_DIALECTS:
+            if nullable:
+                conn.execute(text("ALTER TABLE trades ALTER COLUMN profit_moved SET NOT NULL"))
+            conn.execute(text("ALTER TABLE trades ALTER COLUMN profit_moved SET DEFAULT FALSE"))
+            logging.info("[migrate] trades.profit_moved: NOT NULL, default FALSE")
+
+
 def _migrate():
     """Additive, non-destructive migrations for pre-existing databases
     (create_all does not alter existing tables). Every existing trade is a
@@ -43,11 +120,9 @@ def _migrate():
     0, so every pre-existing account starts with an empty wallet — exactly the
     required behaviour: a wallet only ever holds funds the user explicitly
     moved into it."""
-    insp = inspect(engine)
-    if not insp.has_table("trades"):
+    if _columns("trades") is None:
         return
-    columns = {c["name"] for c in insp.get_columns("trades")}
-    if "symbol" not in columns:
+    if "symbol" not in _columns("trades"):
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE trades ADD COLUMN symbol VARCHAR(20) DEFAULT 'GOLF'"))
             conn.execute(text("UPDATE trades SET symbol = 'GOLF' WHERE symbol IS NULL OR symbol = ''"))
@@ -59,43 +134,33 @@ def _migrate():
         ("users", "golf_wallet_balance"),
         ("coin_balances", "wallet_balance"),
     ]
-    with engine.begin() as conn:
-        for table, column in additive:
-            if not insp.has_table(table):
-                continue
-            existing = {c["name"] for c in insp.get_columns(table)}
-            if column in existing:
-                continue
+    for table, column in additive:
+        existing = _columns(table)
+        if existing is None or column in existing:
+            continue
+        with engine.begin() as conn:
             conn.execute(text(
                 f"ALTER TABLE {table} ADD COLUMN {column} FLOAT DEFAULT 0 NOT NULL"
             ))
             conn.execute(text(f"UPDATE {table} SET {column} = 0 WHERE {column} IS NULL"))
-            logging.info(f"[migrate] added {table}.{column} = 0 (wallet starts empty)")
+        logging.info(f"[migrate] added {table}.{column} = 0 (wallet starts empty)")
 
     # --- Realized profit classification --------------------------------------
     # trades.profit_moved marks a winning trade whose profit has already been
     # moved into the wallet. Every pre-existing trade predates the feature, so
-    # nothing has been moved yet and 0 is the correct backfill: their profit is
-    # still fully available to transfer.
+    # nothing has been moved yet and FALSE is the correct backfill: their
+    # profit is still fully available to transfer.
     #
     # wallet_transfers.kind / .usd_value let the audit history tell a realized
     # profit move (USDT out of trading, coin into the wallet) apart from an
     # ordinary same-coin balance move. Existing rows predate the distinction, so
     # they are ordinary balance moves.
-    more = [
-        ("trades", "profit_moved", "BOOLEAN DEFAULT 0 NOT NULL"),
+    _migrate_profit_moved()
+    for table, column, decl in [
         ("wallet_transfers", "kind", "VARCHAR(20) DEFAULT 'BALANCE' NOT NULL"),
         ("wallet_transfers", "usd_value", "FLOAT"),
-    ]
-    with engine.begin() as conn:
-        for table, column, decl in more:
-            if not insp.has_table(table):
-                continue
-            existing = {c["name"] for c in insp.get_columns(table)}
-            if column in existing:
-                continue
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {decl}"))
-            logging.info(f"[migrate] added {table}.{column}")
+    ]:
+        _add_column(table, column, decl)
 
 
 _migrate()

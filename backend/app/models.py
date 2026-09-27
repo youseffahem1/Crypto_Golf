@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Enum, Integer, Text, Numeric, UniqueConstraint
+from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Enum, Integer, Text, Numeric, UniqueConstraint, false
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -130,7 +130,7 @@ class Trade(Base):
     # moment the profit is transferred the trade is stamped, and every later
     # "available profit" query simply stops counting it. A losing trade is
     # never stamped and is never transferable.
-    profit_moved = Column(Boolean, default=False, nullable=False)
+    profit_moved = Column(Boolean, default=False, server_default=false(), nullable=False)
     opened_at = Column(DateTime, default=datetime.utcnow)
     closes_at = Column(DateTime, nullable=False)
     settled_at = Column(DateTime, nullable=True)

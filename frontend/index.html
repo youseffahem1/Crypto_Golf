@@ -2954,9 +2954,22 @@ async function vantaApi(path, options = {}) {
     const token = vantaToken();
     if (token) headers["Authorization"] = "Bearer " + token;
 
+    const init = Object.assign({}, options);
+    /* Serialize a plain object here, once, for every caller. fetch() coerces any
+       body that is not a string to the literal text "[object Object]", so the
+       server saw a body it could not parse and answered with a validation error
+       instead of doing the work. FormData, URLSearchParams, Blob and streams
+       carry their own serializer and are passed through untouched. */
+    if (init.body) {
+        const tag = Object.prototype.toString.call(init.body);
+        if (tag === '[object Object]' || tag === '[object Array]') {
+            init.body = JSON.stringify(init.body);
+        }
+    }
+
     let res;
     try {
-        res = await fetch(VANTA_API_BASE + path, Object.assign({}, options, { headers }));
+        res = await fetch(VANTA_API_BASE + path, Object.assign({}, init, { headers }));
         // Any HTTP response means the backend is reachable again.
         vantaNetDown = false;
     } catch (e) {
@@ -2974,11 +2987,26 @@ async function vantaApi(path, options = {}) {
     try { data = await res.json(); } catch (e) { /* no body */ }
 
     if (!res.ok) {
-        const message = (data && data.detail) ? data.detail : ("Request failed (" + res.status + ")");
-        throw new Error(message);
+        throw new Error(vantaErrorMessage(data, res.status));
     }
 
     return data;
+}
+
+/* A message that is always readable. `detail` is a plain string for an
+   HTTPException, but a request the server could not validate answers with a LIST
+   of error objects — stringifying that produced the literal "[object Object]" in
+   the UI, which told the user nothing about what to do next. */
+function vantaErrorMessage(data, status) {
+    const d = data && data.detail;
+    if (typeof d === 'string' && d) return d;
+    if (Array.isArray(d)) {
+        for (let i = 0; i < d.length; i++) {
+            if (d[i] && typeof d[i].msg === 'string' && d[i].msg) return d[i].msg;
+        }
+    }
+    if (d && typeof d === 'object' && typeof d.msg === 'string' && d.msg) return d.msg;
+    return "Request failed (" + status + ")";
 }
 
 

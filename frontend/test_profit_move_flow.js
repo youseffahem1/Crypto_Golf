@@ -30,14 +30,14 @@ function slice(fromMarker, toMarker) {
 }
 
 /* The dashboard-cards block: mainEl, byId, usd, setText, setNeg, activeSymbol,
-   liveSplit, setMoveAvailability, writeResult and the profit-source renderer. */
+   liveSplit, setMoveAvailability, vantaApplyMovedProfit and writeResult. */
 const renderSrc = slice('if (window.__vantaDashboardCards) return;', 'function refreshInfoCards(){');
 /* The two-step Move dialog, its helpers and its wiring. */
 const moveSrc = slice('"Move to Wallet": realized trading profit',
   '/* ---- Dashboard balance card quick actions (delegated) ---- */');
-/* The cards' button wiring, which includes the profit-source disclosure toggle.
-   It lives below refreshInfoCards, so it needs its own slice. Started a little
-   earlier than `wire()` itself so the scroll helper it calls is in scope. */
+/* The cards' button wiring. It lives below refreshInfoCards, so it needs its
+   own slice. Started a little earlier than `wire()` itself so the scroll
+   helper it calls is in scope. */
 const wireSrc = slice('function scrollToTrade(){', 'setInterval(function(){');
 
 const FAILS = [];
@@ -363,7 +363,7 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
   PIN_GATE.typed = '12345';             /* the client picks any 4–5 digits */
   els.icMoveBtn.dataset.vantaAvail = '20';
   TOASTS.length = 0;
-  MOVE_BEHAVIOUR = { status: 200, body: { symbol: 'GOLF', dest_symbol: 'GOLF', usd_moved: 20, coin_amount: 10, price: 2 } };
+  MOVE_BEHAVIOUR = { status: 200, body: { symbol: 'GOLF', dest_symbol: 'GOLF', usd_moved: 20, coin_amount: 10, price: 2, available_profit: 0 } };
   REQUESTS.length = 0;
   page.open();
   await tick(); await tick();
@@ -380,6 +380,18 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
   check('carrying the same PIN', moveReqs()[0].body.pin, '12345');
   check('the dialog closed', modalOpen(), false);
   ok('and the client is told what landed', /GOLF profit moved to your GOLF wallet/.test(TOASTS[TOASTS.length - 1]));
+
+  /* The client asked for this exactly: the moment the PIN is in and the money
+     has moved, #icProfit reads $0.00. `vantaRefreshInfoCards` is a no-op stub in
+     this sandbox, so nothing but the move response itself can have done it —
+     the card is not waiting on a later poll. */
+  check('#icProfit is $0.00 as soon as the move returns', els.icProfit.textContent, '$0.00');
+  check('the Move button is off with nothing left', els.icMoveBtn.disabled, true);
+  ok('and the sub-line says the profit is now in the wallet',
+    /is now in your wallet/.test(els.icProfitSub.textContent));
+  check('the amount it moved is named in that sub-line',
+    /\$20\.00 of GOLF profit is now in your wallet/.test(els.icProfitSub.textContent), true);
+
   /* From now on the same PIN is asked for, exactly as Convert asks for it. */
   check('the account now has that PIN', PIN_GATE.stored, '12345');
   TOASTS.length = 0;

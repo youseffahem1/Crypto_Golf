@@ -8681,6 +8681,11 @@ async function vantaHandleEntry() {
     if(usd>0){
       toast(vpmUsd(usd)+' of '+sym+' profit moved to your '+dest+' wallet'
         +(coins>0?(' ('+vpmCoin(coins)+' '+dest+')'):'')+'.');
+      /* Written from the server's own `available_profit` before the refresh
+         runs, so #icProfit is already 0.00 the moment the money is credited. */
+      if(typeof window.vantaApplyMovedProfit==='function'){
+        window.vantaApplyMovedProfit(r&&r.available_profit, usd, sym);
+      }
     } else {
       toast('No realized '+sym+' profit available to move to your wallet.');
     }
@@ -8706,7 +8711,14 @@ async function vantaHandleEntry() {
     if(typeof accountMode!=='undefined' && accountMode==='demo'){
       const r=(typeof window.vantaPracticeMoveProfit==='function')
         ? window.vantaPracticeMoveProfit(sym, vantaPlatformPrice, dest) : {usd:0};
-      done(); vpmClose(); vpmRepaint();
+      done(); vpmClose();
+      /* The practice ledger stamps the moved rows before this returns, so the
+         card is told the same way the live path tells it — nothing left, and
+         the button off, without waiting for a refresh. */
+      if(r&&Number(r.usd)>0&&typeof window.vantaApplyMovedProfit==='function'){
+        window.vantaApplyMovedProfit(0, r.usd, sym);
+      }
+      vpmRepaint();
       toast(r&&r.noPrice ? ('Price unavailable for '+dest+' right now — try again shortly.')
         : (r&&r.nothingLeft ? ('This '+sym+' profit is no longer in your practice trading balance.')
         : (Number(r&&r.usd)>0
@@ -15266,6 +15278,27 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     btn.disabled=false;
     btn.title='Choose a coin and confirm with your wallet PIN to move '+usd(available)+' of realized '+sym+' profit';
   }
+
+  /* A move just succeeded and the server has already answered with what is left
+     to move (`available_profit`). The card is written from THAT answer rather
+     than waiting for the next /api/platform/coins poll, so #icProfit is $0.00
+     the moment the money is credited — not for a second while that request is
+     in flight, and not at all if it fails. LOSS is deliberately untouched: a
+     transfer cannot change it.
+
+     `movedUsd` is what the server says it just credited, so the sub-line can
+     name the amount instead of leaving a bare $0.00 to puzzle over. */
+  window.vantaApplyMovedProfit=function(availableAfter, movedUsd, sym){
+    var s=String(sym||'GOLF').toUpperCase();
+    var avail=Math.max(0, Number(availableAfter)||0);
+    var moved=Math.max(0, Number(movedUsd)||0);
+    setText('icProfit', usd(avail));
+    var sub=byId('icProfitSub');
+    if(sub && avail<=0 && moved>0){
+      sub.textContent='All '+usd(moved)+' of '+s+' profit is now in your wallet.';
+    }
+    setMoveAvailability(avail, s);
+  };
 
   /* PROFIT and LOSS are two separate totals and are never netted, so a loss can
      never be rendered as a negative profit:

@@ -14489,6 +14489,37 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     if(vantaPosTab==='deals') vtLoadDeals(false);
   }
 
+  /* Floating P/L for EVERY open position on the account, not only the coin on
+     screen. `closeValueFor` prices a position with the single `currentPrice` it
+     can see, so it is only right for the active symbol — running a BTC
+     position through GOLF's price would invent a number. So each position is
+     priced with its OWN symbol's server price, using the same binary maths
+     closeValueFor uses, and a position whose price is not known yet is left out
+     of the total rather than guessed at. `skipped` is reported so the caller
+     can say so instead of quietly showing a short total as if it were whole. */
+  function vtOpenNetAll(all, sym){
+    const prices=window.vantaServerPrices||{};
+    const active=String(sym||'GOLF').toUpperCase();
+    let net=0, count=0, skipped=0;
+    (all||[]).forEach(t=>{
+      const amt=Number(t.amount||0);
+      const entry=Number(t.entryPrice||0);
+      if(!amt||!entry) return;
+      const s=String(t.symbol||'GOLF').toUpperCase();
+      const now=(s===active)
+        ? Number(currentPrice)||entry
+        : Number(prices[s])||0;
+      if(!(now>0)){ skipped++; return; }
+      const ratio=now/entry;
+      const sell=(t.direction==='DOWN'||t.direction==='SELL');
+      let value=sell ? amt*(2-ratio) : amt*ratio;
+      if(sell && value<amt*0.01) value=amt*0.01;
+      net+=value-amt;
+      count++;
+    });
+    return {net:net, count:count, skipped:skipped};
+  }
+
   function updatePosCard(){
     if(!mainEl || mainEl.style.display==='none') return;
     ensurePosCard();
@@ -14500,7 +14531,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     const all=(typeof trades!=='undefined'&&Array.isArray(trades))?trades:[];
     const tradesArr=all.filter(t=>(t.symbol||'GOLF')===sym);
     const price=(typeof currentPrice!=='undefined'&&!isNaN(currentPrice))?Number(currentPrice):0;
-    let invested=0, value=0, pl=0, pct=0, swap=0, comm=0;
+    let invested=0, value=0, pct=0, swap=0, comm=0;
     const rows=[];
     tradesArr.forEach(t=>{
       const amt=Number(t.amount||0);
@@ -14508,7 +14539,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       if(!amt)return;
       const val=(typeof closeValueFor==='function')?closeValueFor(t):amt;
       const pnl=val-amt;
-      invested+=amt; value+=val; pl+=pnl;
+      invested+=amt; value+=val;
       swap+=Number(t.swap||0); comm+=Number(t.commission||0);
       const pk=vantaPeakBest(t);
       rows.push({dir:vtSide(t.direction), id:t.id, sym:t.symbol||'GOLF', entry, amt, pnl, val,
@@ -14529,45 +14560,72 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       const n=Number(net)||0;
       return { profit:n>0?n:0, loss:n<0?n:0, net:n };
     };
-    const sp=vtSplit(pl);
     const ls0=__vantaLastSettled||null;
     const sr=ls0?vtSplit(ls0.profit):null;
 
     /* ---- account summary ----------------------------------------------------
-       Profit and Loss are the ACCOUNT totals over every closed trade, split so
-       a loss is never shown as a negative profit. They come from the closed
-       trade records themselves, not from the floating P/L above and not from
-       the last trade's number on screen:
-         win   -> Profit +$0.24   Loss $0.00
-         loss  -> Profit  $0.00   Loss -$60.00
-         mixed -> Profit +$0.24   Loss -$60.00
-       The merge below is keyed by trade id, so re-reading the same deal can
-       never double-count it. */
+       Profit and Loss are the ACCOUNT totals, split so a loss is never shown as
+       a negative profit. Two halves go into them:
+         - the closed trade records, merged below and keyed by trade id, so
+           re-reading the same deal can never double-count it;
+         - the P/L still riding on open positions, priced per coin below.
+       The client asked for this block to be the one place that shows everything
+       they have made and lost, so an open position counts here from the moment
+       it is opened — its money is already theirs — and stops counting the
+       instant it closes and its payout lands in the funds. Neither half is ever
+       taken from the last trade's number on screen, and the two are never netted
+       against each other:
+         open win + closed loss -> Profit +$X   Loss -$Y
+         open loss + closed win -> Profit +$Y   Loss -$X                    */
     vtDeals().forEach(vtNoteRealized);
     const acct=vtRealizedTotals();
-    setN('vtaPProfit',acct.profit>0?'+'+money(acct.profit):money(0));
+
+    /* vtOpenNetAll prices every open position with its OWN coin's price, so the
+       totals cover the whole account and not just the symbol on screen. Both
+       halves are split by the same vtSplit, which is what keeps an open loss
+       from ever showing up as a negative profit. */
+    const openAll=vtOpenNetAll(all, sym);
+    const of=vtSplit(openAll.net);
+    const totalProfit=acct.profit+of.profit;
+    const totalLoss=acct.loss+of.loss;
+
+    setN('vtaPProfit',totalProfit>0?'+'+money(totalProfit):money(0));
     const profitEl=$('vtaPProfit');
-    if(profitEl) profitEl.className='vta-acct-v '+(acct.profit>0?'up':'zero');
-    setN('vtaPLoss',acct.loss<0?'−'+money(Math.abs(acct.loss)):money(0));
+    if(profitEl) profitEl.className='vta-acct-v '+(totalProfit>0?'up':'zero');
+    setN('vtaPLoss',totalLoss<0?'−'+money(Math.abs(totalLoss)):money(0));
     const lossEl=$('vtaPLoss');
-    if(lossEl) lossEl.className='vta-acct-v '+(acct.loss<0?'down':'zero');
+    if(lossEl) lossEl.className='vta-acct-v '+(totalLoss<0?'down':'zero');
 
     /* Balance is the only row that mixes the two: funds on the account were
        already credited the real payout when each trade closed, so the realized
-       totals above must NOT be added again. Only the still-open floating P/L is
-       missing from the balance, and only that belongs here. */
+       half of the totals above must NOT be added again. Only the still-open
+       floating P/L is missing from the balance, and only that belongs here —
+       and it is every open position's, so closing a trade in another coin moves
+       this row too. */
     const funds=vtFunds();
     setN('vtaPDeposit',money(funds));
     setN('vtaPSwap',money(swap));
     setN('vtaPComm',money(comm));
-    const total=funds+sp.profit+sp.loss;
+    const total=funds+openAll.net;
     setN('vtaPBalance',money(total));
     const balEl=$('vtaPBalance');
-    if(balEl) balEl.className='vta-acct-v '+(sp.net>0?'up':sp.net<0?'down':'');
+    if(balEl) balEl.className='vta-acct-v '+(openAll.net>0?'up':openAll.net<0?'down':'');
     const sub=$('vtaAcctSub');
-    if(sub) sub.textContent=acct.count
-      ? acct.count+(acct.count===1?' closed trade':' closed trades')+' · won '+money(acct.profit)+' · lost '+money(Math.abs(acct.loss))
-      : 'No closed trades yet';
+    if(sub){
+      /* Both halves are described separately, so a client with open trades and no
+         closed ones is not told "no trades yet" while money is on screen. */
+      const open=openAll.count?(openAll.count+(openAll.count===1?' open position':' open positions')):'';
+      const shut=acct.count?(acct.count+(acct.count===1?' closed trade':' closed trades')):'';
+      const parts=[];
+      if(open) parts.push(open);
+      if(shut) parts.push(shut);
+      if(open||shut) parts.push('won '+money(totalProfit)+' · lost '+money(Math.abs(totalLoss)));
+      sub.textContent=parts.length?parts.join(' · '):'No trades yet';
+      /* A position whose price has not arrived is left out of the totals, so it
+         says so rather than passing off a short figure as if it were the whole
+         account. */
+      if(openAll.skipped) sub.textContent+=' · '+openAll.skipped+' awaiting price';
+    }
     const meta=$('vtaPosMeta');
     if(meta) meta.innerHTML='<i class="vta-dot"></i>'+esc(sym)+' <b>'+coinFmt(price)+'</b>';
 

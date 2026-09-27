@@ -78,9 +78,8 @@ function El(id) {
 
 const els = {};
 for (const id of ['icProfit', 'icLoss', 'icProfitSub', 'icMoveBtn', 'icProfitSrc', 'icProfitSrcList',
-  'vantaProfitMove', 'vpmTitle', 'vpmSub', 'vpmStep1', 'vpmStep2', 'vpmCoinStep', 'vpmPinStep',
-  'vpmCoins', 'vpmSrc', 'vpmAmount', 'vpmTo', 'vpmDots', 'vpmPin', 'vpmError',
-  'vpmNext', 'vpmBack', 'vpmCancel']) els[id] = El(id);
+  'vantaProfitMove', 'vpmTitle', 'vpmSub', 'vpmStep1', 'vpmStep2', 'vpmCoinStep',
+  'vpmCoins', 'vpmSrc', 'vpmAmount', 'vpmTo', 'vpmNext', 'vpmCancel']) els[id] = El(id);
 /* classList needs its backing set bound to the element it belongs to. */
 for (const id in els) els[id].classList._s = els[id].classes;
 
@@ -122,6 +121,27 @@ function apiStub(path, opts) {
 }
 const tick = () => new Promise(r => setImmediate(r));
 
+/* The shared Wallet PIN gate, stubbed the way the page really runs it.
+   The Move dialog has no PIN field of its own any more: it calls
+   vantaRequirePin(action, opts), and on the FIRST use that gate CREATES whatever
+   4–5 digits the client typed, on every use after it VERIFIES the same one, and
+   only then hands those digits to the action. So `typed` is what the user types
+   into the one prompt, and `stored` is the account's PIN. */
+const PIN_GATE = {
+  stored: '4321', typed: '4321', open: false, opts: null, _action: null,
+  ask(action, opts) { this._action = action; this.opts = opts || null; this.open = true; },
+  /* The user pressed the shared dialog's button. */
+  submit() {
+    const pin = this.typed;
+    REQUESTS.push(this.stored == null
+      ? { path: '/api/wallet/pin', method: 'POST', body: { pin } }
+      : { path: '/api/wallet/pin/verify', method: 'POST', body: { pin } });
+    this.stored = pin;
+    this.open = false;
+    this._action(pin);
+  },
+};
+
 const sandbox = {
   Math, Number, String, Array, Object, JSON, Boolean, isFinite, Date, Promise, RegExp, Error, parseInt, parseFloat,
   setTimeout: (fn) => { try { fn(); } catch (e) { /* page timers are not under test */ } },
@@ -137,10 +157,9 @@ const sandbox = {
   localStorage: { _d: {}, getItem(k) { return this._d[k] === undefined ? null : this._d[k]; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } },
   accountMode: 'live',
   vantaApi: apiStub,
-  /* The real page exposes this from its PIN dialog script. The move dialog only
-     needs the contract, so the stub answers it from the same PIN state the
-     /api/wallet/pin stub uses. */
-  vantaPinStatus: () => Promise.resolve(PIN_STATE.has_pin),
+  /* The real page exposes this from its PIN dialog script. The Move dialog is
+     required to route through it, so it is stubbed with the same contract. */
+  vantaRequirePin: (action, opts) => PIN_GATE.ask(action, opts),
   vantaToken: () => 'test-token',
   vantaPlatformPrice: (s) => (COINS.find(c => c.symbol === s && c.tradeable) || { price: 0 }).price,
   vantaActiveCoin: 'GOLF',
@@ -217,75 +236,115 @@ const moveReqs = () => REQUESTS.filter(r => r.path === '/api/platform/move-profi
   await tick(); await tick();
   check('the dialog is open', modalOpen(), true);
   check('the coin step is showing', els.vpmCoinStep.hidden, false);
-  check('the PIN step is not yet', els.vpmPinStep.hidden, true);
   check('the next button says Continue', els.vpmNext.textContent, 'Continue');
   ok('real coins are offered', /BTC/.test(els.vpmCoins.innerHTML) && /GOLF/.test(els.vpmCoins.innerHTML));
   ok('untradeable coins are not offered', !/DOGE2/.test(els.vpmCoins.innerHTML));
+  check('the amount is the available profit', els.vpmAmount.textContent, '$20.00');
   check('nothing has been sent yet', moveReqs().length, 0);
+  check('and the PIN has not been asked for yet', PIN_GATE.open, false);
 
-  console.log('\n[3] choosing a coin moves to the PIN step without sending anything');
+  console.log('\n[3] Continue hands over to the SHARED account PIN and sends nothing yet');
   const btc = El('btc'); btc.dataset.sym = 'BTC';
   els.vpmCoins.coins = [btc];
   fire('vpmCoins', 'click', { target: { closest: () => btc }, preventDefault() {} });
   fire('vpmNext', 'click');
   check('the chosen coin is the one the page will use', page.dest(), 'BTC');
-  check('the PIN step is showing', els.vpmPinStep.hidden, false);
-  check('the coin step is gone', els.vpmCoinStep.hidden, true);
-  check('a back button is offered', els.vpmBack.hidden, false);
-  check('the amount is the available profit', els.vpmAmount.textContent, '$20.00');
+  ok('the shared PIN prompt opened', PIN_GATE.open === true);
+  check('and it was told the amount is already chosen', page.dest(), 'BTC');
   ok('the preview names the chosen coin', /BTC/.test(els.vpmTo.textContent));
   ok('and the price it used', /50,000|\$50000/.test(els.vpmTo.textContent));
+  check('the coin step is still there to come back to', els.vpmCoinStep.hidden, false);
+  check('the step pills say the PIN is up next', els.vpmStep2.className, 'vpm-step on');
   check('still nothing has been sent', moveReqs().length, 0);
+  ok('the prompt offers to CREATE a PIN, not confirm one', /Create PIN & move/.test(PIN_GATE.opts.setupButton || ''));
 
-  console.log('\n[4] a WRONG PIN is refused and moves nothing');
-  MOVE_BEHAVIOUR = { status: 400, detail: 'Invalid PIN.' };
-  els.vpmPin.value = '9999';
-  fire('vpmNext', 'click');
-  await tick(); await tick();
-  check('the PIN step stays open', els.vpmPinStep.hidden, false);
-  check('the error is shown in the dialog', /Incorrect PIN/.test(els.vpmError.textContent), true);
-  check('the wrong PIN was sent for checking', moveReqs().length, 1);
-  check('no success message was shown', TOASTS.length, 0);
-  check('the dialog was not closed', modalOpen(), true);
-
-  console.log('\n[5] a lockout is reported as such, not as a wrong PIN');
-  MOVE_BEHAVIOUR = { status: 400, detail: 'Too many incorrect PIN attempts. Try again in 42s.' };
-  els.vpmPin.value = '9999';
-  fire('vpmNext', 'click');
-  await tick(); await tick();
-  check('the lockout message reaches the user', /Too many/.test(els.vpmError.textContent), true);
-  check('the PIN is not described as merely wrong', /Incorrect PIN/.test(els.vpmError.textContent), false);
-
-  console.log('\n[6] the CORRECT PIN moves the profit into the chosen coin');
+  console.log('\n[4] the CORRECT PIN is what gets sent — the one the user typed');
   MOVE_BEHAVIOUR = { status: 200, body: { symbol: 'GOLF', dest_symbol: 'BTC', usd_moved: 20, coin_amount: 0.0004, price: 50000 } };
-  els.vpmPin.value = '4321';
-  fire('vpmNext', 'click');
+  PIN_GATE.typed = '4321';
+  PIN_GATE.submit();
   await tick(); await tick();
+  check('the existing PIN was verified, not re-created',
+    REQUESTS.filter(r => r.path === '/api/wallet/pin/verify').length, 1);
   const req = moveReqs()[moveReqs().length - 1];
   check('it posted to the profit endpoint', req.path, '/api/platform/move-profit');
   check('it named the traded coin', req.body.symbol, 'GOLF');
   check('it named the CHOSEN destination', req.body.dest_symbol, 'BTC');
-  check('it sent the PIN', req.body.pin, '4321');
+  check('it sent the PIN the user typed', req.body.pin, '4321');
   ok('it sent NO amount of its own', !('amount' in req.body) && !('usd_moved' in req.body));
   check('the dialog closed', modalOpen(), false);
   ok('the user is told what landed', /GOLF profit moved to your BTC wallet/.test(TOASTS[TOASTS.length - 1]));
   ok('and the real amount is quoted, not the estimate', /0\.0004/.test(TOASTS[TOASTS.length - 1]));
 
-  console.log('\n[7] an account with no PIN yet is offered the create step first');
-  PIN_STATE = { has_pin: false };
+  console.log('\n[5] the PIN that Convert uses is the PIN that moves the profit');
+  /* One account, one hash, one gate. A PIN created through the shared prompt is
+     the same PIN this flow is asked for next time, because both go through
+     vantaRequirePin -> /api/wallet/pin. */
+  check('the flow has no PIN store of its own', /vpmPin\b/.test(moveSrc), false);
+  check('and no PIN set call of its own', /api\/wallet\/pin/.test(moveSrc), false);
+  check('it only ever asks through the shared gate', /window\.vantaRequirePin\(/.test(moveSrc), true);
+
+  console.log('\n[6] a move the server refuses moves nothing and says why');
   els.icMoveBtn.dataset.vantaAvail = '20';
+  TOASTS.length = 0;
+  MOVE_BEHAVIOUR = { status: 400, detail: 'Invalid PIN.' };
+  page.open();
+  await tick(); await tick();
+  PIN_GATE.typed = '9999';
+  fire('vpmNext', 'click');
+  const badReqs = moveReqs().length;
+  PIN_GATE.submit();
+  await tick(); await tick();
+  check('a request was made and refused', moveReqs().length, badReqs + 1);
+  check('no success message was shown', TOASTS.length, 1);
+  check('the reason reached the user', /Invalid PIN/.test(TOASTS[TOASTS.length - 1]), true);
+  check('the dialog stayed open to try again', modalOpen(), true);
+
+  console.log('\n[6b] a lockout is reported as such, not as a wrong PIN');
+  TOASTS.length = 0;
+  MOVE_BEHAVIOUR = { status: 400, detail: 'Too many incorrect PIN attempts. Try again in 42s.' };
+  fire('vpmNext', 'click');
+  PIN_GATE.submit();
+  await tick(); await tick();
+  check('the lockout message reaches the user', /Too many/.test(TOASTS[TOASTS.length - 1]), true);
+  check('the PIN is not described as merely wrong', /Incorrect PIN/.test(TOASTS[TOASTS.length - 1]), false);
+
+  console.log('\n[7] the FIRST move: the client is asked to create a PIN, and it just moves');
+  PIN_GATE.stored = null;               /* this account has no PIN yet */
+  PIN_GATE.typed = '12345';             /* the client picks any 4–5 digits */
+  els.icMoveBtn.dataset.vantaAvail = '20';
+  TOASTS.length = 0;
+  MOVE_BEHAVIOUR = { status: 200, body: { symbol: 'GOLF', dest_symbol: 'GOLF', usd_moved: 20, coin_amount: 10, price: 2 } };
+  REQUESTS.length = 0;
   page.open();
   await tick(); await tick();
   fire('vpmNext', 'click');
-  check('it asks to create a PIN', /Create your wallet PIN/.test(els.vpmTitle.textContent), true);
-  check('the button says it will create and move', /Create PIN & move/.test(els.vpmNext.textContent), true);
-  els.vpmPin.value = '4321';
-  MOVE_BEHAVIOUR = { status: 200, body: { symbol: 'GOLF', dest_symbol: 'GOLF', usd_moved: 20, coin_amount: 10, price: 2 } };
-  fire('vpmNext', 'click');
+  ok('the shared prompt is open', PIN_GATE.open === true);
+  check('and the button says it will create and move', PIN_GATE.opts.setupButton, 'Create PIN & move');
+  PIN_GATE.submit();
   await tick(); await tick();
-  ok('a PIN was stored before the move',
-    REQUESTS.some(r => r.path === '/api/wallet/pin' && r.method === 'POST' && r.body.pin === '4321'));
-  ok('then the profit moved', moveReqs().length > 0);
+  const pinAt = REQUESTS.findIndex(r => r.path === '/api/wallet/pin' && r.method === 'POST');
+  const moveAt = REQUESTS.findIndex(r => r.path === '/api/platform/move-profit');
+  ok('a PIN was stored before the move', pinAt > -1 && pinAt < moveAt);
+  check('it stored exactly what the client typed', REQUESTS[pinAt].body.pin, '12345');
+  check('then the profit moved', moveReqs().length, 1);
+  check('carrying the same PIN', moveReqs()[0].body.pin, '12345');
+  check('the dialog closed', modalOpen(), false);
+  ok('and the client is told what landed', /GOLF profit moved to your GOLF wallet/.test(TOASTS[TOASTS.length - 1]));
+  /* From now on the same PIN is asked for, exactly as Convert asks for it. */
+  check('the account now has that PIN', PIN_GATE.stored, '12345');
+  TOASTS.length = 0;
+  page.open();
+  await tick(); await tick();
+  fire('vpmNext', 'click');
+  check('a later move asks for the existing PIN instead', PIN_GATE.opts.loginButton, 'Move to wallet');
+  /* Which of the two labels the user actually sees is the SHARED dialog's call,
+     made from whether the account already has a PIN — not the move flow's. */
+  const pinSrc = slice('function openPin(action, opts){', 'function closePin(){');
+  check('it shows the create label only when there is no PIN yet',
+    /mode===\'setup\' \? o\.setupButton : o\.loginButton/.test(pinSrc), true);
+  check('and it decides that from the stored PIN', /mode=exists\?\'login\':\'setup\'/.test(pinSrc), true);
+  fire('vpmCancel', 'click');
+  check('the dialog can be cancelled', modalOpen(), false);
 
   console.log('\n[8] nothing is moveable when there is no positive profit');
   page.writeResult({ profit: 0, loss: -60, available: 0 }, 'GOLF');

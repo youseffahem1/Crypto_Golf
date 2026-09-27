@@ -169,17 +169,19 @@ btn.dataset.vantaBusy = '';
 api.setMoveAvailability(0, 'GOLF');
 check('re-disabled once there is no profit', btn.disabled, true);
 
-console.log('\n[11] the button opens Select Coin -> PIN, and only then moves');
+console.log('\n[11] the button opens Select Coin, then the SHARED account PIN, and only then moves');
 /* The old assertions here matched the source text of a handler that moved money
    the instant it was clicked. That is exactly what the client asked to change, so
    this section no longer pattern-matches: it runs the real dialog code out of the
    file, against a stub DOM, and inspects the request it actually makes. */
 check('the dialog exists in the page', /id="vantaProfitMove"/.test(html), true);
 check('it has a coin step', /id="vpmCoinStep"/.test(html), true);
-check('it has a PIN step', /id="vpmPinStep"/.test(html), true);
+check('it has NO PIN field of its own', /id="vpmPin"/.test(html), false);
+check('it has no PIN error line of its own', /id="vpmError"/.test(html), false);
+check('the PIN prompt it uses is the shared one', /id="vantaPinModal"/.test(html), true);
 check('it posts to the profit endpoint', /\/api\/platform\/move-profit/.test(moveSrc), true);
-check('it sends the traded symbol', /symbol:vpmSym/.test(moveSrc), true);
-check('it sends the CHOSEN destination', /dest_symbol:vpmDest/.test(moveSrc), true);
+check('it sends the traded symbol', /symbol:sym/.test(moveSrc), true);
+check('it sends the CHOSEN destination', /dest_symbol:dest/.test(moveSrc), true);
 check('it sends the PIN for the server to verify', /pin:pin/.test(moveSrc), true);
 check('no amount is sent by the client', /\bamount:/.test(moveSrc), false);
 check('it no longer liquidates the whole holding', /api\/platform\/liquidate/.test(moveSrc), false);
@@ -190,9 +192,14 @@ check('it refreshes the trading UI', /vantaRefreshInfoCards/.test(moveSrc), true
 check('it refreshes the wallet UI', /vantaRefreshWalletSplit/.test(moveSrc), true);
 check('it refreshes the profit source list', /icSrcInvalidate/.test(moveSrc), true);
 check('it offers only tradeable coins', /tradeable!==false/.test(moveSrc), true);
-check('a wrong PIN is reported in the dialog, not swallowed', /Incorrect PIN/.test(moveSrc), true);
-check('a lockout is surfaced to the user', /Too many/.test(moveSrc), true);
-check('an account with no PIN is offered the create step', /!vpmHasPin/.test(moveSrc), true);
+/* ONE PIN for the account: the move goes through the same gate Convert uses, so a
+   PIN created on either surface is the PIN the other one asks for. */
+check('it goes through the shared PIN gate', /window\.vantaRequirePin\(/.test(moveSrc), true);
+check('it does not prompt for a PIN itself', /vpmPin\b|vpmError\b/.test(moveSrc), false);
+check('it does not set a PIN itself', /api\/wallet\/pin/.test(moveSrc), false);
+check('first use offers "Create PIN & move"', /setupButton:'Create PIN & move'/.test(moveSrc), true);
+check('later uses offer "Move to wallet"', /loginButton:'Move to wallet'/.test(moveSrc), true);
+check('a failure is said out loud, never swallowed', /toast\(why\|\|'Move failed/.test(moveSrc), true);
 
 console.log('\n[12] practice mode applies the same rules');
 check('practice splits profit and loss', /window\.vantaPracticeRealizedSplit=function/.test(practiceSrc), true);

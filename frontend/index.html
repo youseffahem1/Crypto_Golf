@@ -7923,7 +7923,9 @@ async function vantaHandleEntry() {
   </section>
 </div>
 
-<!-- Move realized trading profit into the wallet: pick the coin, then the PIN. -->
+<!-- Move realized trading profit into the wallet: pick the coin, then confirm
+     with the SAME account PIN that Convert uses. The PIN prompt itself is the
+     shared one (vantaPinModal), so there is exactly one PIN per account. -->
 <div id="vantaProfitMove" aria-modal="true" role="dialog">
   <section class="vpm-card">
     <h2 id="vpmTitle">Move profit to wallet</h2>
@@ -7935,20 +7937,13 @@ async function vantaHandleEntry() {
     </ol>
 
     <div id="vpmCoinStep">
+      <div class="vpm-amount" id="vpmAmount">$0.00</div>
+      <div class="vpm-to" id="vpmTo"></div>
       <div class="vpm-grid" id="vpmCoins"></div>
       <p class="vpm-src" id="vpmSrc"></p>
     </div>
 
-    <div id="vpmPinStep" hidden>
-      <div class="vpm-amount" id="vpmAmount">$0.00</div>
-      <div class="vpm-to" id="vpmTo"></div>
-      <div class="vpin-dots" id="vpmDots"><i class="vpin-dot"></i><i class="vpin-dot"></i><i class="vpin-dot"></i><i class="vpin-dot"></i><i class="vpin-dot"></i></div>
-      <input id="vpmPin" class="vpin-input" type="password" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="•••••">
-      <div class="vpin-error" id="vpmError"></div>
-    </div>
-
     <button id="vpmNext" class="vpin-submit">Continue</button>
-    <button id="vpmBack" class="vpm-back" hidden>Back</button>
     <button id="vpmCancel" class="vpin-cancel">Cancel</button>
   </section>
 </div>
@@ -8005,16 +8000,22 @@ async function vantaHandleEntry() {
   }
   window.vantaPinStatus=pinStatus;
 
-  function openPin(action){
+  function openPin(action, opts){
     if(typeof vantaRequirePin!=='function') return;
+    /* `opts` lets the caller say what its button means, so one shared prompt can
+       still read correctly for the action that opened it. Everything omitted
+       falls back to the neutral wording above. */
+    const o=opts||{};
     pinStatus().then(exists=>{
       pendingAction=action||null; mode=exists?'login':'setup';
       modal.classList.add('open'); input.value=''; error.textContent=''; renderDots();
-      title.textContent=mode==='setup'?'Create Wallet PIN':'Confirm Wallet PIN';
-      text.textContent=mode==='setup'
+      title.textContent=(o.title) || (mode==='setup'?'Create Wallet PIN':'Confirm Wallet PIN');
+      text.textContent=(mode==='setup' ? o.setupText : o.loginText) || o.text || (mode==='setup'
         ? 'Create a 4–5 digit PIN. It is stored as a hash and never kept in this browser.'
-        : 'Enter your 4–5 digit wallet PIN to continue.';
-      submit.textContent=mode==='setup'?'Save PIN':'Confirm'; cancel.style.display='block';
+        : 'Enter your 4–5 digit wallet PIN to continue.');
+      submit.textContent=(mode==='setup' ? o.setupButton : o.loginButton)
+        || o.button || (mode==='setup'?'Save PIN':'Confirm');
+      cancel.style.display='block';
       requestAnimationFrame(()=>input.focus());
     });
   }
@@ -8031,9 +8032,9 @@ async function vantaHandleEntry() {
 
     if(practice()){
       /* No server in practice: same behaviour as before. */
-      if(mode==='setup'){ localStorage.setItem(PIN_KEY,v); done(); closePin(); if(typeof a==='function')a(); return; }
+      if(mode==='setup'){ localStorage.setItem(PIN_KEY,v); done(); closePin(); if(typeof a==='function')a(v); return; }
       if(v!==localStorage.getItem(PIN_KEY)){ done(); say('Incorrect PIN. Try again.'); input.value=''; renderDots(); return; }
-      done(); closePin(); if(typeof a==='function')a(); return;
+      done(); closePin(); if(typeof a==='function')a(v); return;
     }
 
     if(!signedIn()){
@@ -8046,7 +8047,11 @@ async function vantaHandleEntry() {
     vantaApi(path,{method:'POST',body:{pin:v}})
       .then(()=>{
         pinState=true; done(); closePin();
-        if(typeof a==='function')a();
+        /* The digits are handed straight to the action, never stored: the
+           profit transfer re-checks the PIN server-side, so it has to send the
+           same value this dialog just accepted. Nothing else needs it, and
+           `v` dies with this closure. */
+        if(typeof a==='function')a(v);
       })
       .catch(e=>{
         done();
@@ -8060,7 +8065,12 @@ async function vantaHandleEntry() {
   input?.addEventListener('keydown',e=>{if(e.key==='Enter')unlock();});
   submit?.addEventListener('click',unlock); cancel?.addEventListener('click',closePin);
   // Exposed only for Wallet actions. There is NO login PIN and NO Trading PIN.
-  window.vantaRequirePin=function(action){openPin(action);};
+  /* ONE account PIN, one dialog, one meaning. Convert, the wallet and the profit
+     transfer all come through here, so the PIN the user creates on the first
+     protected action is the same PIN every later action asks for. The action
+     receives the accepted digits as its argument — use them immediately or not
+     at all; the browser never keeps them. */
+  window.vantaRequirePin=function(action, opts){openPin(action,opts);};
   document.getElementById('vfxSignalGuide')?.remove();
   document.addEventListener('click',function(e){
     const b=e.target.closest('[data-open="vfxConvertModal"]'); if(!b)return;
@@ -8084,6 +8094,7 @@ async function vantaHandleEntry() {
   const close=id=>$(id)?.classList.remove('open');
   const toast=msg=>{if(typeof showToast==='function')showToast(msg);else alert(msg)};
   const money=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   // Coin catalog shared by Convert + Invest — every listed currency.
   window.VANTACOINS=[
@@ -8560,7 +8571,7 @@ async function vantaHandleEntry() {
 
   const vpm=$=>document.getElementById($);
   const VPM_COINS_FALLBACK=['USDT','USDC','BTC','ETH','SOL','TRX','BNB','XRP','DOGE','ADA','LINK','LTC','GOLF','NOVA','ABC'];
-  let vpmSym='GOLF', vpmDest='GOLF', vpmCoins=[], vpmHasPin=false, vpmBusy=false;
+  let vpmSym='GOLF', vpmDest='GOLF', vpmCoins=[], vpmBusy=false;
 
   const vpmUsd=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const vpmCoin=v=>{const n=Number(v||0);return n>=1000?n.toFixed(2):n.toFixed(8).replace(/0+$/,'').replace(/\.$/,'');};
@@ -8613,35 +8624,23 @@ async function vantaHandleEntry() {
       +'<span class="vpm-px">'+(c.px>0?vpmUsd(c.px):'—')+'</span></button>').join('');
   }
 
-  function vpmRenderPinStep(){
+  /* One PIN for the whole account, so this dialog asks through the SAME gate
+     Convert uses instead of keeping a second prompt of its own. Two prompts for
+     one PIN is how a user ends up with a PIN that works in one place and not the
+     other, and it let the two flows disagree about whether a PIN even existed. */
+  function vpmSummary(){
     const usd=vpmAvailable();
     const px=vpmPriceOf(vpmDest);
     const coins=px>0?usd/px:0;
-    vpm('vpmAmount').textContent=vpmUsd(usd);
-    vpm('vpmTo').textContent=px>0
+    return px>0
       ? ('≈ '+vpmCoin(coins)+' '+vpmDest+'  ·  at '+vpmUsd(px)+' each')
       : ('Price unavailable for '+vpmDest+' right now.');
-    vpm('vpmTitle').textContent=vpmHasPin?'Confirm your wallet PIN':'Create your wallet PIN';
-    vpm('vpmSub').textContent=vpmHasPin
-      ? ('Enter the 4–5 digit PIN for this account to move '+vpmUsd(usd)+' of profit into your '+vpmDest+' wallet.')
-      : ('Set a 4–5 digit PIN for this account. It is stored as a hash, never in this browser.');
-    vpm('vpmNext').textContent=vpmHasPin?'Move to wallet':'Create PIN & move';
-    vpmPinDots();
   }
-
-  function vpmPinDots(){
-    const pin=vpm('vpmPin'), dots=[...(document.querySelectorAll('#vpmDots .vpin-dot'))];
-    dots.forEach((d,i)=>d.classList.toggle('on',i<(pin?pin.value.length:0)));
-  }
-
-  function vpmShow(step){
-    const two=step===2;
-    vpm('vpmCoinStep').hidden=two;
-    vpm('vpmPinStep').hidden=!two;
-    vpm('vpmBack').hidden=!two;
-    vpm('vpmStep1').className='vpm-step'+(two?' done':' on');
-    vpm('vpmStep2').className='vpm-step'+(two?' on':'');
-    if(two){ vpmRenderPinStep(); requestAnimationFrame(()=>vpm('vpmPin').focus()); }
+  function vpmRenderSummary(){
+    const box=vpm('vpmAmount');
+    if(box) box.textContent=vpmUsd(vpmAvailable());
+    const to=vpm('vpmTo');
+    if(to) to.textContent=vpmSummary();
   }
 
   function vpmClose(){ (vpm('vantaProfitMove')||{}).classList && vpm('vantaProfitMove').classList.remove('open'); }
@@ -8671,56 +8670,67 @@ async function vantaHandleEntry() {
     }
   }
 
-  function vpmSubmit(){
+  /* `pin` arrives from the shared PIN dialog, which has already created it (first
+     time) or verified it (every time after). The server re-checks the same
+     digits against the account's own hash before it touches a balance, so this
+     call is not trusting the page — it is repeating the proof. */
+  function vpmMove(pin){
     if(vpmBusy) return;
-    const demo=(typeof accountMode!=='undefined'&&accountMode==='demo');
-    const pin=vpm('vpmPin').value;
-    const err=vpm('vpmError');
-    err.textContent='';
+    const sym=vpmSym, dest=vpmDest;
+    vpmBusy=true;
 
-    if(demo){
-      const store=localStorage.getItem('vanta_demo_pin_v1');
-      if(!/^\d{4,5}$/.test(pin)){ err.textContent='Use exactly 4 or 5 digits.'; return; }
-      if(vpmHasPin && pin!==store){ err.textContent='Incorrect PIN. Try again.'; vpm('vpmPin').value=''; vpmPinDots(); return; }
-      vpmBusy=true; vpm('vpmNext').disabled=true;
+    const done=()=>{ vpmBusy=false; };
+    const fail=why=>{
+      done();
+      /* The PIN dialog is already closed by now, so this is said where the user
+         is looking: a toast, with the coin dialog still open to try again. */
+      toast(why||'Move failed — try again.');
+    };
+
+    if(typeof accountMode!=='undefined' && accountMode==='demo'){
       const r=(typeof window.vantaPracticeMoveProfit==='function')
-        ? window.vantaPracticeMoveProfit(vpmSym, vantaPlatformPrice, vpmDest) : {usd:0};
-      vpmBusy=false; vpm('vpmNext').disabled=false;
-      vpmClose(); vpmRepaint();
-      toast(r&&r.noPrice ? ('Price unavailable for '+vpmDest+' right now — try again shortly.')
-        : (r&&r.nothingLeft ? ('This '+vpmSym+' profit is no longer in your practice trading balance.')
+        ? window.vantaPracticeMoveProfit(sym, vantaPlatformPrice, dest) : {usd:0};
+      done(); vpmClose(); vpmRepaint();
+      toast(r&&r.noPrice ? ('Price unavailable for '+dest+' right now — try again shortly.')
+        : (r&&r.nothingLeft ? ('This '+sym+' profit is no longer in your practice trading balance.')
         : (Number(r&&r.usd)>0
-            ? (vpmUsd(r.usd)+' of '+vpmSym+' profit moved to your '+vpmDest+' wallet ('
-               +vpmCoin(r.coins)+' '+vpmDest+').')
-            : ('No realized '+vpmSym+' profit available to move to your wallet.'))));
+            ? (vpmUsd(r.usd)+' of '+sym+' profit moved to your '+dest+' wallet ('
+               +vpmCoin(r.coins)+' '+dest+').')
+            : ('No realized '+sym+' profit available to move to your wallet.'))));
       return;
     }
 
-    if(typeof vantaToken!=='function' || !vantaToken()){ toast('Log in to move profit to your wallet.'); return; }
-    if(!/^\d{4,5}$/.test(pin)){ err.textContent='Use exactly 4 or 5 digits.'; return; }
+    if(typeof vantaToken!=='function' || !vantaToken()){ done(); toast('Log in to move profit to your wallet.'); return; }
 
-    vpmBusy=true; vpm('vpmNext').disabled=true; err.textContent='';
-    /* An account with no PIN yet creates one first, then moves. Both calls are
-       scoped to the signed-in account by the bearer token. */
-    const step=!vpmHasPin
-      ? vantaApi('/api/wallet/pin',{method:'POST',body:{pin:pin}}).then(()=>
-          vantaApi('/api/platform/move-profit',{method:'POST',body:{symbol:vpmSym,dest_symbol:vpmDest,pin:pin}}))
-      : vantaApi('/api/platform/move-profit',{method:'POST',body:{symbol:vpmSym,dest_symbol:vpmDest,pin:pin}});
+    vantaApi('/api/platform/move-profit',{method:'POST',body:{symbol:sym,dest_symbol:dest,pin:pin}})
+      .then(r=>{ done(); vpmClose(); vpmReport(r, sym); vpmRepaint(); })
+      .catch(e=>fail((e&&e.message)||''));
+  }
 
-    step.then(r=>{
-      vpmBusy=false; vpm('vpmNext').disabled=false;
-      vpmHasPin=true;
-      vpmClose(); vpmReport(r, vpmSym); vpmRepaint();
-    }).catch(e=>{
-      vpmBusy=false; vpm('vpmNext').disabled=false;
-      const why=(e&&e.message)||'';
-      if(/Too many|again in|locked/i.test(why)){ err.textContent=why; return; }
-      if(vpmHasPin){
-        err.textContent=/invalid|incorrect|wrong/i.test(why)?'Incorrect PIN. Try again.':(why||'Move failed — try again.');
-        if(/invalid|incorrect|wrong/i.test(why)){ vpm('vpmPin').value=''; vpmPinDots(); }
-        return;
-      }
-      err.textContent=why||'Could not set your PIN. Try again.';
+  /* Continue hands over to the shared PIN gate. First time, that gate says
+     "Create Wallet PIN" and the client simply types 4–5 digits of their own
+     choosing — there is nothing to confirm against yet — and the move runs on
+     the spot. After that, the same gate asks for the same PIN Convert asks for. */
+  function vpmAskPin(){
+    if(vpmBusy) return;
+    if(typeof window.vantaRequirePin!=='function'){ toast('Log in to move profit to your wallet.'); return; }
+    vpmRenderSummary();
+    const btn=vpm('vpmNext');
+    if(btn){ btn.disabled=true; btn.textContent='Checking PIN…'; }
+    /* The prompt itself is the shared dialog, so the step pills say "you are on
+       the PIN now" while the digits are being typed over there. */
+    vpm('vpmStep1').className='vpm-step done';
+    vpm('vpmStep2').className='vpm-step on';
+    window.vantaRequirePin(pin=>{
+      if(btn){ btn.disabled=false; btn.textContent='Move to wallet'; }
+      vpmMove(pin);
+    },{
+      /* First time there is nothing to confirm against, so this reads as "make
+         one up" rather than "prove yourself": any 4–5 digits the client likes. */
+      setupButton:'Create PIN & move',
+      loginButton:'Move to wallet',
+      setupText:'Choose any 4–5 digit PIN for this account — the same one Convert asks for — and your profit moves straight away.',
+      loginText:'Enter the PIN for this account — the same one Convert asks for — and your profit moves straight away.'
     });
   }
 
@@ -8735,26 +8745,24 @@ async function vantaHandleEntry() {
     vpmSym=String((window.vantaActiveCoin||'GOLF')||'GOLF').toUpperCase();
     vpmDest=vpmSym;
     vpmBusy=false;
-    const pin=vpm('vpmPin');
-    if(pin) pin.value='';
-    vpm('vpmError').textContent='';
     vpm('vpmSrc').textContent='Profit from your closed '+vpmSym+' trades.';
+    vpmRenderSummary();
     (vpm('vantaProfitMove')||{}).classList && vpm('vantaProfitMove').classList.add('open');
-    vpmShow(1);
+    vpm('vpmStep1').className='vpm-step on';
+    vpm('vpmStep2').className='vpm-step';
+    vpm('vpmCoinStep').hidden=false;
 
-    /* Has this account a PIN already? Decides whether step 2 asks to confirm
-       one or to create the first one. Never blocks the coin list. */
-    const known=(typeof window.vantaPinStatus==='function')?window.vantaPinStatus():Promise.resolve(false);
-    Promise.all([vpmLoadCoins(), known]).then(([coins,hasPin])=>{
+    vpmLoadCoins().then(coins=>{
       vpmCoins=coins;
-      vpmHasPin=!!hasPin;
       if(!vpmCoins.some(c=>c.sym===vpmDest)) vpmDest=vpmCoins.length?vpmCoins[0].sym:vpmSym;
       vpmRenderCoins();
+      vpmRenderSummary();
       vpm('vpmSub').textContent='Choose the coin you want to receive your profit in.';
       vpm('vpmNext').textContent='Continue';
     }).catch(()=>{
       vpmCoins=VPM_COINS_FALLBACK.map(s=>({sym:s,px:vpmPriceOf(s)}));
       vpmRenderCoins();
+      vpm('vpmNext').textContent='Continue';
     });
   };
 
@@ -8767,19 +8775,12 @@ async function vantaHandleEntry() {
         if(!b) return;
         vpmDest=String(b.dataset.sym||'').toUpperCase();
         [...grid.querySelectorAll('.vpm-coin')].forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.sym===vpmDest)));
+        vpmRenderSummary();
       });
     }
-    vpm('vpmNext')?.addEventListener('click',()=>{
-      /* Step 1 advances to the PIN; step 2 performs the move. */
-      if(!vpm('vpmPinStep').hidden){ vpmSubmit(); return; }
-      vpmShow(2);
-    });
-    vpm('vpmBack')?.addEventListener('click',()=>vpmShow(1));
+    vpm('vpmNext')?.addEventListener('click',vpmAskPin);
     vpm('vpmCancel')?.addEventListener('click',vpmClose);
     vpm('vantaProfitMove')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) vpmClose(); });
-    const pin=vpm('vpmPin');
-    pin?.addEventListener('input',()=>{ pin.value=pin.value.replace(/\D/g,'').slice(0,5); vpm('vpmError').textContent=''; vpmPinDots(); });
-    pin?.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); vpmSubmit(); } });
   })();
 
   /* ---- Dashboard balance card quick actions (delegated) ---- */

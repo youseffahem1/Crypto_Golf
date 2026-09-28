@@ -177,14 +177,16 @@ ok('Withdraw asked the existing address view for GOLF', JSON.stringify(window.__
   window.__addrCalls);
 ok('and it closed the sheet first', $('vwdModal').hidden);
 
-console.log('\n[9] a coin outside the three is never offered');
+console.log('\n[9] the Dashboard keeps every coin; only the Wallet page is limited');
 window.eval("window.__vwdOpenProbe=null;");
 const listed = [...window.document.querySelectorAll('#vwdAssets [data-chip]')].map(c => c.getAttribute('data-chip'));
-ok('only the three are clickable', JSON.stringify(listed) === '["ABC","GOLF","NOVA"]', JSON.stringify(listed));
-ok('the dashboard "My Wallets" grid is also limited to the three', (() => {
+ok('the Wallet page shows only the three', JSON.stringify(listed) === '["ABC","GOLF","NOVA"]', JSON.stringify(listed));
+ok('the dashboard "My Wallets" grid still lists all 15 coins', (() => {
   const g = [...window.document.querySelectorAll('#vwdGrid [data-wallet]')].map(c => c.getAttribute('data-wallet'));
-  return g.length === 3 && JSON.stringify(g) === '["ABC","GOLF","NOVA"]';
-})(), [...window.document.querySelectorAll('#vwdGrid [data-wallet]')].map(c => c.getAttribute('data-wallet')));
+  return g.length === 15 && ['BTC', 'ETH', 'LTC', 'DOGE', 'SOL', 'XRP', 'BNB', 'TRX', 'ADA', 'LINK', 'USDC', 'USDT']
+    .every(s => g.includes(s));
+})(), [...window.document.querySelectorAll('#vwdGrid [data-wallet]')].map(c => c.getAttribute('data-wallet')).join(','));
+ok('BTC is back on the dashboard', !!window.document.querySelector('#vwdGrid [data-wallet="BTC"]'));
 
 console.log('\n[10] no other coin\'s address can be shown under this coin');
 ok('the address view has no cross-coin USDT fallback',

@@ -15,12 +15,14 @@ const ok = (label, cond, detail) => {
   else { fails++; console.log('  FAIL ' + label + (detail !== undefined ? ' -- ' + JSON.stringify(detail) : '')); }
 };
 
-console.log('\n[1] the Wallet asset list is exactly the three platform coins');
+console.log('\n[1] the Wallet page asset list is exactly the three platform coins');
 ok('a three-coin display list exists', /var VWD_WALLET_COINS = \['ABC','GOLF','NOVA'\];/.test(src));
-ok('the asset list and the render loop both use it',
-  /VWD_WALLET_COINS\.forEach/.test(src) && (src.match(/VWD_WALLET_COINS\.forEach/g) || []).length >= 2);
-ok('nothing renders the asset list from the 14-coin order any more',
-  !/VWD_ORDER\.forEach\(function\(sym\)\{\s*(?:var meta=VWD_META|html\+='<button type="button" class="vwd-card")/.test(src));
+ok('only the Wallet-page card builder uses it', (src.match(/VWD_WALLET_COINS\.forEach/g) || []).length === 1);
+ok('the Dashboard grid is untouched and still walks every coin',
+  /function render\(\)\{[\s\S]{0,200}VWD_ORDER\.forEach/.test(src) &&
+  /if\(grid\)\{ grid\.innerHTML=html; guardLogos\(grid\); \}/.test(src));
+ok('the Dashboard empty-state check counts every coin again',
+  /if\(emptyEl\) emptyEl\.hidden = VWD_ORDER\.length>0;/.test(src));
 ok('VWD_ORDER itself is untouched, so swap targets still work',
   /var VWD_ORDER = \['USDT','GOLF','NOVA','ABC','BTC','ETH','BNB','SOL','XRP','LTC','TRX','DOGE','ADA','LINK','USDC'\];/.test(src));
 

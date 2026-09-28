@@ -6270,16 +6270,13 @@ function vlUpdateSubmitState(formEl, submitBtn, validateFn) {
             vantaSetSession(data.access_token, data.user);
             vantaRequestNotifPermission();
             await vantaEnterApp();
-            setTimeout(() => {
-                try {
-                    vantaNotify({
-                        title: "Welcome to VANTA TRADE",
-                        body: "Your account is ready — Live wallet and deposit address unlocked.",
-                        type: "info",
-                        icon: "V"
-                    });
-                } catch (e) { /* banner may not be ready yet — harmless */ }
-            }, 1200);
+            /* The welcome banner used to be fired here, 1.2s after entry. A brand
+               -new account now gets the first-run guide from vantaEnterApp
+               instead, which says the same thing properly and also sets up the
+               PIN — so a toast on top of it was two first-run messages racing.
+               The guide covers every account that has not set a PIN, including
+               this one, and it is driven by the server rather than by this
+               signup call, so it also survives a reload before the PIN is set. */
         } catch (err) {
             formErr.textContent = err.message || "Couldn't create your account — try a different email.";
         } finally {
@@ -6336,6 +6333,14 @@ async function vantaEnterApp() {
     setInterval(vantaResyncCandles, 5000);
     setInterval(vantaSyncTrades, 2500);
     setInterval(refreshGolfStats, 20000);
+
+    /* Last, so the app is already drawn behind it: a brand-new account gets the
+       walkthrough and the PIN it needs, and an account that already has a PIN
+       is asked nothing. Both login and signup land here, so this is the one
+       place that has to know. */
+    if (typeof window.vantaOnboardMaybeShow === "function") {
+        try { await window.vantaOnboardMaybeShow(); } catch (e) { /* a guide must never block entry */ }
+    }
 }
 
 async function vantaHandleEntry() {
@@ -7486,12 +7491,11 @@ async function vantaHandleEntry() {
   }
 
   /* ---------- Render grid (WALLET holdings — never the trading balance) ----
-     Only the three platform coins. The portfolio total below is likewise the
-     sum of just these three, so the number on screen always matches the assets
-     shown next to it. */
+     This is the Dashboard "My Wallets" grid, so it lists every coin, exactly as
+     before. The three-coin limit applies to the Wallet page only (#vwdAssets). */
   function render(){
     var html='', total=0, holdings=0;
-    VWD_WALLET_COINS.forEach(function(sym){
+    VWD_ORDER.forEach(function(sym){
       var meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
       var bal=walletBalanceFor(sym);
       var usd=bal*priceOf(sym);
@@ -7512,7 +7516,7 @@ async function vantaHandleEntry() {
         '</button>';
     });
     if(grid){ grid.innerHTML=html; guardLogos(grid); }
-    if(emptyEl) emptyEl.hidden = VWD_WALLET_COINS.length>0;
+    if(emptyEl) emptyEl.hidden = VWD_ORDER.length>0;
     var t=fmtMoney(total);
     var te=$('vwdTotal'); if(te) te.textContent=t;
     var th=$('vwdHoldings'); if(th) th.textContent=holdings;
@@ -8106,6 +8110,22 @@ async function vantaHandleEntry() {
 .vpm-back{width:100%;height:44px;margin-top:8px;border:1px solid var(--line);border-radius:14px;background:transparent;color:var(--muted);font-family:inherit;font-weight:800;cursor:pointer;font-size:12px}
 .vpm-back:hover{border-color:rgba(37,99,235,.4);color:var(--text)}
 .vpm-card .vpin-dots{margin-bottom:14px}
+
+/* ---- first-run guide ------------------------------------------------------
+   Shown once, to a brand-new account, between logging in and touching anything.
+   It sits UNDER the PIN dialog (100600) on purpose: step two opens that shared
+   prompt, and it has to land on top of this, not underneath it. */
+#vantaOnboard{position:fixed;inset:0;z-index:100550;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(15,18,32,.55);backdrop-filter:blur(14px)}
+#vantaOnboard.open{display:flex;animation:vpinIn .22s ease}
+.vob-card{width:min(430px,94vw);max-height:88vh;overflow:auto;padding:26px;border-radius:26px;border:1px solid var(--line);background:#fff;box-shadow:0 30px 80px rgba(15,23,42,.18);text-align:center}
+.vob-card h2{margin:0 0 6px;font-size:19px;color:var(--text)}
+.vob-sub{margin:0 0 16px;color:var(--muted);font-size:12px;line-height:1.55}
+.vob-list{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:9px;text-align:left}
+.vob-list li{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border-radius:14px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:12px;line-height:1.55}
+.vob-list li i{flex:0 0 auto;width:22px;height:22px;border-radius:8px;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:900;background:linear-gradient(135deg,var(--gold),#1d4ed8);color:#fff}
+.vob-list li b{color:var(--text);font-weight:900}
+.vob-note{margin:0 0 16px;padding:12px 13px;border-radius:14px;border:1px solid rgba(37,99,235,.22);background:rgba(37,99,235,.06);color:var(--text);font-size:11.5px;line-height:1.6;text-align:left}
+.vob-note b{font-weight:900}
 </style>
 
 <div id="vantaPinModal" aria-modal="true" role="dialog">
@@ -8118,6 +8138,33 @@ async function vantaHandleEntry() {
     <div class="vpin-error" id="vpinError"></div>
     <button id="vpinSubmit" class="vpin-submit">Unlock VANTA</button>
     <button id="vpinCancel" class="vpin-cancel">Cancel</button>
+  </section>
+</div>
+
+<!-- First-run guide: a brand-new account is walked through the basics, then
+     sent to create the ONE account PIN. That PIN is the existing shared one
+     (vantaPinModal), which every later operation already asks for, so this adds
+     an introduction, not a second PIN. The "has this account set one yet?"
+     answer comes from the server, which is why it never reappears once made —
+     on this device or any other. -->
+<div id="vantaOnboard" aria-modal="true" role="dialog" aria-labelledby="vobTitle">
+  <section class="vob-card">
+    <ol class="vpm-steps">
+      <li class="vpm-step on" id="vobStep1">1 · GUIDE</li>
+      <li class="vpm-step" id="vobStep2">2 · PIN</li>
+    </ol>
+    <h2 id="vobTitle">Welcome to VANTA TRADE</h2>
+    <p class="vob-sub" id="vobSub">Three things worth knowing before you start.</p>
+
+    <ul class="vob-list" id="vobList">
+      <li><i>1</i><span>Your account already has its own deposit address. Open <b>Wallet</b> to copy it and fund your balance.</span></li>
+      <li><i>2</i><span>Every coin action — <b>Deposit, Withdraw, Send</b> and <b>Swap</b> — is on that same page, under the coin you tap.</span></li>
+      <li><i>3</i><span>The balance on that page is your <b>wallet's</b>. Trading runs on a separate balance, so nothing moves between the two unless you ask for it.</span></li>
+    </ul>
+
+    <p class="vob-note" id="vobNote" hidden>One more thing, and it is required: you need a <b>4–5 digit PIN</b> for this account. The same PIN is asked for <b>every</b> operation — deposit, withdraw, send, swap, and moving profit to your wallet. It is stored on your account as a hash, never in this browser, so you will be asked for that one PIN from now on.</p>
+
+    <button id="vobNext" class="vpin-submit" type="button">Next</button>
   </section>
 </div>
 
@@ -8186,14 +8233,22 @@ async function vantaHandleEntry() {
     if(!signedIn()) return Promise.resolve(false);
     return vantaApi('/api/wallet/pin').then(r=>{
       pinState=!!(r&&r.has_pin);
-      /* One-time hand-off of a PIN the old build left in plain text. */
+      /* Hand the answer back, not null. The network path used to end in
+         `return null`, which is falsy, so the FIRST protected action of every
+         session read "no PIN yet" and opened in setup mode: a returning account
+         was told to create a PIN it already had, and the save was refused with
+         "Enter your current PIN to change it". Every path here now resolves to
+         the same boolean, so setup/confirm is right from the first click. */
       const legacy=localStorage.getItem(PIN_KEY);
       if(legacy && validPin(legacy)){
+        /* One-time hand-off of a PIN the old build left in plain text. On
+           success the account really does have one, hence true; if the hand-off
+           fails, keep it and answer with whatever the account actually has. */
         return vantaApi('/api/wallet/pin',{method:'POST',body:{pin:legacy}})
-          .then(()=>{ localStorage.removeItem(PIN_KEY); })
-          .catch(()=>{ /* keep it; the next check will try again */ });
+          .then(()=>{ localStorage.removeItem(PIN_KEY); return true; })
+          .catch(()=>hasPin());
       }
-      return null;
+      return hasPin();
     }).catch(()=>false);
   }
   window.vantaPinStatus=pinStatus;
@@ -8216,7 +8271,10 @@ async function vantaHandleEntry() {
         : 'Enter your 4–5 digit wallet PIN to continue.');
       submit.textContent=(mode==='setup' ? o.setupButton : o.loginButton)
         || o.button || (mode==='setup'?'Save PIN':'Confirm');
-      cancel.style.display='block';
+      /* `mandatory` is for the one prompt that cannot be walked away from: the
+         PIN a brand-new account has to create. Everywhere else Cancel stays, so
+         an optional confirmation can still be declined. */
+      cancel.style.display=o.mandatory?'none':'block';
       requestAnimationFrame(()=>input.focus());
     });
   }
@@ -8300,6 +8358,82 @@ async function vantaHandleEntry() {
       window.vantaRequirePin(()=>{window.__vantaSwapUnlocked=true;cf.requestSubmit();setTimeout(()=>window.__vantaSwapUnlocked=false,80);});
     }
   },true);
+})();
+</script>
+
+<!-- First-run walkthrough for a brand-new account: the instructions, then the
+     account PIN. The PIN is NOT a new one — it is the same shared account PIN
+     that Convert, Send and Move-profit already ask for, so after this the user
+     has exactly one PIN and every operation asks for it.
+     "Has this account got a PIN yet?" is answered by the server (GET
+     /api/wallet/pin), so the guide is genuinely once-per-account rather than
+     once-per-device, and it stays away on every later login. -->
+<script id="vanta-first-run-js">
+(function(){
+  const modal=document.getElementById('vantaOnboard');
+  if(!modal) return;
+  const $=id=>document.getElementById(id);
+  const step1=$('vobStep1'), step2=$('vobStep2'), title=$('vobTitle'), sub=$('vobSub');
+  const list=$('vobList'), note=$('vobNote'), next=$('vobNext');
+  let onPinStep=false, finished=false;
+
+  function showGuide(){
+    onPinStep=false;
+    step1.className='vpm-step on'; step2.className='vpm-step';
+    title.textContent='Welcome to VANTA TRADE';
+    sub.textContent='Three things worth knowing before you start.';
+    list.hidden=false; note.hidden=true;
+    next.disabled=false; next.textContent='Next';
+    modal.classList.add('open');
+  }
+
+  function showPin(){
+    onPinStep=true;
+    step1.className='vpm-step done'; step2.className='vpm-step on';
+    title.textContent='Protect your account';
+    sub.textContent='This is the last step.';
+    list.hidden=true; note.hidden=false;
+    next.disabled=false; next.textContent='Create my PIN';
+    modal.classList.add('open');
+  }
+
+  function finish(){ finished=true; modal.classList.remove('open'); }
+
+  function askPin(){
+    if(typeof window.vantaRequirePin!=='function'){ finish(); return; }
+    next.disabled=true; next.textContent='Waiting for your PIN…';
+    window.vantaRequirePin(()=>{ next.disabled=false; finish(); },{
+      title:'Create your account PIN',
+      setupText:'This 4–5 digit PIN belongs to your account and is required by every operation: deposit, withdraw, send, swap, and moving profit to your wallet. It is stored as a hash on your account — never in this browser — so from now on this is the one PIN you use.',
+      setupButton:'Save PIN & continue',
+      /* No Cancel: this PIN is the point of the step, so it cannot be skipped. */
+      mandatory:true,
+      /* Backing out of the prompt drops back onto this same step rather than
+         leaving, so the guide is always the thing on screen until the PIN
+         exists. */
+      onCancel:()=>{ next.disabled=false; showPin(); }
+    });
+  }
+
+  next.addEventListener('click',()=>{ onPinStep?askPin():showPin(); });
+
+  /* Deliberately no backdrop-click-to-close and no Escape: a new account cannot
+     dismiss the one thing its account needs. Escape during the PIN step simply
+     re-lands here. */
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && modal.classList.contains('open')){ e.preventDefault(); if(onPinStep) showPin(); }
+  });
+
+  window.vantaOnboardMaybeShow=function(){
+    if(finished) return;
+    /* An account is what the PIN is attached to, so a guest with no session has
+       nothing to set it on and is left alone. */
+    if(typeof vantaToken!=='function' || !vantaToken()) return;
+    if(typeof window.vantaPinStatus!=='function') return;
+    return window.vantaPinStatus()
+      .then(has=>{ if(!has) showGuide(); })
+      .catch(()=>{ /* never block entering the app on a guide */ });
+  };
 })();
 </script>
 
@@ -9789,6 +9923,9 @@ html[data-theme="dark"] .vpm-coin{background:var(--panel-2)!important;border-col
 html[data-theme="dark"] .vpm-coin[aria-pressed="true"]{border-color:var(--gold)!important;background:rgba(59,130,246,.16)!important}
 html[data-theme="dark"] .vpm-step{background:var(--panel-2)!important;border-color:var(--line)!important}
 html[data-theme="dark"] .vpm-step.on{background:linear-gradient(135deg,var(--gold),#1d4ed8)!important;border-color:transparent!important;color:#fff!important}
+html[data-theme="dark"] .vob-card{background:var(--panel)!important;border:1px solid var(--line)!important;color:var(--text)!important}
+html[data-theme="dark"] .vob-list li{background:var(--panel-2)!important;border-color:var(--line)!important}
+html[data-theme="dark"] .vob-note{background:rgba(59,130,246,.10)!important;border-color:rgba(59,130,246,.28)!important}
 html[data-theme="dark"] .vpm-back{background:transparent!important;color:var(--muted)!important}
 
 /* GOLF modal (dark) */

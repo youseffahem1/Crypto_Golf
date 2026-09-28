@@ -6671,6 +6671,13 @@ async function vantaHandleEntry() {
 }
 .vwd-logo svg{width:24px;height:24px;display:block}
 .vwd-logo .txt{font-size:17px;line-height:1;display:block}
+/* A coin that has real artwork fills its tile edge to edge. The tile keeps the
+   existing .vwd-logo box (size, radius, shadow); only the inner image box is
+   neutralised, so this composes with the tile instead of restyling it. */
+.vwd-logo-art{overflow:hidden}
+.vwd-logo-art>.vtp-coin-icon{width:100%;height:100%;border-radius:inherit;border:0;background:none;place-items:center}
+.vwd-logo-art .vtp-coin-logo{width:100%;height:100%;object-fit:cover;display:block}
+.vwd-logo-art .vtp-coin-emoji{font-size:20px;line-height:1}
 .vwd-card-name{min-width:0;overflow:hidden}
 .vwd-card-sym{font-size:13px;font-weight:950}
 .vwd-card-meta{font-size:9px;color:#7f8496;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -6740,8 +6747,8 @@ async function vantaHandleEntry() {
 .vwd-deposit-hint b{color:#fff}
 .vwd-addr-card{display:flex;align-items:center;gap:14px;padding:13px;border-radius:17px;border:1px solid rgba(34,197,94,.16);background:rgba(34,197,94,.05)}
 .vwd-qr{width:96px;height:96px;flex:none;border-radius:14px;background:#fff;padding:6px;box-shadow:0 10px 26px rgba(0,0,0,.18)}
-.vwd-addr-wrap{min-width:0;flex:1;display:flex;align-items:center;gap:9px}
-.vwd-addr{font-family:"SFMono-Regular",Consolas,"Roboto Mono",monospace;font-size:11.5px;line-height:1.5;color:#dbeafe;word-break:break-all;font-weight:600}
+.vwd-addr-wrap{min-width:0;flex:1;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.vwd-addr{flex:1 1 120px;min-width:0;font-family:"SFMono-Regular",Consolas,"Roboto Mono",monospace;font-size:11.5px;line-height:1.5;color:#dbeafe;word-break:break-all;font-weight:600}
 .vwd-copy{flex:none;height:34px;padding:0 13px;border:1px solid rgba(34,197,94,.3);border-radius:10px;background:rgba(34,197,94,.12);color:#54e99a;font-size:10px;font-weight:900;cursor:pointer}
 .vwd-copy:hover{background:rgba(34,197,94,.2)}
 .vwd-copy.copied{color:#fff;background:#16a34a}
@@ -6856,29 +6863,53 @@ async function vantaHandleEntry() {
 .vwd-dash-meta .vwd-live{padding:5px 11px;border:1px solid rgba(14,203,129,.3);background:rgba(14,203,129,.08);border-radius:99px;color:var(--up);font-size:10px;font-weight:900;letter-spacing:.08em;white-space:nowrap}
 .vwd-ops-card{margin-top:4px;padding:20px;border-radius:22px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(150deg,rgba(22,25,35,.85),rgba(9,11,17,.92));box-shadow:inset 0 1px rgba(255,255,255,.04),0 14px 40px rgba(0,0,0,.14)}
 .vwd-ops-card .vwd-section-note{display:block;line-height:1.6}
-.vwd-chip-row{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
-.vwd-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(255,255,255,.03);cursor:pointer;color:#dde0e8;font-size:12px;font-weight:900;font-family:inherit;transition:.15s}
-.vwd-chip:hover{border-color:rgba(59,130,246,.4)}
-.vwd-chip.on{border-color:rgba(59,130,246,.55);background:rgba(59,130,246,.12);color:#fff;box-shadow:0 8px 18px rgba(37,99,235,.14)}
-.vwd-chip .vwd-logo{width:30px;height:30px;flex-basis:30px;border-radius:9px;box-shadow:inset 0 1px rgba(255,255,255,.14),0 4px 10px rgba(0,0,0,.2)}
-.vwd-chip .vwd-logo svg{width:16px;height:16px}
-.vwd-ops-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px}
-.vwd-ops-btn{height:52px;border:0;border-radius:15px;font-size:12.5px;font-weight:950;cursor:pointer;color:#fff;font-family:inherit;transition:.15s}
-.vwd-ops-btn.dep{background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 12px 26px rgba(22,163,74,.2)}
-.vwd-ops-btn.send{background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 12px 26px rgba(37,99,235,.2)}
-.vwd-ops-btn.tnf{background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 12px 26px rgba(168,85,247,.2)}
-.vwd-ops-btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
-.vwd-ops-btn:active{transform:scale(.985)}
+
+/* ---- the three assets -------------------------------------------------- */
+.vwd-assets{display:grid;gap:11px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin-top:15px}
+.vwd-asset{
+  display:flex;align-items:center;gap:12px;text-align:left;min-width:0;width:100%;
+  padding:15px 14px;border-radius:18px;cursor:pointer;font-family:inherit;color:#dde0e8;
+  border:1px solid rgba(255,255,255,.09);background:linear-gradient(155deg,rgba(255,255,255,.055),rgba(255,255,255,.015));
+  transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;
+}
+.vwd-asset:hover{border-color:rgba(59,130,246,.42);transform:translateY(-2px);box-shadow:0 12px 26px rgba(0,0,0,.24)}
+.vwd-asset:active{transform:translateY(0)}
+.vwd-asset:focus-visible{outline:2px solid rgba(59,130,246,.6);outline-offset:2px}
+.vwd-asset.on{border-color:rgba(59,130,246,.5);background:linear-gradient(155deg,rgba(59,130,246,.16),rgba(59,130,246,.05))}
+.vwd-asset-logo{flex:0 0 auto;display:block}
+.vwd-asset-logo .vwd-logo{width:46px;height:46px;flex-basis:46px;border-radius:15px}
+.vwd-asset-body{min-width:0;flex:1;display:block}
+.vwd-asset-top{display:flex;align-items:baseline;gap:7px;min-width:0}
+.vwd-asset-sym{font-size:14.5px;font-weight:950;letter-spacing:-.01em;color:#fff}
+.vwd-asset-net{font-size:9px;color:#7f8496;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vwd-asset-name{display:block;font-size:10.5px;color:#8f93a4;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vwd-asset-bal{display:block;font-size:20px;font-weight:950;letter-spacing:-.02em;margin-top:9px;
+  font-variant-numeric:tabular-nums;color:#fff;word-break:break-all;line-height:1.15}
+.vwd-asset-bal i{font-style:normal;font-size:10.5px;color:#8f93a4;font-weight:900;margin-left:4px}
+.vwd-asset-usd{display:block;font-size:11px;color:#aeb3c0;font-weight:800;margin-top:3px}
+.vwd-asset-go{flex:0 0 auto;color:#5e6470;font-size:20px;line-height:1;align-self:center}
 [data-theme="light"] .vwd-ops-card{background:linear-gradient(150deg,rgba(255,255,255,.96),rgba(248,250,252,.9));border-color:rgba(15,23,42,.08);box-shadow:inset 0 1px #fff,0 14px 38px rgba(15,23,42,.05)}
-[data-theme="light"] .vwd-chip{color:#475467;background:rgba(15,23,42,.03);border-color:rgba(15,23,42,.08)}
-[data-theme="light"] .vwd-chip:hover{border-color:rgba(37,99,235,.35)}
-[data-theme="light"] .vwd-chip.on{color:#fff;background:linear-gradient(135deg,#3b82f6,#2563eb);border-color:transparent}
+
+/* ---- coin sheet: the address sits above the value, copy on the right ---- */
+.vwd-addr-label{display:block;font-size:9px;font-weight:900;letter-spacing:.08em;
+  text-transform:uppercase;color:#7f8496;margin-bottom:5px;flex:0 0 100%}
+
+[data-theme="light"] .vwd-asset{color:#344054;background:linear-gradient(155deg,rgba(15,23,42,.03),rgba(15,23,42,.01));border-color:rgba(15,23,42,.08)}
+[data-theme="light"] .vwd-asset-sym,[data-theme="light"] .vwd-asset-bal{color:#101828}
+[data-theme="light"] .vwd-asset-name,[data-theme="light"] .vwd-asset-net,[data-theme="light"] .vwd-asset-bal i{color:#667085}
+[data-theme="light"] .vwd-asset-usd{color:#475467}
+[data-theme="light"] .vwd-asset.on{background:linear-gradient(155deg,rgba(37,99,235,.10),rgba(37,99,235,.03))}
+@media(max-width:560px){
+  .vwd-assets{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
+  .vwd-asset{padding:12px 11px;border-radius:15px;gap:10px}
+  .vwd-asset-logo .vwd-logo{width:38px;height:38px;flex-basis:38px;border-radius:12px}
+  .vwd-asset-bal{font-size:16.5px;margin-top:7px}
+  .vwd-asset-net{display:none}
+}
 @media(max-width:430px){
   .vwd-dash-meta{width:100%;justify-content:space-between;gap:12px;margin-left:0;padding-top:10px;border-top:1px dashed var(--line)}
   .vwd-dash-meta .vwd-hero-stat{align-items:flex-start}
   .vwd-dash-meta .vwd-hero-stat label{text-align:left}
-  .vwd-ops-btns{grid-template-columns:1fr}
-  .vwd-ops-btn{height:50px}
 }
 </style>
 
@@ -6899,22 +6930,17 @@ async function vantaHandleEntry() {
         <div class="vwh-total" id="vwhBalance">$0.00</div>
         <p class="vwh-sub">Your wallet only holds funds you explicitly move here from your trading account. It does not mirror your trading balance.</p>
         <div class="vwh-break">
-          <div class="vwh-stat"><span>USDT</span><b id="vwhUsdt">$0.00</b></div>
-          <div class="vwh-stat"><span>GOLF</span><b id="vwhGolf">0.0000</b></div>
-          <div class="vwh-stat"><span>Portfolio</span><b id="vwhPortfolio">≈ $0.00</b></div>
+          <div class="vwh-stat"><span>ABC</span><b id="vwhAbc">0</b></div>
+          <div class="vwh-stat"><span>GOLF</span><b id="vwhGolf">0</b></div>
+          <div class="vwh-stat"><span>NOVA</span><b id="vwhNova">0</b></div>
         </div>
       </div>
     </div>
 
     <section class="vwd-ops-card">
-      <h2 class="vwd-section-title">Wallet Operations</h2>
-      <p class="vwd-section-note" style="margin-top:5px">Your coins live on the Dashboard — the first thing you see when you enter. Pick a coin, then run an operation.</p>
-      <div class="vwd-chip-row" id="vwdChips"></div>
-      <div class="vwd-ops-btns">
-        <button class="vwd-ops-btn dep" data-op="deposit" type="button">↓ Deposit</button>
-        <button class="vwd-ops-btn send" data-op="send" type="button">Transfer</button>
-        <button class="vwd-ops-btn tnf" data-op="transfer" type="button">⇄ Swap</button>
-      </div>
+      <h2 class="vwd-section-title">My Assets</h2>
+      <p class="vwd-section-note" style="margin-top:5px">The three coins on VANTA. Select one to open its wallet, copy its address and deposit, withdraw, send or swap it.</p>
+      <div class="vwd-assets" id="vwdAssets"></div>
       <div class="vwd-demo-note" id="vwdOpsNote" hidden>Practice mode — operations are simulated until you log in.</div>
     </section>
 
@@ -6945,22 +6971,24 @@ async function vantaHandleEntry() {
 
     <div class="vwd-tabs" id="vwdTabs">
       <button class="vwd-tab active" data-tab="deposit" type="button">Deposit</button>
-      <button class="vwd-tab" data-tab="send" type="button">Transfer</button>
+      <button class="vwd-tab" data-tab="withdraw" type="button">Withdraw</button>
+      <button class="vwd-tab" data-tab="send" type="button">Send</button>
       <button class="vwd-tab" data-tab="transfer" type="button">Swap</button>
     </div>
 
     <div class="vwd-pane" id="vwdPaneDeposit">
-      <div class="vwd-deposit-hint">Send <b id="vwdDepSym">BTC</b> to this address to top up your wallet</div>
+      <div class="vwd-deposit-hint">Send <b id="vwdDepSym">ABC</b> to this address to top up your wallet</div>
       <div class="vwd-addr-card">
         <canvas class="vwd-qr" id="vwdQr" width="108" height="108"></canvas>
         <div class="vwd-addr-wrap">
+          <div class="vwd-addr-label">Wallet address</div>
           <div class="vwd-addr" id="vwdAddr"></div>
           <button class="vwd-copy" id="vwdCopy" type="button">Copy</button>
         </div>
       </div>
       <div class="vwd-network-row">
         <span class="vwd-net-chip" id="vwdNetChip">Network</span>
-        <span class="vwd-warn" id="vwdWarn">Only send <b>BTC</b> on the <b>Bitcoin</b> network.</span>
+        <span class="vwd-warn" id="vwdWarn">Only send <b>ABC</b> on the <b>VANTA Market</b> network.</span>
       </div>
       <div class="vwd-addr-note" id="vwdAddrNote">Double-check the network and address before sending. Sending the wrong asset may result in permanent loss.</div>
     </div>
@@ -7102,6 +7130,11 @@ async function vantaHandleEntry() {
 
   /* ---------- Catalog ---------- */
   var VWD_ORDER = ['USDT','GOLF','NOVA','ABC','BTC','ETH','BNB','SOL','XRP','LTC','TRX','DOGE','ADA','LINK','USDC'];
+  /* The Wallet only ever shows the three platform coins. This is a DISPLAY list
+     only: VWD_ORDER above is still what the swap destination dropdown and the
+     address lookup use, so swapping into USDT (or any other coin) keeps working
+     exactly as before. Nothing here decides what a user may hold or move. */
+  var VWD_WALLET_COINS = ['ABC','GOLF','NOVA'];
   var VWD_META = {
     USDT:{name:'Tether',    net:'TRON (TRC-20)',           dec:4},
     GOLF:{name:'Golf Coin', net:'VANTA Market',            dec:4},
@@ -7167,7 +7200,7 @@ async function vantaHandleEntry() {
     prices: {},
     prev:   {},
     backend: {},                 // deposit_addresses from /api/wallet/layout
-    activeSym: 'BTC',
+    activeSym: 'ABC',
     activeTab: 'deposit',
     busy: false
   };
@@ -7407,52 +7440,111 @@ async function vantaHandleEntry() {
   function fmtCoin(v,sym){ var n=Number(v)||0; if(n===0)return '0'; var d=(VWD_META[sym]||{dec:4}).dec||4; var s=n.toFixed(Math.min(d,8)); if(d>4) s=s.replace(/0+$/,'').replace(/\.$/,''); return s; }
   function rate(a,b){ var pa=priceOf(a),pb=priceOf(b); if(!pa||!pb)return 0; return pa/pb; }
 
-  /* ---------- Logo tile ---------- */
+  /* ---------- Logo tile ----------
+     ABC / GOLF / NOVA go through the ONE existing coin-logo system
+     (COIN_ART -> window.vantaCoinIconHTML), so a coin shows exactly the same
+     artwork here, in the coin sheet, in the swap destination list and on the
+     trading pages. VWD_MARK below is kept only as the fallback for a coin that
+     has no artwork, so nothing that renders logoHtml() can come up empty. */
   function logoHtml(sym){
+    if(typeof window.vantaCoinIconHTML==='function'){
+      try{
+        var art=window.vantaCoinArt?window.vantaCoinArt(sym):null;
+        if(art&&art.logo){
+          return '<div class="vwd-logo sym-'+sym.toLowerCase()+' vwd-logo-art">'+window.vantaCoinIconHTML(sym)+'</div>';
+        }
+      }catch(e){}
+    }
     var mark=VWD_MARK[sym]||'<text x="12" y="13.5" text-anchor="middle" dominant-baseline="central">?</text>';
     var cur = (sym==='LTC'||sym==='GOLF') ? ' color="currentColor"' : ' fill="currentColor"';
     return '<div class="vwd-logo sym-'+sym.toLowerCase()+'"><svg'+cur+' viewBox="0 0 24 24" aria-hidden="true">'+mark+'</svg></div>';
   }
+  /* A logo image that ever fails to load degrades to the coin's own emoji via
+     the shared fallback, so the tile is never a broken image. */
+  function guardLogos(root){
+    if(!root||typeof window.vantaCoinIconFallback!=='function')return;
+    var imgs=root.querySelectorAll('.vwd-logo-art img.vtp-coin-logo');
+    for(var i=0;i<imgs.length;i++){
+      (function(img){
+        var fail=function(){ window.vantaCoinIconFallback(img.parentNode); };
+        img.addEventListener('error',fail,{once:true});
+        if(img.complete&&!img.naturalWidth)fail();
+      })(imgs[i]);
+    }
+  }
+  /* The two legacy spots on this page that hold a [data-vfx-logo] slot are
+     filled from the same system, so no coin is ever drawn as a bare letter or
+     a raw emoji inside the Wallet. */
+  function paintInlineLogos(){
+    var slots=document.querySelectorAll('[data-vfx-logo]');
+    for(var i=0;i<slots.length;i++){
+      var sym=String(slots[i].getAttribute('data-vfx-logo')||'').toUpperCase();
+      if(!sym)continue;
+      slots[i].innerHTML=logoHtml(sym);
+      guardLogos(slots[i]);
+    }
+  }
 
-  /* ---------- Render grid (WALLET holdings — never the trading balance) ---- */
+  /* ---------- Render grid (WALLET holdings — never the trading balance) ----
+     Only the three platform coins. The portfolio total below is likewise the
+     sum of just these three, so the number on screen always matches the assets
+     shown next to it. */
   function render(){
     var html='', total=0, holdings=0;
-    VWD_ORDER.forEach(function(sym){
+    VWD_WALLET_COINS.forEach(function(sym){
       var meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
       var bal=walletBalanceFor(sym);
       var usd=bal*priceOf(sym);
       if(bal>0) holdings++;
       total+=usd;
       var ch=changeOf(sym);
-      var chStr=ch==null?'\u2014':(ch>=0?'+':'')+Number(ch).toFixed(2)+'%';
+      var chStr=ch==null?'—':(ch>=0?'+':'')+Number(ch).toFixed(2)+'%';
       var chCl=ch==null?'flat':(ch>=0?'up':'down');
       html+=
         '<button type="button" class="vwd-card" data-wallet="'+sym+'">'+
           '<div class="vwd-card-top">'+logoHtml(sym)+
-            '<div class="vwd-card-name"><div class="vwd-card-sym">'+sym+'</div><div class="vwd-card-meta">'+esc(meta.name)+' \u2022 '+esc(meta.net)+'</div></div>'+
-            '<span class="vwd-card-chev">\u203A</span>'+
+            '<div class="vwd-card-name"><div class="vwd-card-sym">'+sym+'</div><div class="vwd-card-meta">'+esc(meta.name)+' • '+esc(meta.net)+'</div></div>'+
+            '<span class="vwd-card-chev">›</span>'+
           '</div>'+
           '<div class="vwd-card-bal">'+fmtCoin(bal,sym)+' <span>'+sym+'</span></div>'+
           '<div class="vwd-card-row"><span class="vwd-card-usd">'+fmtMoney(usd)+'</span><span class="vwd-card-chg '+chCl+'">'+chStr+'</span></div>'+
-          '<div class="vwd-card-acts"><span>Deposit</span><span>Transfer</span><span>Swap</span></div>'+
+          '<div class="vwd-card-acts"><span>Deposit</span><span>Withdraw</span><span>Send</span><span>Swap</span></div>'+
         '</button>';
     });
-    if(grid) grid.innerHTML=html;
-    if(emptyEl) emptyEl.hidden = VWD_ORDER.length>0;
+    if(grid){ grid.innerHTML=html; guardLogos(grid); }
+    if(emptyEl) emptyEl.hidden = VWD_WALLET_COINS.length>0;
     var t=fmtMoney(total);
     var te=$('vwdTotal'); if(te) te.textContent=t;
     var th=$('vwdHoldings'); if(th) th.textContent=holdings;
     var tc=$('vwdHoldingsCount'); if(tc) tc.textContent=holdings+' '+(holdings===1?'asset':'assets');
   }
 
-  /* ---------- Wallet-page coin chips ---------- */
+  /* ---------- Wallet-page asset cards ----------
+     The coin picker used to be a row of 14 tiny chips with three generic
+     operation buttons underneath. It is now the three assets themselves, each
+     one a card that opens that coin's sheet. Clicking still sets the active
+     coin (data-chip is kept), so every existing handler keeps working. */
   function buildChips(){
-    var wrap=$('vwdChips'); if(!wrap) return;
+    var wrap=$('vwdAssets'); if(!wrap) return;
     var html='';
-    VWD_ORDER.forEach(function(sym){
-      html+='<button type="button" class="vwd-chip'+(sym===state.activeSym?' on':'')+'" data-chip="'+sym+'">'+logoHtml(sym)+'<span>'+sym+'</span></button>';
+    VWD_WALLET_COINS.forEach(function(sym){
+      var meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
+      var bal=walletBalanceFor(sym);
+      var usd=bal*priceOf(sym);
+      html+=
+        '<button type="button" class="vwd-asset'+(sym===state.activeSym?' on':'')+'" data-chip="'+sym+'" data-asset="'+sym+'">'+
+          '<span class="vwd-asset-logo">'+logoHtml(sym)+'</span>'+
+          '<span class="vwd-asset-body">'+
+            '<span class="vwd-asset-top"><span class="vwd-asset-sym">'+sym+'</span><span class="vwd-asset-net">'+esc(meta.net)+'</span></span>'+
+            '<span class="vwd-asset-name">'+esc(meta.name)+'</span>'+
+            '<span class="vwd-asset-bal">'+fmtCoin(bal,sym)+' <i>'+sym+'</i></span>'+
+            '<span class="vwd-asset-usd">'+fmtMoney(usd)+'</span>'+
+          '</span>'+
+          '<span class="vwd-asset-go" aria-hidden="true">›</span>'+
+        '</button>';
     });
     wrap.innerHTML=html;
+    guardLogos(wrap);
   }
 
   /* ---------- Modal ---------- */
@@ -7460,8 +7552,11 @@ async function vantaHandleEntry() {
     state.activeTab=tab;
     var tabs={deposit:$('vwdPaneDeposit'),send:$('vwdPaneSend'),transfer:$('vwdPaneTransfer')};
     Array.prototype.forEach.call(document.querySelectorAll('#vwdTabs .vwd-tab'),function(b){ b.classList.toggle('active',b.getAttribute('data-tab')===tab); });
-    for(var k in tabs){ if('deposit'===k){ tabs[k].hidden=false; } else { tabs[k].hidden=true; } }
-    tabs[tab].hidden=false;
+    /* Exactly one pane at a time. This used to pin the deposit pane open
+       whatever the tab, which left the address card sitting above the send and
+       swap forms. */
+    for(var k in tabs){ if(tabs[k]) tabs[k].hidden = (k!==tab); }
+    if(tabs[tab]) tabs[tab].hidden=false;
   }
   function syncModal(){
     var sym=state.activeSym, meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
@@ -7487,6 +7582,7 @@ async function vantaHandleEntry() {
     updateRate();
     $('vwdSendNoteDemo').hidden=!isDemo();
     $('vwdConvNoteDemo').hidden=!isDemo();
+    guardLogos(modal);
   }
   function depositAddressFor(sym){
     if(!isDemo()){
@@ -7566,7 +7662,7 @@ async function vantaHandleEntry() {
   function clearQr(){ var c=$('vwdQr'); if(!c)return; var ctx=c.getContext('2d'); ctx.fillStyle='#eef0f4'; ctx.fillRect(0,0,c.width,c.height); }
 
   function openModal(sym, tab){
-    state.activeSym=sym||'BTC';
+    state.activeSym=sym||state.activeSym||VWD_WALLET_COINS[0];
     modal.hidden=false;
     setTab(tab||'deposit');
     syncModal();
@@ -7715,7 +7811,20 @@ async function vantaHandleEntry() {
   $('vwdClose').addEventListener('click',closeModal);
   document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&modal&&!modal.hidden) closeModal(); });
   Array.prototype.forEach.call(document.querySelectorAll('#vwdTabs .vwd-tab'),function(b){
-    b.addEventListener('click',function(){ setTab(b.getAttribute('data-tab')); });
+    b.addEventListener('click',function(){
+      var tab=b.getAttribute('data-tab');
+      /* Withdraw has no form of its own here: the address, its Copy button and
+         the "not configured" case all already exist in the platform address
+         view, so the tab hands off to it rather than duplicating it. */
+      if(tab==='withdraw'){
+        var sym=state.activeSym;
+        closeModal();
+        if(typeof window.vantaShowCoinAddress==='function') window.vantaShowCoinAddress(sym,'withdraw');
+        else toast('Withdrawals are not available in this environment yet.');
+        return;
+      }
+      setTab(tab);
+    });
   });
   $('vwdCopy').addEventListener('click',function(){
     var addr=$('vwdAddr').textContent; if(!addr||addr==='Not Provided Yet')return;
@@ -7729,18 +7838,17 @@ async function vantaHandleEntry() {
   $('vwdSendBtn').addEventListener('click',doSend);
   $('vwdConvBtn').addEventListener('click',doConvert);
 
-  var chipsEl=$('vwdChips');
-  if(chipsEl) chipsEl.addEventListener('click',function(e){
-    var b=e.target.closest?e.target.closest('.vwd-chip'):null; if(!b)return;
+  var assetsEl=$('vwdAssets');
+  if(assetsEl) assetsEl.addEventListener('click',function(e){
+    var b=e.target.closest?e.target.closest('[data-chip]'):null; if(!b)return;
     state.activeSym=b.getAttribute('data-chip');
-    Array.prototype.forEach.call(chipsEl.querySelectorAll('.vwd-chip'),function(c){ c.classList.toggle('on',c===b); });
-  });
-  Array.prototype.forEach.call(document.querySelectorAll('.vwd-ops-btn'),function(b){
-    b.addEventListener('click',function(){ openModal(state.activeSym, b.getAttribute('data-op')); });
+    Array.prototype.forEach.call(assetsEl.querySelectorAll('[data-chip]'),function(c){ c.classList.toggle('on',c===b); });
+    /* An asset card is a link to that coin's wallet, not just a selection. */
+    if(b.hasAttribute('data-asset')) openModal(state.activeSym,'deposit');
   });
 
   /* ---------- Hook into page nav / global syncs ---------- */
-  function vwdLoad(){ buildChips(); render(); vwdRefreshPrices(); loadBackendLayout(); }
+  function vwdLoad(){ buildChips(); render(); paintInlineLogos(); vwdRefreshPrices(); loadBackendLayout(); }
 
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',boot); } else { boot(); }
   setInterval(function(){ if(pageEl && pageEl.classList.contains('vw-active')) vwdRefreshPrices(); },20000);
@@ -8528,26 +8636,22 @@ async function vantaHandleEntry() {
     const prices=window.vantaServerPrices||{};
     const df=window.VWD_DEFAULT||{};
     const wb=window.vantaWalletBalances||{};
-    const usdt=Number(wb.USDT)||0;
-    const golf=Number(wb.GOLF)||0;
-    let allTotal=usdt, holdingsVal=0;
-    const add=(sym,amt,toHold)=>{
-      if(!amt||amt<=0)return;
-      const price=Number(prices[sym])||Number(df[sym])||0;
-      allTotal+=amt*price;
-      if(toHold) holdingsVal+=amt*price;
-    };
-    add('GOLF',golf,true);
-    for(const sym in wb){ if(sym==='USDT'||sym==='GOLF')continue; add(sym,wb[sym],true); }
-    document.querySelectorAll('[data-vfx-usdt]').forEach(e=>e.innerHTML=money(usdt)+' <small>USDT</small>');
-    const g1=$('vfxGolfBalanceLine'); if(g1)g1.textContent=golf.toLocaleString('en-US',{maximumFractionDigits:4});
+    /* The hero shows the same three coins the page lists below it, so the
+       number and the assets beside it can never disagree. */
+    const COINS=['ABC','GOLF','NOVA'];
+    const amtOf=sym=>Number(wb[sym])||0;
+    const pxOf=sym=>Number(prices[sym])||Number(df[sym])||0;
+    let allTotal=0;
+    COINS.forEach(sym=>{ allTotal+=amtOf(sym)*pxOf(sym); });
+    document.querySelectorAll('[data-vfx-usdt]').forEach(e=>e.innerHTML=money(allTotal)+' <small>WALLET</small>');
+    const g1=$('vfxGolfBalanceLine'); if(g1)g1.textContent=amtOf('GOLF').toLocaleString('en-US',{maximumFractionDigits:4});
     const pc=$('vfxPortfolioLine'), hl=$('vfxHoldingsLine');
-    if(pc) pc.textContent='Wallet portfolio value ≈ '+money(allTotal);
-    if(hl) hl.textContent=(holdingsVal>0?'Wallet holdings value ≈ '+money(holdingsVal):'Your wallet is empty. Use “Move to Wallet” to transfer funds from your trading account.');
+    if(pc) pc.textContent='ABC · GOLF · NOVA';
+    if(hl) hl.textContent=(allTotal>0?'Wallet holdings value ≈ '+money(allTotal):'Your wallet is empty. Use “Move to Wallet” to transfer funds from your trading account.');
     const bh=$('vwhBalance'); if(bh) bh.textContent=money(allTotal);
-    const bu=$('vwhUsdt'); if(bu) bu.textContent=money(usdt);
-    const bg=$('vwhGolf'); if(bg) bg.textContent=golf.toLocaleString('en-US',{maximumFractionDigits:6});
-    const bp=$('vwhPortfolio'); if(bp) bp.textContent='≈ '+money(holdingsVal);
+    const ba=$('vwhAbc'); if(ba) ba.textContent=amtOf('ABC').toLocaleString('en-US',{maximumFractionDigits:6});
+    const bg=$('vwhGolf'); if(bg) bg.textContent=amtOf('GOLF').toLocaleString('en-US',{maximumFractionDigits:6});
+    const bn=$('vwhNova'); if(bn) bn.textContent=amtOf('NOVA').toLocaleString('en-US',{maximumFractionDigits:6});
   };
   window.vantaSyncGolfUI=function(stats){
     const priceEl=$('vfxGolfPrice'); if(priceEl)priceEl.textContent='$'+Number(stats.price_usdt).toFixed(4);
@@ -12732,7 +12836,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr)!important}
   });
   function vantaShowAddress(sym,mode,depAddrs,wdAddrs){
     const map=mode==='deposit'?depAddrs:wdAddrs;
-    const val=(map&&map[sym])||(map&&map.USDT)||'';
+    /* This coin's address only. Falling back to USDT's would print a real
+       address under another coin's name, which is how funds get sent to the
+       wrong chain. */
+    const val=(map&&map[sym])||'';
     if($('vpAddrTitle'))$('vpAddrTitle').textContent=(sym+' '+(mode==='deposit'?'Deposit':'Withdraw')+' Address');
     if($('vpAddrBody')){
       if(val){ addrCopyValue=val; $('vpAddrBody').innerHTML='<div class="vtp-addr-row">'+esc(val)+'</div><div class="vtp-sub" style="font-size:10px;color:var(--muted);margin-top:6px">'+esc(sym)+' is testnet — only send test funds to this address.</div>'; }
@@ -15755,488 +15862,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   .ic-sub,.ic-total,.ic-msg{display:none}
   .timeframes .tf:nth-child(n+5){display:none}
 }
-/* =============================================================================
-   WALLET COIN ASSETS — ABC / GOLF / NOVA only
-   -----------------------------------------------------------------------------
-   The Wallet is a list of coin ASSETS, not a dumping ground for every symbol
-   the backend happens to know about. It shows exactly three: ABC, GOLF, NOVA.
-   Nothing else (BTC, ETH, SOL, USDT, …) is listed, so what the user sees is
-   what they can actually hold and trade here.
-
-   THIS BLOCK IS PRESENTATION ONLY. It reads the two existing ledgers
-   (window.vantaWalletBalances / window.vantaCoinBalances) and the existing
-   layout, and it calls the existing modals. No balance is computed here, no
-   request is made that the page did not already make, and no backend or
-   trading behaviour is touched. The platform-coins list still comes from the
-   server; this only intersects it with the three the Wallet shows.
-
-   Every coin is drawn with the ONE existing logo system
-   (window.vantaCoinIconHTML), so a coin looks identical in the list, in the
-   detail sheet and in the two legacy spots on this page that used to show a
-   bare emoji. There is no second icon path to drift out of sync.
-   ========================================================================== */
-<style id="vantaWalletCoinAssetsCss">
-  /* The legacy "Standard Crypto Wallet" column is the list of every other
-     symbol. It is removed from the Wallet rather than emptied, so the grid
-     below can be the only thing in the row. */
-  #vfxNormalWallet{display:none !important}
-  .vfx-wallet-row{grid-template-columns:minmax(0,1fr) !important}
-
-  /* A small inline logo where the page used to print a bare emoji. */
-  .vfx-mini-coin{display:inline-flex;width:18px;height:18px;vertical-align:-4px;margin-right:6px}
-  .vfx-mini-coin .vtp-coin-icon{width:18px !important;height:18px !important;border-radius:6px !important}
-  .vfx-mini-coin .vtp-coin-logo{width:100%;height:100%;object-fit:contain}
-
-  /* ---- asset grid ---- */
-  .vfx-assets{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));padding:4px 0 2px}
-  .vfx-asset{
-    display:flex;align-items:center;gap:12px;text-align:left;width:100%;
-    padding:14px;border-radius:16px;cursor:pointer;
-    background:linear-gradient(160deg,var(--card,#151a24),var(--card2,#11151d));
-    border:1px solid var(--line,rgba(255,255,255,.08));
-    color:inherit;font:inherit;
-    transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease;
-  }
-  .vfx-asset:hover,.vfx-asset:focus-visible{
-    transform:translateY(-2px);border-color:rgba(120,180,255,.34);
-    box-shadow:0 8px 22px rgba(0,0,0,.34);outline:none}
-  .vfx-asset:active{transform:translateY(0)}
-  .vfx-asset .vtp-coin-icon{width:44px !important;height:44px !important;border-radius:13px !important;flex:0 0 auto}
-  .vfx-asset .vtp-coin-logo{width:100%;height:100%;object-fit:contain}
-  .vfx-asset-body{min-width:0;flex:1}
-  .vfx-asset-top{display:flex;align-items:baseline;gap:7px}
-  .vfx-asset-sym{font-size:15px;font-weight:700;letter-spacing:.2px}
-  .vfx-asset-name{font-size:11.5px;color:var(--muted,#8b95a7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .vfx-asset-amt{font-size:17px;font-weight:700;margin-top:3px;letter-spacing:.2px;word-break:break-all}
-  .vfx-asset-usd{font-size:11.5px;color:var(--muted,#8b95a7);margin-top:1px}
-  .vfx-asset-go{flex:0 0 auto;color:var(--muted,#8b95a7);font-size:18px;line-height:1}
-
-  /* ---- coin detail sheet ---- */
-  .vfx-coin-modal{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(4,7,12,.72);backdrop-filter:blur(6px)}
-  .vfx-coin-modal.open{display:flex}
-  .vfx-coin-sheet{
-    width:min(460px,100%);max-height:min(88dvh,760px);overflow:auto;overscroll-behavior:contain;
-    background:linear-gradient(165deg,#161c27,#10141c);
-    border:1px solid var(--line,rgba(255,255,255,.1));border-radius:20px;
-    box-shadow:0 24px 60px rgba(0,0,0,.55);
-  }
-  .vfx-coin-head{display:flex;align-items:center;gap:12px;padding:18px 18px 12px}
-  .vfx-coin-head .vtp-coin-icon{width:52px !important;height:52px !important;border-radius:16px !important;flex:0 0 auto}
-  .vfx-coin-head .vtp-coin-logo{width:100%;height:100%;object-fit:contain}
-  .vfx-coin-id{min-width:0;flex:1}
-  .vfx-coin-id b{display:block;font-size:18px;letter-spacing:.2px}
-  .vfx-coin-id span{display:block;font-size:12px;color:var(--muted,#8b95a7);margin-top:2px}
-  .vfx-coin-x{flex:0 0 auto;width:34px;height:34px;border-radius:10px;border:1px solid var(--line,rgba(255,255,255,.1));
-    background:transparent;color:var(--muted,#8b95a7);font-size:15px;line-height:1;cursor:pointer}
-  .vfx-coin-x:hover{color:#fff;border-color:rgba(255,255,255,.22)}
-
-  .vfx-coin-bal{padding:0 18px 14px}
-  .vfx-coin-bal-main{font-size:26px;font-weight:700;letter-spacing:.3px;word-break:break-all}
-  .vfx-coin-bal-main small{font-size:12px;font-weight:600;color:var(--muted,#8b95a7);margin-left:6px}
-  .vfx-coin-bal-usd{font-size:12.5px;color:var(--muted,#8b95a7);margin-top:4px}
-  .vfx-coin-split{display:flex;gap:8px;margin-top:12px}
-  .vfx-coin-split div{flex:1;background:rgba(255,255,255,.035);border:1px solid var(--line,rgba(255,255,255,.07));
-    border-radius:12px;padding:9px 11px}
-  .vfx-coin-split span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted,#8b95a7)}
-  .vfx-coin-split b{display:block;font-size:13.5px;margin-top:3px;word-break:break-all}
-
-  .vfx-coin-addr{padding:0 18px 4px}
-  .vfx-coin-addr-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
-  .vfx-coin-addr-h span{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted,#8b95a7)}
-  .vfx-coin-addr-box{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);
-    border:1px solid var(--line,rgba(255,255,255,.08));border-radius:12px;padding:10px 12px}
-  .vfx-coin-addr-val{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    font-size:11.5px;line-height:1.5;word-break:break-all;color:#dfe6f2}
-  .vfx-coin-addr-val.none{font-family:inherit;color:var(--muted,#8b95a7)}
-  .vfx-coin-copy{flex:0 0 auto;padding:7px 12px;border-radius:9px;border:1px solid rgba(120,180,255,.34);
-    background:rgba(120,180,255,.12);color:#cfe2ff;font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
-  .vfx-coin-copy:hover{background:rgba(120,180,255,.2)}
-  .vfx-coin-copy:disabled{opacity:.4;cursor:not-allowed}
-  .vfx-coin-addr-note{font-size:10.5px;color:var(--muted,#8b95a7);margin-top:6px;line-height:1.5}
-
-  .vfx-coin-acts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:16px 18px 18px}
-  .vfx-coin-act{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:13px 14px;
-    border-radius:14px;border:1px solid var(--line,rgba(255,255,255,.1));background:rgba(255,255,255,.04);
-    color:#e8eefb;font:inherit;text-align:left;cursor:pointer;transition:background .14s ease,border-color .14s ease,transform .14s ease}
-  .vfx-coin-act:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);transform:translateY(-1px)}
-  .vfx-coin-act:active{transform:translateY(0)}
-  .vfx-coin-act b{font-size:13.5px;font-weight:650}
-  .vfx-coin-act i{font-style:normal;font-size:11px;color:var(--muted,#8b95a7);line-height:1.35}
-  .vfx-coin-act.primary{background:linear-gradient(150deg,rgba(34,211,238,.20),rgba(37,99,235,.22));border-color:rgba(120,180,255,.38)}
-
-  @media (max-width:560px){
-    .vfx-assets{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-    .vfx-asset{padding:12px;gap:10px;border-radius:14px}
-    .vfx-asset .vtp-coin-icon{width:38px !important;height:38px !important;border-radius:11px !important}
-    .vfx-asset-amt{font-size:15px}
-    .vfx-asset-usd{font-size:11px}
-    .vfx-coin-acts{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:14px}
-    .vfx-coin-act{padding:11px 12px}
-    .vfx-coin-bal-main{font-size:22px}
-  }
-  @media (max-width:360px){
-    .vfx-assets{grid-template-columns:minmax(0,1fr)}
-  }
 </style>
-<script id="vanta-wallet-coin-assets-js">
-(function(){
-  'use strict';
-  if(window.__vantaWalletCoinAssets) return;
-  window.__vantaWalletCoinAssets=true;
-
-  /* The Wallet shows exactly these three, in this order. Anything else the
-     server lists is not a Wallet asset. */
-  var WALLET_COINS=['ABC','GOLF','NOVA'];
-
-  var $=function(id){return document.getElementById(id);};
-  var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
-  var num=function(n){return Number(n||0);};
-  /* Local formatters: the ones in the wallet block are scoped to that block,
-     so this one does not assume they are reachable. */
-  var fmtAmt=function(n){
-    var v=num(n);
-    if(!v)return'0';
-    if(!isFinite(v))return'0';
-    return v.toLocaleString('en-US',{maximumFractionDigits:8});
-  };
-  var fmtUsd=function(n){
-    var v=num(n);
-    return (v<0?'-$':'$')+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  };
-  /* The page's own toast. Nothing here needs a second notification system. */
-  var say=function(msg){
-    if(typeof toast==='function'){toast(msg);return;}
-  };
-
-  var priceOf=function(sym){
-    var p=(window.vantaServerPrices||{})[sym];
-    var v=num(p);
-    if(v>0) return v;
-    v=num((window.VWD_DEFAULT||{})[sym]);
-    return v>0?v:0;
-  };
-  var coinName=function(sym){
-    var c=(window.VANTACOINS||[]).find(function(x){return x.sym===sym;});
-    return c?c.name:sym;
-  };
-  var walletOf=function(sym){return num((window.vantaWalletBalances||{})[sym]);};
-  var tradingOf=function(sym){return num((window.vantaCoinBalances||{})[sym]);};
-
-  /* THE one logo path. window.vantaCoinIconHTML already implements
-     logo -> emoji -> first-letter and emits the container class, so using it
-     here is what guarantees the same artwork everywhere. */
-  function iconHTML(sym,fallbackLetter){
-    if(typeof window.vantaCoinIconHTML==='function'){
-      try{ return window.vantaCoinIconHTML(sym); }catch(e){}
-    }
-    return '<div class="vtp-coin-icon has-letter">'+esc(String(fallbackLetter||sym||'').charAt(0))+'</div>';
-  }
-  /* Never leave a broken image behind: fall back to the coin's own emoji. */
-  function guardLogos(root){
-    if(typeof window.vantaCoinIconFallback!=='function'||!root)return;
-    var imgs=root.querySelectorAll('.vtp-coin-logo');
-    for(var i=0;i<imgs.length;i++){
-      (function(img){
-        var fail=function(){window.vantaCoinIconFallback(img.parentNode);};
-        img.addEventListener('error',fail,{once:true});
-        if(img.complete&&!img.naturalWidth)fail();
-      })(imgs[i]);
-    }
-  }
-  /* Fill every [data-vfx-logo] placeholder on the page (the two legacy spots
-     that used to print a bare emoji). */
-  function paintInlineLogos(){
-    var slots=document.querySelectorAll('[data-vfx-logo]');
-    for(var i=0;i<slots.length;i++){
-      var sym=String(slots[i].getAttribute('data-vfx-logo')||'').toUpperCase();
-      if(!sym)continue;
-      slots[i].innerHTML=iconHTML(sym,sym);
-      guardLogos(slots[i]);
-    }
-  }
-
-  /* ------------------------------------------------------------------ list */
-  function renderAssets(){
-    var box=$('vfxInvestHoldings');
-    /* The Standard Crypto Wallet column is not emptied row by row — it is taken
-       out of the layout entirely by CSS, so no other symbol can appear. */
-    var norm=$('vfxNormalHoldings');
-    if(norm) norm.innerHTML='';
-
-    if(!box) return;
-    var html='<div class="vfx-assets">';
-    for(var i=0;i<WALLET_COINS.length;i++){
-      var sym=WALLET_COINS[i];
-      var amt=walletOf(sym), price=priceOf(sym), usd=amt*price;
-      html+='<button type="button" class="vfx-asset" data-vfx-asset="'+esc(sym)+'" aria-label="Open '+esc(sym)+' wallet">'
-        +iconHTML(sym,sym)
-        +'<span class="vfx-asset-body">'
-          +'<span class="vfx-asset-top"><span class="vfx-asset-sym">'+esc(sym)+'</span>'
-          +'<span class="vfx-asset-name">'+esc(coinName(sym))+'</span></span>'
-          +'<span class="vfx-asset-amt">'+esc(fmtAmt(amt))+'</span>'
-          +'<span class="vfx-asset-usd">'+esc(price>0?fmtUsd(usd):'No market price yet')+'</span>'
-        +'</span>'
-        +'<span class="vfx-asset-go" aria-hidden="true">&rsaquo;</span>'
-      +'</button>';
-    }
-    html+='</div>'
-      +'<div class="vfx-w-note">Select a coin to see its balance, wallet address and actions. This is your wallet balance; your trading balance is separate.</div>';
-    box.innerHTML=html;
-    guardLogos(box);
-
-    var cards=box.querySelectorAll('[data-vfx-asset]');
-    for(var c=0;c<cards.length;c++){
-      cards[c].addEventListener('click',function(e){
-        openCoin(e.currentTarget.getAttribute('data-vfx-asset'));
-      });
-    }
-    paintInlineLogos();
-  }
-
-  /* ------------------------------------------------------------ detail sheet */
-  var modal=null,currentSym=null,layoutPromise=null;
-
-  function getLayout(){
-    if(window.vantaWalletLayout) return Promise.resolve(window.vantaWalletLayout);
-    if(!layoutPromise){
-      layoutPromise=(typeof vantaApi==='function'
-        ? vantaApi('/api/wallet/layout')
-        : Promise.reject(new Error('no api')))
-        .then(function(l){ window.vantaWalletLayout=l; return l; })
-        .catch(function(){ return null; });
-    }
-    return layoutPromise;
-  }
-
-  function buildModal(){
-    if(modal) return modal;
-    modal=document.createElement('div');
-    modal.id='vfxCoinModal';
-    modal.className='vfx-coin-modal';
-    modal.setAttribute('role','dialog');
-    modal.setAttribute('aria-modal','true');
-    modal.setAttribute('aria-label','Coin wallet details');
-    modal.innerHTML=
-      '<div class="vfx-coin-sheet" role="document">'
-      +'<div class="vfx-coin-head">'
-        +'<span data-vfx-sheet-icon></span>'
-        +'<span class="vfx-coin-id"><b data-vfx-sheet-sym>GOLF</b><span data-vfx-sheet-name>Golf Coin</span></span>'
-        +'<button type="button" class="vfx-coin-x" data-vfx-sheet-close aria-label="Close">&times;</button>'
-      +'</div>'
-      +'<div class="vfx-coin-bal">'
-        +'<div class="vfx-coin-bal-main" data-vfx-sheet-amt>0<small data-vfx-sheet-sym2>GOLF</small></div>'
-        +'<div class="vfx-coin-bal-usd" data-vfx-sheet-usd>$0.00</div>'
-        +'<div class="vfx-coin-split">'
-          +'<div><span>Wallet balance</span><b data-vfx-sheet-wallet>0</b></div>'
-          +'<div><span>Trading balance</span><b data-vfx-sheet-trading>0</b></div>'
-        +'</div>'
-      +'</div>'
-      +'<div class="vfx-coin-addr">'
-        +'<div class="vfx-coin-addr-h"><span>Wallet address</span><span data-vfx-sheet-network></span></div>'
-        +'<div class="vfx-coin-addr-box">'
-          +'<span class="vfx-coin-addr-val" data-vfx-sheet-addr>Not Provided Yet.</span>'
-          +'<button type="button" class="vfx-coin-copy" data-vfx-sheet-copy>Copy</button>'
-        +'</div>'
-        +'<div class="vfx-coin-addr-note" data-vfx-sheet-note></div>'
-      +'</div>'
-      +'<div class="vfx-coin-acts">'
-        +'<button type="button" class="vfx-coin-act" data-vfx-act="deposit"><b>Deposit</b><i>Fund this wallet</i></button>'
-        +'<button type="button" class="vfx-coin-act" data-vfx-act="withdraw"><b>Withdraw</b><i>Send to an address</i></button>'
-        +'<button type="button" class="vfx-coin-act" data-vfx-act="send"><b>Send</b><i>To another account</i></button>'
-        +'<button type="button" class="vfx-coin-act primary" data-vfx-act="swap"><b>Swap</b><i>Trade on VANTA</i></button>'
-      +'</div>'
-      +'</div>';
-    document.body.appendChild(modal);
-
-    modal.addEventListener('click',function(e){
-      if(e.target===modal) closeCoin();
-    });
-    var x=modal.querySelector('[data-vfx-sheet-close]');
-    if(x) x.addEventListener('click',closeCoin);
-    document.addEventListener('keydown',function(e){
-      if(e.key==='Escape'&&modal&&modal.classList.contains('open')) closeCoin();
-    });
-
-    var copy=modal.querySelector('[data-vfx-sheet-copy]');
-    if(copy) copy.addEventListener('click',function(){
-      var v=copy.getAttribute('data-addr')||'';
-      if(!v){ say('No address available yet.'); return; }
-      copyAddress(v,copy);
-    });
-
-    var acts=modal.querySelectorAll('[data-vfx-act]');
-    for(var i=0;i<acts.length;i++){
-      acts[i].addEventListener('click',function(e){
-        doAction(e.currentTarget.getAttribute('data-vfx-act'),currentSym);
-      });
-    }
-    return modal;
-  }
-
-  /* Copy with a graceful fallback, because the Clipboard API is unavailable on
-     insecure origins and older mobile browsers. */
-  function copyAddress(text,btn){
-    var done=function(){ say('Address copied.'); if(btn){var o=btn.textContent;btn.textContent='Copied';setTimeout(function(){btn.textContent=o;},1400);} };
-    var legacy=function(){
-      try{
-        var ta=document.createElement('textarea');
-        ta.value=text;ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.opacity='0';
-        document.body.appendChild(ta);ta.select();
-        var ok=false; try{ok=document.execCommand('copy');}catch(e){}
-        document.body.removeChild(ta);
-        if(ok) done(); else say('Copy failed — select the address and copy it manually.');
-      }catch(e){ say('Copy failed — select the address and copy it manually.'); }
-    };
-    if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(done,legacy);
-    } else legacy();
-  }
-
-  function sheet(sym,address,network){
-    if(!modal)return;
-    var set=function(sel,val){var e=modal.querySelector(sel);if(e)e.textContent=val;};
-    var iconBox=modal.querySelector('[data-vfx-sheet-icon]');
-    if(iconBox){ iconBox.innerHTML=iconHTML(sym,sym); guardLogos(iconBox); }
-    set('[data-vfx-sheet-sym]',sym);
-    set('[data-vfx-sheet-name]',coinName(sym));
-
-    var amt=walletOf(sym), price=priceOf(sym);
-    var amtEl=modal.querySelector('[data-vfx-sheet-amt]');
-    if(amtEl){
-      amtEl.innerHTML=esc(fmtAmt(amt))+'<small>'+esc(sym)+'</small>';
-    }
-    set('[data-vfx-sheet-usd]',price>0?fmtUsd(amt*price):'No market price yet');
-    set('[data-vfx-sheet-wallet]',fmtAmt(amt));
-    set('[data-vfx-sheet-trading]',fmtAmt(tradingOf(sym)));
-    set('[data-vfx-sheet-network]',network||'');
-
-    var addrEl=modal.querySelector('[data-vfx-sheet-addr]');
-    var copyBtn=modal.querySelector('[data-vfx-sheet-copy]');
-    var note=modal.querySelector('[data-vfx-sheet-note]');
-    if(addrEl){
-      if(address){
-        addrEl.textContent=address;
-        addrEl.classList.remove('none');
-        if(copyBtn){copyBtn.disabled=false;copyBtn.setAttribute('data-addr',address);}
-        if(note) note.textContent=sym+' is a testnet asset — only send test funds to this address.';
-      }else{
-        addrEl.textContent='Not Provided Yet.';
-        addrEl.classList.add('none');
-        if(copyBtn){copyBtn.disabled=true;copyBtn.removeAttribute('data-addr');}
-        if(note) note.textContent='The platform admin has not configured a '+sym+' address yet. You can still Swap, Send and trade this coin.';
-      }
-    }
-  }
-
-  function openCoin(sym){
-    sym=String(sym||'').toUpperCase();
-    if(WALLET_COINS.indexOf(sym)<0) return;   /* never open a hidden coin */
-    currentSym=sym;
-    buildModal();
-    /* Paint from what we already have, then correct the address when the layout
-       arrives, so the sheet never opens empty. */
-    var known=window.vantaWalletLayout||null;
-    paint(sym,known);
-    if(!known){
-      getLayout().then(function(l){
-        if(currentSym===sym&&modal&&modal.classList.contains('open')) paint(sym,l||known);
-      });
-    }
-    modal.classList.add('open');
-    document.body.style.overflow='hidden';
-  }
-  function paint(sym,layout){
-    var dep=(layout&&layout.deposit_addresses)||{};
-    var wd=(layout&&layout.withdraw_addresses)||{};
-    var net=layout&&layout.network?layout.network:'';
-    /* Only this coin's own address. Falling back to another coin's address (or
-       to USDT) would put a real-looking address under the wrong coin's name,
-       which is worse than saying none is configured. */
-    var addr=(wd&&wd[sym])||(dep&&dep[sym])||'';
-    sheet(sym,addr,net);
-  }
-  function closeCoin(){
-    if(!modal)return;
-    modal.classList.remove('open');
-    document.body.style.overflow='';
-    currentSym=null;
-  }
-  window.vantaOpenCoinWallet=openCoin;
-  window.vantaCloseCoinWallet=closeCoin;
-
-  /* ---------------------------------------------------------------- actions
-     Each one hands off to a flow the Wallet already had, which already owns
-     its own practice-mode, login and PIN checks. Duplicating those checks here
-     would only pre-empt their messages, so this block only routes. */
-  function closeThen(fn){
-    closeCoin();
-    /* let the sheet finish closing so the modal underneath is visible */
-    setTimeout(fn,10);
-  }
-  function doAction(kind,sym){
-    if(!sym) return;
-    if(kind==='deposit'){
-      closeThen(function(){
-        if(typeof window.vantaShowCoinAddress==='function') window.vantaShowCoinAddress(sym,'deposit');
-        else openLegacy('vfxDepositModal');
-      });
-    }else if(kind==='withdraw'){
-      closeThen(function(){
-        if(typeof window.vantaShowCoinAddress==='function') window.vantaShowCoinAddress(sym,'withdraw');
-        else say('Withdrawals are not available in this test environment yet.');
-      });
-    }else if(kind==='send'){
-      closeThen(function(){
-        if(typeof window.vantaOpenTransfer==='function') window.vantaOpenTransfer(sym);
-        else say('Send is not available yet.');
-      });
-    }else if(kind==='swap'){
-      closeThen(function(){
-        if(typeof window.vantaOpenConvert==='function') window.vantaOpenConvert('USDT',sym);
-        else say('Swap is not available yet.');
-      });
-    }
-  }
-  function openLegacy(id){
-    var m=$(id);
-    if(m) m.classList.add('open');
-  }
-
-  /* ------------------------------------------------------------------ wiring
-     The Wallet already re-renders through vantaSyncWalletUI on every balance
-     refresh. Wrapping it (rather than replacing it) keeps all of that intact
-     and guarantees this runs AFTER the existing holdings renderer, so the
-     three-asset grid is what the user ends up looking at. */
-  var base=(typeof window.vantaSyncWalletUI==='function')?window.vantaSyncWalletUI:function(){};
-  window.vantaSyncWalletUI=function(){
-    var r=base.apply(this,arguments);
-    try{ renderAssets(); }catch(e){}
-    return r;
-  };
-  window.vantaRefreshWalletCoinAssets=renderAssets;
-
-  /* Run now for the case where the page is already on the wallet, and keep
-     repainting the inline logo slots the wallet rewrites. */
-  function boot(){ try{ renderAssets(); }catch(e){} }
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',boot);
-  }else{
-    boot();
-  }
-  /* The wallet page can be built after this block runs, so try again shortly
-     and whenever the page is shown. */
-  setTimeout(boot,400);
-  var _setPage=window.vantaSetPage;
-  if(typeof _setPage==='function'){
-    window.vantaSetPage=function(p){
-      var r=_setPage.apply(this,arguments);
-      if(p==='wallet') setTimeout(boot,60);
-      return r;
-    };
-  }
-})();
-</script>
 </body>
 </html>
 

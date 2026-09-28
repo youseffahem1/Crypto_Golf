@@ -421,10 +421,12 @@ body {
     transition: top .12s linear;
 }
 
-/* A position past its deadline, between the countdown hitting 00:00 and the
-   server confirming the close. It is dimmed and greyed so it can never be
-   mistaken for a live position still counting down — the defect this whole
-   fix is about. It is removed as soon as the server's answer arrives. */
+/* A position whose duration is over. It is NOT settled and does NOT go away:
+   the user still owns it and still has to close it by hand. So it is dimmed
+   rather than hidden, greyscale rather than deleted, and stays on the chart for
+   as long as it stays open. Only the clock is finished, and the dimming is what
+   says so — a live position must never be mistakable for a finished one, because
+   a finished one no longer counts down. */
 .trade-marker.is-expired { opacity: .45; filter: grayscale(1); }
 .trade-marker.is-expired .trade-time { color: var(--down) !important; }
 
@@ -822,6 +824,15 @@ body {
     font-weight: 900;
     font-variant-numeric: tabular-nums;
 }
+
+/* A position whose duration is over: still open, still closable, still showing
+   an UNREALIZED P/L — only the clock is done. The row is dimmed so it cannot be
+   read as live, its 00:00 drops the gold so a stopped timer does not look like
+   a running one, and the button is labelled CLOSE so it is obvious that pressing
+   it is what actually realizes the trade. */
+.open-trade.is-finished { opacity: .78; }
+.open-countdown.is-done { color: var(--down); }
+.open-trade.is-finished .open-sell { background: rgba(141,114,255,.18); }
 
 .open-live {
     margin-top: 5px;
@@ -5210,15 +5221,19 @@ function positionAllTrades() {
    separate timer that can drift, restart or be stopped and restarted by a
    re-render.
 
-   `expired` is the important half. The reported bug was a countdown that read
-   00:00 and then sat there with the position still running: nothing ever acted
-   on reaching zero, and nothing here could tell the difference between "has 0
-   seconds left" and "should already be closed". So a trade that has passed its
-   endTime is flagged immediately, `updateTrades` stops writing to its
-   countdown, `renderOpenTrades` stops drawing it as an open position, and
-   `vantaExpireDueTrades()` asks the server to settle it. The client never
-   decides the result — it only says the minute is up, and the server prices
-   the position off its own feed exactly as it prices a manual SELL. */
+   `expired` is the important half. It means ONE thing and only one thing: this
+   position's duration is over. It does NOT mean the position is settled. A trade
+   that has passed its endTime is flagged immediately, `updateTrades` stops
+   writing to its countdown — on the list row AND on the chart marker, both frozen
+   at 00:00 — and that is the entire effect.
+
+   The position stays open. It stays in the open-trades list, in the open count,
+   in the POSITIONS table and in the Live Value box, it keeps its live close
+   button, and its P/L keeps updating on screen as the UNREALIZED figure it is.
+   None of it reaches the top Profit, the top Loss, the Trading Balance or closed
+   history, because none of those move until the user closes the position and the
+   server prices it. The client never decides a result — it only notices that the
+   minute is up, and leaves the rest to the user. */
 function vantaTimeLeft(trade, now) {
     const end = Number(trade && trade.endTime);
     if (!isFinite(end) || end <= 0) return 0;
@@ -5234,8 +5249,12 @@ function vantaIsExpired(trade, now) {
 }
 
 /* Marks a position as past its deadline, in both the local mirror and the chart
-   marker, so nothing on screen can keep drawing it as live. Returns true only
-   the first time, so the caller can fire the settle request exactly once. */
+   marker, so nothing on screen can keep drawing it as live.
+
+   This DOES NOT SETTLE ANYTHING. It flips a flag and greys a chart marker. No
+   request, no price, no ledger entry, no balance move — the position stays open
+   and stays the user's to close. Returns true only on the first marking, so a
+   repeated tick is a no-op. */
 function vantaMarkExpired(trade, now) {
     if (!trade || trade.expired) return false;
     if (!vantaIsExpired(trade, now)) return false;
@@ -5243,8 +5262,10 @@ function vantaMarkExpired(trade, now) {
     const marker = document.querySelector(`[data-trade-id="${trade.id}"]`);
     if (marker) {
         marker.classList.add("is-expired");
-        const btn = marker.querySelector(".trade-time");
-        if (btn) btn.textContent = "EXPIRED";
+        /* The marker's own time label, on the chart — NOT the row's CLOSE
+           button, which must stay live and closable at 00:00 and forever after. */
+        const timer = marker.querySelector(".trade-time");
+        if (timer) timer.textContent = "EXPIRED";
     }
     return true;
 }
@@ -5253,13 +5274,17 @@ function renderOpenTrades() {
 
     const activeCoin = window.vantaActiveCoin || "GOLF";
     const allTrades = trades.filter(t => (t.symbol || "GOLF") === activeCoin);
-
-    /* A position whose deadline has passed is not an open position. It is
-       counted as still-open only until the server confirms it settled, so the
-       row cannot linger at 00:00 looking live — and the count badge can never
-       contradict the list beside it. */
     const now = Date.now();
-    const activeTrades = allTrades.filter(t => !vantaIsExpired(t, now));
+
+    /* EVERY position is drawn here, including one whose duration is over.
+       It used to be filtered out at 00:00, which was only defensible while
+       something else was settling it the instant it left the list. Nothing
+       settles it now, so hiding it would strand the stake: the user could not
+       see it, could not read its price, and — worst — could not press CLOSE
+       on the only position they had. A finished position is still an OPEN
+       position, so it stays in the list, stays in the count, and keeps a live
+       close button; only its countdown has stopped. */
+    const activeTrades = allTrades;
 
     openCountEl.textContent = activeTrades.length;
 
@@ -5276,11 +5301,14 @@ function renderOpenTrades() {
     openTradesEl.innerHTML = "";
 
     activeTrades.forEach(trade => {
+        /* 0 for a finished position, so its cell reads 00:00 from the first
+           frame it is redrawn and can never be written with anything else. */
         const remaining = vantaTimeLeft(trade, now);
+        const finished = vantaIsExpired(trade, now);
         const rv = closeValueFor(trade);
         const rpl = rv - Number(trade.amount);
         const item = document.createElement("div");
-        item.className = "open-trade";
+        item.className = "open-trade" + (finished ? " is-finished" : "");
         item.dataset.openTrade = trade.id;
 
         item.innerHTML = `
@@ -5301,9 +5329,9 @@ function renderOpenTrades() {
 
             <div class="open-right">
                 <div class="open-amount">${money(trade.amount)}</div>
-                <div class="open-countdown" data-countdown="${trade.id}">${formatTime(remaining)}</div>
+                <div class="open-countdown${finished ? " is-done" : ""}" data-countdown="${trade.id}">${finished ? "00:00" : formatTime(remaining)}</div>
                 <div class="open-value" data-openval="${trade.id}">${rpl >= 0 ? "+" : "−"}${money(Math.abs(rpl))}</div>
-                <button type="button" class="open-sell" data-exit="${trade.id}">SELL</button>
+                <button type="button" class="open-sell" data-exit="${trade.id}">${finished ? "CLOSE" : "SELL"}</button>
             </div>
         `;
 
@@ -5323,13 +5351,14 @@ function updateTrades() {
 
     /* Live Value box: total sell-value of open positions on the active
        coin right now (falls back to the stake amount when none are open).
-       A position past its `closes_at` is excluded — it is no longer open, and
-       counting it here would show a figure for a trade that is on its way out
-       of the book. */
+       A position whose `closes_at` has passed is still included: it is still
+       open, it is still the user's, and it is still worth exactly what it is
+       worth. Excluding it would under-report the account by the full amount
+       the user is sitting on, purely because a clock ran out. */
     const liveValEl = document.getElementById("potentialReturn");
     if (liveValEl) {
         const lvSym = window.vantaActiveCoin || "GOLF";
-        const lv = trades.filter(t => (t.symbol || "GOLF") === lvSym && !vantaIsExpired(t, now));
+        const lv = trades.filter(t => (t.symbol || "GOLF") === lvSym);
         const lvTotal = lv.length
             ? lv.reduce((s, t) => s + closeValueFor(t), 0)
             : getAmount();
@@ -5376,11 +5405,16 @@ function updateTrades() {
             );
 
 
-        /* Once the minute is up the countdown is finished: it holds 00:00 and
+        /* Once the minute is up the countdown is FINISHED: it holds 00:00 and
            is not written again, so it can never restart, tick past zero, or
-           sit looking live while the position carries on. The row is dropped
-           from the open list by renderOpenTrades() and the position is settled
-           by the server. */
+           keep counting for a duration that is over. This stops the timer and
+           nothing else.
+
+           It does NOT settle the position. The trade stays open and stays
+           unrealized, which is why execution deliberately falls through to the
+           P/L and marker work below instead of `continue`-ing: the user still
+           owns this position and still has to be able to read what it is worth
+           before deciding to press CLOSE on it. */
         if (
             expired
         ) {
@@ -5389,8 +5423,6 @@ function updateTrades() {
                 trade,
                 now
             );
-
-            continue;
 
         }
 
@@ -5401,7 +5433,7 @@ function updateTrades() {
             );
 
 
-        if (countdown) {
+        if (countdown && !expired) {
 
             countdown.textContent =
                 formatTime(
@@ -5457,7 +5489,15 @@ function updateTrades() {
                 );
 
 
-            if (timer) {
+            /* The chart marker's clock is the same clock, so it stops in the
+               same place: at 00:00, and never written again. Leaving it running
+               would be the one place on screen still implying the duration is
+               live. It is not re-marked here — vantaMarkExpired() has already
+               labelled this MARKER "EXPIRED", and that label is what stays.
+               That word describes the marker only: the duration is over, not
+               the position. The row's own countdown still reads 00:00 and its
+               CLOSE button is still live. */
+            if (timer && !expired) {
 
                 timer.textContent =
                     formatTime(
@@ -5468,16 +5508,18 @@ function updateTrades() {
 
         }
 
-        /* Trades are settled authoritatively by the server — either by its
-           expiry sweep or by this client's request once `closes_at` passes.
-           This loop only draws the countdown and flags the deadline; it never
-           decides a result, and it never writes a countdown that has already
-           reached 00:00. See vantaExpireDueTrades(). */
+        /* Nothing in this loop decides a result, prices a position, or books
+           one. It draws a countdown, freezes it at 00:00, and keeps the live
+           unrealized P/L on screen so the user can decide whether to press
+           CLOSE. The only thing that realizes a trade is the user closing it,
+           which goes to the server and is priced there — see
+           vantaExpireDueTrades() and closePositions(). */
 
     }
 
-    /* Anything past its deadline is handed to the server now, rather than
-       waiting for the next poll. */
+    /* Flags any position whose duration is over, so the timers above stay
+       stopped and the UI can label it. It books nothing and asks the server
+       for nothing: a finished duration is not a settlement. */
     vantaExpireDueTrades();
 
 }
@@ -5505,110 +5547,54 @@ function removeTradeMarker(trade) {
 /* =========================================================
    EXPIRY — the countdown reaching 00:00
 
-   This is the fix for a 1-minute trade that reached 00:00 and then sat
-   there, still open, with the position apparently still running. Reaching
-   zero used to be purely cosmetic: nothing was flagged, nothing was
-   removed, and the row kept a live SELL button and a frozen 00:00.
+   00:00 MEANS THE DURATION IS OVER. IT DOES NOT MEAN THE TRADE
+   IS SETTLED. This is the whole rule, and nothing below may
+   soften it:
 
-   What happens now, in order:
+     00:00        -> the timer stops. The countdown stops. The
+                      position stays OPEN and its P/L stays
+                      UNREALIZED. Nothing is booked.
+     CLOSE (the   -> price it, book the P/L, update the top
+     user)          Profit OR Loss, update the Trading Balance,
+                      move it to closed history.
 
-     1. updateTrades() sees the server's `closes_at` has passed and stops
-        writing the countdown. 00:00 is a terminal value, not a state.
-     2. renderOpenTrades() stops drawing the position as an open one.
-     3. this function asks the server to settle it — the ORDINARY
-        /api/trade/close call, with the trade id and nothing else.
+   Reaching zero used to POST /api/trade/close, which is why a trade
+   that ran out of time booked a result, moved the balance and showed
+   up in the top Profit/Loss without the user ever asking. That request
+   is gone, and so is every other automatic settlement at zero.
 
-   Step 3 is deliberately not a new settlement path. It is the same
-   idempotent endpoint a manual SELL uses, so the position is priced by
-   the server off its own feed with the trade's own direction, credited
-   once, and recorded once. The old behaviour — a timer that booked
-   `profit = -amount` and threw the stake away — is not reintroduced: a
-   position that is up when its minute is up banks that gain, because the
-   server prices it and the client never names a figure.
+   What this function does now, in full, is mark the position as
+   finished so the UI can stop the timers and label it:
 
-   And it is not load-bearing. The server settles elapsed positions on its
-   own schedule and again on every read, so if this request never arrives —
-   offline tab, closed laptop, a request that fails — the position is still
-   closed by the server at `closes_at`, and the next vantaSyncTrades()
-   picks up the real result. `ending` only exists to stop this function
-   firing the same request on every animation frame. */
-let __vantaExpireRetryAt = 0;
+     1. updateTrades() has already stopped writing the countdown.
+     2. vantaMarkExpired() flags it and marks the chart marker.
+
+   That is all. It makes no network call. It books no result. It is
+   also deliberately not load-bearing: if it never ran, the position
+   would still be OPEN on the server, still unrealized, and still
+   closable by hand — the failure mode is a stale label, never a
+   settled trade.
+
+   The client is not the only place this is enforced. The server does
+   not settle on a timer either (config.AUTO_SETTLE_ON_EXPIRE is off
+   and trading_service.expire_due_trades is inert), so a closed tab, a
+   dropped connection or a page that never reaches 00:00 all leave the
+   position open. Only the user closing it books anything, and the
+   server prices that close off its own feed. */
 
 function vantaExpireDueTrades() {
     if (!trades || !trades.length) return;
     const now = Date.now();
-    const due = trades.filter(t => !t.result && !__vantaClosing.has(t.id) && vantaIsExpired(t, now));
-    if (!due.length) return;
 
-    due.forEach(t => { vantaMarkExpired(t, now); });
-
-    /* Practice positions have no server row, so they settle locally through
-       the same direction-aware maths a live position settles with on the
-       server (closeValueFor), and the same honest booking. What is NOT here
-       is the old sweep that forced a practice position to a total loss just
-       because its timer ran out. */
-    if (accountMode === "demo") {
-        closePositions(due);
-        return;
-    }
-
-    if (now < __vantaExpireRetryAt) return;
-
-    due.forEach(t => {
-        if (t.ending) return;
-        t.ending = true;
-        const staked = Number(t.amount) || 0;
-        vantaApi("/api/trade/close", {
-            method: "POST",
-            body: JSON.stringify({ trade_id: t.id })
-        }).then(sold => {
-            const profit = Number((sold && sold.profit) || 0);
-            const expired = (sold && sold.close_reason) === "EXPIRED" || (sold && sold.settled_at
-                && t.endTime && Date.parse(sold.settled_at + "Z") >= t.endTime - 1000);
-
-            vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit });
-            if (!__vantaSuppressLast) {
-                vantaSetLastSettled({
-                    symbol: (sold && sold.symbol) || t.symbol || "GOLF",
-                    direction: (sold && sold.direction) || t.direction,
-                    entryPrice: Number((sold && sold.entry_price) != null ? sold.entry_price : t.entryPrice) || 0,
-                    peak: vantaPeakBest(t),
-                    peakValue: vantaPeakValue(t),
-                    invested: staked,
-                    value: staked + profit,
-                    profit,
-                    pct: staked ? (profit / staked) * 100 : 0,
-                    won: !!(sold && sold.status === "WON"),
-                    reason: expired ? "EXPIRED" : "SOLD"
-                });
-            }
-            vantaForgetPeak(t.id);
-
-            removeTradeMarker(t);
-            trades = trades.filter(x => x.id !== t.id);
-            if (historySeen) historySeen.add(t.id); // toast it now; suppress the next sync's duplicate
-
-            renderOpenTrades();
-            positionAllTrades();
-            showResultToast(!!(sold && sold.status === "WON"), profit, (sold && sold.direction) || t.direction);
-        }).catch(() => {
-            /* The server could not be reached. Leave the position flagged as
-               expired and visible in neither list: its own expiry sweep and the
-               read-path sweep on the next sync will settle it at the server's
-               price, and this client's `ending` flag is cleared so it will ask
-               again. Backing off keeps a long outage from turning into a
-               request per animation frame. */
-            t.ending = false;
-            __vantaExpireRetryAt = now + 5000;
-        }).then(() => {
-            refreshBalance();
-            const cards = (typeof window.vantaRefreshInfoCards === 'function')
-                ? window.vantaRefreshInfoCards
-                : (typeof refreshInfoCards === 'function' ? refreshInfoCards : null);
-            if (cards) cards();
-        });
-    });
+    /* A position past its deadline: mark it finished, and stop there.
+       There is deliberately no request here. A trade that reached
+       00:00 is still the user's to close, and until they do, it is
+       still open: still priced live, still showing its unrealized P/L,
+       still holding the balance that was reserved for it, and still
+       absent from the top Profit, the top Loss and closed history. */
+    trades.forEach(t => { vantaMarkExpired(t, now); });
 }
+
 
 async function vantaSyncTrades() {
     if (accountMode === "demo") return;

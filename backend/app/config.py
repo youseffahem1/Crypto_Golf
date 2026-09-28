@@ -48,14 +48,32 @@ MAX_TRADE_AMOUNT = float(os.environ.get("MAX_TRADE_AMOUNT", "100000"))
 # CoinGecko (soft failure: falls back to last known / default prices).
 COIN_PRICE_REFRESH_SECONDS = int(os.environ.get("COIN_PRICE_REFRESH_SECONDS", "180"))
 
-# How often the server settles positions whose chosen duration has elapsed.
-# Deliberately the same 1s cadence as MARKET_TICK_INTERVAL_SECONDS: the exit
-# price of an expired position is the server's live price read at expiry, so
-# sweeping at the same rate the market itself ticks keeps that price the price
-# at the moment the duration ran out rather than a stale or an over-advanced
-# one. This is a bound on lateness, not a source of truth — the read endpoints
-# run the same sweep (trading_service.expire_due_trades), so expiry still
-# happens promptly on a server whose loop is not running.
+# --- Trade settlement on reaching the duration -------------------------------
+# 00:00 MEANS THE DURATION IS OVER. IT DOES NOT MEAN THE TRADE IS SETTLED.
+#
+# A trade's `closes_at` is only a deadline for how long it runs. Reaching it must
+# NOT realize anything: the position stays OPEN, its P/L stays UNREALIZED, the
+# trading balance is untouched, and the account's Profit and Loss stay at whatever
+# they were. The position is priced and settled ONLY when the user closes it
+# (POST /api/trade/close), which is the single event that books a result, credits
+# the balance and files the trade into closed history.
+#
+# AUTO_SETTLE_ON_EXPIRE exists because the sweep machinery is still here and is
+# one env var away from being reinstated; it defaults to OFF, and with it off the
+# expiry sweep is a no-op at all (see trading_service.expire_due_trades). Nothing
+# else in the system settles a position on a timer.
+AUTO_SETTLE_ON_EXPIRE = os.environ.get("AUTO_SETTLE_ON_EXPIRE", "0").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+
+# How often the server would settle positions whose duration has elapsed, IF
+# AUTO_SETTLE_ON_EXPIRE is turned on. Deliberately the same 1s cadence as
+# MARKET_TICK_INTERVAL_SECONDS: the exit price of an expired position is the
+# server's live price read at expiry, so sweeping at the same rate the market
+# itself ticks keeps that price the price at the moment the duration ran out
+# rather than a stale or an over-advanced one. This is a bound on lateness, not a
+# source of truth. With the flag off — the shipped behaviour — this value is
+# unused.
 TRADE_EXPIRY_SWEEP_SECONDS = float(os.environ.get("TRADE_EXPIRY_SWEEP_SECONDS", "1"))
 
 # --- Wallet structure -------------------------------------------------------

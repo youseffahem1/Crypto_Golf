@@ -14,7 +14,7 @@ from .routes import (
 )
 from .config import (
     ALLOWED_ORIGINS, MARKET_TICK_INTERVAL_SECONDS, DEPOSIT_POLL_INTERVAL_SECONDS,
-    COIN_PRICE_REFRESH_SECONDS, TRADE_EXPIRY_SWEEP_SECONDS,
+    COIN_PRICE_REFRESH_SECONDS, TRADE_EXPIRY_SWEEP_SECONDS, AUTO_SETTLE_ON_EXPIRE,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -165,9 +165,11 @@ def _migrate():
     for table, column, decl in [
         ("wallet_transfers", "kind", "VARCHAR(20) DEFAULT 'BALANCE' NOT NULL"),
         ("wallet_transfers", "usd_value", "FLOAT"),
-        # trades.close_reason records HOW a position left OPEN: "SOLD" when the
-        # user closed it early, "EXPIRED" when its duration elapsed and the
-        # server settled it. Nullable, so every pre-existing trade reads NULL
+        # trades.close_reason records HOW a position left OPEN. "SOLD" is what
+        # the shipping product writes, on the manual close. "EXPIRED" is legacy
+        # and only reachable with AUTO_SETTLE_ON_EXPIRE on; a duration running
+        # out no longer closes anything on its own. Nullable, so every
+        # pre-existing trade reads NULL
         # and nothing is rewritten — and NULL is correct for them, because
         # they predate the distinction. No query filters on it: `status`
         # remains the authority for whether a position is settled, so adding
@@ -211,17 +213,23 @@ def health():
 # deposit monitoring, and the CoinGecko price table. Each loop swallows its own
 # exceptions so one bad iteration can never kill the whole background task.
 #
-# TRADE EXPIRY IS A TIMER, NOT A PENALTY. `_trade_expiry_loop` settles any
-# position whose `closes_at` has passed, so a 1-minute trade is a 60-second
-# trade whether or not anyone is watching. It calls
-# `trading_service.expire_due_trades()`, which prices the position exactly as a
-# manual SELL does — the server's own feed, the trade's own direction — so
-# expiry banks a winning position instead of destroying it. A previous version
-# of this loop force-settled elapsed positions as a flat total loss
-# (profit = -amount), which is what made a timer running out equivalent to
-# throwing the stake away; that logic is gone and must not come back. The
-# expiry sweep is ALSO run from the trade read endpoints, so a server that was
-# restarted mid-trade still closes the position the moment anybody looks at it.
+# NO TIMER SETTLES A TRADE. `_trade_expiry_loop` is not started at all unless
+# `AUTO_SETTLE_ON_EXPIRE` is on, which it is not by default. This is the rule it
+# used to break:
+#
+#     00:00  ->  the duration is finished. That is ALL it means.
+#     CLOSE  ->  the user prices it, and that is what books a result.
+#
+# A position whose `closes_at` has passed stays OPEN, its P/L stays UNREALIZED,
+# and no balance moves until the user closes it. So the loop below is not
+# scheduled, the trade read endpoints' sweep is inert, and a 1-minute trade is a
+# 60-second trade that the user then settles at their own chosen moment, at the
+# server's own price, exactly as a manual SELL settles it.
+#
+# The machinery is retained rather than deleted so settle-on-expiry stays a
+# config change: with the flag on, this loop plus `expire_due_trades()` prices
+# each elapsed position through the identical `_mark_to_market` a manual close
+# uses, so the clock would decide WHEN, never WHAT.
 # =============================================================================
 
 async def _market_tick_loop():
@@ -237,6 +245,11 @@ async def _market_tick_loop():
 
 
 async def _trade_expiry_loop():
+    """Only ever started when config.AUTO_SETTLE_ON_EXPIRE is on.
+
+    The try/except is kept: a failing sweep must never kill the loop or take
+    down the process with it, because a half-settled batch is not retried.
+    """
     while True:
         db = SessionLocal()
         try:
@@ -274,6 +287,11 @@ async def _coin_price_refresh_loop():
 @app.on_event("startup")
 async def start_background_loops():
     asyncio.create_task(_market_tick_loop())
-    asyncio.create_task(_trade_expiry_loop())
     asyncio.create_task(_deposit_poll_loop())
     asyncio.create_task(_coin_price_refresh_loop())
+    # Opt-in only. Off by default, and that is the point: a trade's duration
+    # ending settles nothing. With this line absent, no background task in this
+    # process can turn a past `closes_at` into a closed trade — the user
+    # closing the position is the only event that books a result.
+    if AUTO_SETTLE_ON_EXPIRE:
+        asyncio.create_task(_trade_expiry_loop())

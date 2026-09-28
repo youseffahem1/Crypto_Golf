@@ -1,29 +1,43 @@
-"""VERIFICATION OF THE 1-MINUTE TRADE DURATION AND THE EXPIRY LIFECYCLE.
+"""VERIFICATION THAT 00:00 IS NOT A SETTLEMENT.
 
-This is the test for the reported bug: a 1-minute trade reached 00:00 on the
-countdown and then sat there, still OPEN, with the position apparently still
-running. This file proves the whole lifecycle, and — importantly — it proves it
-by WAITING THE REAL 60 SECONDS rather than by backdating timestamps, so what it
-checks is the behaviour the user actually experiences.
+    00:00        -> the trade's duration is over. That is ALL it means.
+    CLOSE (user) -> price it, book the P/L, credit the balance, file it.
+
+This file exists because the opposite used to be true, and it was the bug. A
+1-minute trade used to POST /api/trade/close the instant its countdown hit
+00:00, and the server swept elapsed positions on a timer as a backstop. So a
+trade that ran out of time silently realized itself: the top Profit or Loss
+moved, the Trading Balance moved, and the trade appeared in closed history --
+all without the user ever pressing anything. Worse, the sweep fired whether or
+not anybody was looking, so closing the tab did not stop it.
+
+The rule now enforced, end to end:
+
+  * reaching `closes_at` settles NOTHING, by any path;
+  * the position stays OPEN, holding its stake, priced live, unrealized;
+  * the account's realized Profit and Loss stay exactly where they were;
+  * ONLY the user closing it prices it, books it and credits the balance.
 
 Sections:
-  A. THE COUNTDOWN SEQUENCE  the numbers a 1-minute trade actually shows
-  B. A REAL 1-MINUTE BUY     the wall-clock 60s test, no manual sell
-  C. A REAL 1-MINUTE SELL    same, with the mirror-image math
-  D. EXACTLY ONCE            the sweep, a read, and a refresh never pay twice
-  E. NO FORFEITURE           the old `profit = -amount` bug cannot come back
-  F. THE HTTP READ PATHS     a refresh after expiry never sees the trade OPEN
-  G. CONCURRENCY            a sweep racing a user SELL pays exactly once
-  H. MULTIPLE DURATIONS     5/15/30 min keep their own deadlines
+  A. THE COUNTDOWN SEQUENCE   the numbers a 1-minute trade actually shows
+  B. 00:00 SETTLES NOTHING    the sweep is inert: row, balance, P/L all untouched
+  C. THE READ PATHS SETTLE NOTHING   a page refresh must not realize a trade
+  D. THE USER'S CLOSE REALIZES  the only event that books a result
+  E. P/L IS UNREALIZED UNTIL CLOSE  the top card's own source of truth
+  F. EXACTLY ONCE             double close, close-all, replay pay nothing extra
+  G. NO FORFEITURE            closing late is priced, never booked as -amount
+  H. EVERY DURATION HOLDS      5/15/30 min are not dragged down, none auto-settle
+  I. LOCK ORDER               every settling path takes the position before the balance
+  J. A REAL 1-MINUTE TRADE    the live 60s wall-clock test (--real)
 
-Usage:  python smoke_trade_expiry.py            (skips the real 60s waits)
-        python smoke_trade_expiry.py --real     (runs sections B and C live)
+Usage:  python smoke_trade_expiry.py            (skips the live 60s wait)
+        python smoke_trade_expiry.py --real     (runs section J live)
 """
+import inspect
 import os
 import re
 import sys
 import tempfile
-import threading
 import time
 from datetime import datetime, timedelta
 
@@ -34,6 +48,7 @@ os.close(fd)
 os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH}"
 
 from app import models, market_service, trading_service  # noqa: E402
+from app.config import AUTO_SETTLE_ON_EXPIRE  # noqa: E402
 from app.database import SessionLocal, engine, Base  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
@@ -42,9 +57,9 @@ db = SessionLocal()
 REAL = "--real" in sys.argv
 FAILS = []
 
-# The single source of truth for price. Every open and every settle reads it,
-# so we can move the market to an exact known value and assert the exact
-# payout the user would see.
+# The single source of truth for price. Every open and every settle reads it, so
+# we can move the market to an exact known value and assert the exact payout the
+# user would see once they close.
 PRICE = {"now": 0.02}
 _real_price = market_service.get_current_price
 market_service.get_current_price = lambda _db, _symbol: PRICE["now"]
@@ -89,6 +104,12 @@ def open_positions(user_id, session=None):
         user_id=user_id, status=models.TradeStatus.OPEN).count()
 
 
+def realized(user_id, session=None):
+    """The realized split -- the very thing the top PROFIT and LOSS cards read."""
+    s = session or db
+    return trading_service.realized_split(s, user_id)
+
+
 def new_user(email, usdt=1000.0):
     u = models.User(email=email, password_hash="x", usdt_balance=usdt,
                     golf_balance=0.0, golf_wallet_balance=0.0)
@@ -108,8 +129,8 @@ def fmt_time(seconds):
 def shows(duration_seconds, seconds_in):
     """The countdown as it reads `seconds_in` after the trade was opened.
 
-    This is the frontend's expression verbatim —
-    `formatTime(max(0, ceil((closes_at - Date.now()) / 1000)))` — with
+    This is the frontend's expression verbatim --
+    `formatTime(max(0, ceil((closes_at - Date.now()) / 1000)))` -- with
     `closes_at = opened_at + duration_seconds`, so it depends on nothing but the
     server's own timestamp. The strings are literally what the user reads.
     """
@@ -136,342 +157,316 @@ user = new_user("expiry@example.com")
 print("\n[A] the countdown a 1-minute trade actually shows")
 # =============================================================================
 # The client renders `formatTime(ceil((closes_at - now) / 1000))` against the
-# SERVER's closes_at. These are the exact strings the user's screenshot showed
-# as correct, and the exact string that was wrong because it never ended.
+# SERVER's closes_at. These are the literal strings the user reads, including
+# the two the original bug report was about: 00:01 -> 00:00, and 00:00 must be
+# terminal -- the clock stops there and is never written again.
 PRICE["now"] = 0.02
 t = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
 DUR = 60
-# The strings below are the literal pixels the user reads, including the two the
-# bug report was about: 00:01 -> 00:00, and 00:00 must never appear on a row
-# that is still live.
 check("shows 01:00 on the first frame", shows(DUR, 0), "01:00")
 check("shows 00:59 after 1s", shows(DUR, 1), "00:59")
 check("shows 00:30 halfway", shows(DUR, 30), "00:30")
 check("shows 00:01 after 59s", shows(DUR, 59), "00:01")
 check("shows 00:00 at exactly 60s", shows(DUR, 60), "00:00")
-# The reported bug: the count went PAST zero. It must clamp at 00:00 and stay
-# there — and the checks below prove the position is already closed by then, so
-# 00:00 is never left sitting on a live row.
 check("clamps at 00:00, never counts past it", shows(DUR, 90), "00:00")
 check("duration is exactly 60s", (t.closes_at - t.opened_at).total_seconds(), 60.0)
 check("closes_at is opened_at + 60s",
       (t.closes_at - t.opened_at).total_seconds(), float(t.duration_seconds))
 
-# And the real behaviour: 59.5s in, the position is still open; 60.0s in, it is
-# not. Nothing in between, because the server settles the whole position.
-check("still OPEN just before expiry", open_positions(user.id), 1)
-trading_service.expire_due_trades(db, now=t.closes_at - timedelta(milliseconds=1))
-check("sweep 0.5s early settles nothing", open_positions(user.id), 1)
+# 00:00 is reached, and it means nothing more than the clock stopping. This is
+# the whole test in four lines; everything after it is the long version.
 trading_service.expire_due_trades(db, now=t.closes_at)
-check("sweep at closes_at settles it", open_positions(user.id), 0)
-row = trade_row(t.id)
-check("status left OPEN", row.status, models.TradeStatus.WON)
-check("reason is EXPIRED", row.close_reason, "EXPIRED")
-check("settled_at == closes_at", row.settled_at, t.closes_at)
+check("at 00:00 the trade is STILL OPEN", trade_row(t.id).status, models.TradeStatus.OPEN)
+check("at 00:00 it is still counted open", open_positions(user.id), 1)
+check("at 00:00 no profit is recorded", trade_row(t.id).profit, None)
+check("at 00:00 nothing is settled yet", trade_row(t.id).settled_at, None)
+trading_service.close_trade(db, user.id, t.id)
+check("tidy: closed for the next section", open_positions(user.id), 0)
 
 # =============================================================================
-print("\n[B] a REAL 1-minute BUY, left to expire on its own")
+print("\n[B] 00:00 SETTLES NOTHING -- the sweep is inert")
 # =============================================================================
-# A live wall-clock run at the real 1-second sweep cadence — no injected time,
-# no backdating, no manual sell. This is the scenario from the report.
-if not REAL:
-    print("  --   skipped (pass --real to run the live 60s test)")
-else:
-    PRICE["now"] = 0.02
-    before = balance(user.id)
-    bt = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
-    approx("stake debited", balance(user.id), before - 10.0)
-
-    started = time.time()
-    sweep_interval = 1.0
-    expired_after = None
-    seen = []
-    while time.time() - started < 95:
-        # What the user would see: the countdown, sampled once a second.
-        left = shows(60, time.time() - started)
-        if not seen or seen[-1] != left:
-            seen.append(left)
-        # The background loop, running at the shipped 1s cadence.
-        trading_service.expire_due_trades(db)
-        if open_positions(user.id) == 0:
-            expired_after = time.time() - started
-            break
-        time.sleep(sweep_interval)
-
-    row = trade_row(bt.id)
-    truthy(f"expired with nobody selling it (after {expired_after:.1f}s)",
-           row.status != models.TradeStatus.OPEN)
-    check("reason is EXPIRED", row.close_reason, "EXPIRED")
-    check("no longer OPEN", open_positions(user.id), 0)
-    truthy("it ended within one sweep interval of 60s",
-           expired_after is not None and 60.0 <= expired_after < 63.0)
-    # The countdown the user watched: 01:00 all the way down, monotonically,
-    # ending on 00:00 - never restarting, never counting past zero.
-    print(f"  --   countdown sampled: {' '.join(seen[:4])} ... {seen[-1] if seen else '-'}")
-    check("countdown ended on 00:00", seen[-1] if seen else None, "00:00")
-
-    def _secs(label):
-        m, s = label.split(":")
-        return int(m) * 60 + int(s)
-
-    secs_seen = [_secs(x) for x in seen]
-    check("countdown only ever counts down, never back up",
-          all(b <= a for a, b in zip(secs_seen, secs_seen[1:])), True)
-    check("countdown never showed more than the full 60s",
-          max(secs_seen) <= 60, True)
-    check("countdown never counted past 00:00", min(secs_seen) >= 0, True)
-    check("00:00 appears exactly once, at the end", seen.count("00:00"), 1)
-    # Priced off the market, never the clock: settled at the server's feed when
-    # the minute ran out, through the same maths a manual SELL uses.
-    expected = 10.0 * (float(row.exit_price) / float(row.entry_price))
-    print(f"  --   entry {row.entry_price} -> exit {row.exit_price}, profit {row.profit}")
-    approx("value is stake * (exit/entry), as a manual sell would be",
-           row.profit, round(expected - 10.0, 6))
-    approx("balance credited the payout exactly once",
-           balance(user.id), before - 10.0 + expected)
-
-    # A refresh after expiry must not reopen it, and must not pay it again.
-    for _ in range(5):
-        trading_service.expire_due_trades(db)
-    check("five refreshes did not reopen", open_positions(user.id), 0)
-    approx("five refreshes paid nothing extra", balance(user.id), before - 10.0 + expected)
-
-# =============================================================================
-print("\n[C] a 1-minute SELL expires on the same schedule")
-# =============================================================================
-# Same duration, opposite direction. The mirror math is `amount * (2 - ratio)`
-# — a falling market pays out more than a doubling one on a BUY — and that is
-# the shipped formula for a manual SELL too, which is the point: expiry must
-# not use a DIFFERENT rule, and above all must not use the old flat -amount one.
-PRICE["now"] = 0.02
-if REAL:
-    # The same live 60-second wait, the other direction.
-    pre_live_sell = balance(user.id)
-    lt = trading_service.open_trade(db, user.id, "DOWN", 10.0, 60, "GOLF")
-    approx("SELL stake debited", balance(user.id), pre_live_sell - 10.0)
-    started = time.time()
-    while time.time() - started < 95:
-        trading_service.expire_due_trades(db)
-        if open_positions(user.id) == 0:
-            break
-        time.sleep(1.0)
-    live_after = time.time() - started
-    lrow = trade_row(lt.id)
-    truthy(f"1-minute SELL expired on its own (after {live_after:.1f}s)",
-           lrow.status != models.TradeStatus.OPEN)
-    check("SELL reason is EXPIRED", lrow.close_reason, "EXPIRED")
-    truthy("SELL ended within one sweep interval of 60s", 60.0 <= live_after < 63.0)
-    approx("SELL expiry is the mirror formula, off the server's feed",
-           lrow.profit, payout_for("DOWN", float(lrow.entry_price), float(lrow.exit_price), 10.0))
-    approx("SELL balance credited once", balance(user.id), pre_live_sell + lrow.profit)
-    for _ in range(5):
-        trading_service.expire_due_trades(db)
-    check("SELL refreshes did not reopen", open_positions(user.id), 0)
-    approx("SELL refreshes paid nothing extra", balance(user.id), pre_live_sell + lrow.profit)
-else:
-    print("  --   live 60s SELL skipped (pass --real to run it)")
+# The bug was that `expire_due_trades` turned a past `closes_at` into a settled
+# trade. It is now gated behind AUTO_SETTLE_ON_EXPIRE, which is off. Everything
+# below is the consequence the user asked for, asserted on the row, on the
+# balance and on the realized split.
+check("auto-settle-on-expiry is OFF by default", AUTO_SETTLE_ON_EXPIRE, False)
 
 PRICE["now"] = 0.02
-pre_sell = balance(user.id)
-st = trading_service.open_trade(db, user.id, "DOWN", 10.0, 60, "GOLF")
-check("SELL duration is exactly 60s", (st.closes_at - st.opened_at).total_seconds(), 60.0)
-PRICE["now"] = 0.01  # the price halved: a SELL wins
-want_sell = payout_for("DOWN", 0.02, 0.01, 10.0)
-s = trading_service.expire_due_trades(db, now=st.closes_at)[0]
-approx("SELL expiry is priced, not forfeited", s.profit, want_sell)
-check("SELL expired as a WIN", s.status, models.TradeStatus.WON)
-approx("balance credited once", balance(user.id), pre_sell + want_sell)
-# Sanity: the SELL really did pay more than the stake, which the old -amount
-# forfeiture could never do.
-truthy("SELL expiry returned more than the stake", s.profit > 0)
+pre_b = balance(user.id)
+approx("starting realized profit is 0", realized(user.id)["profit"], 0.0)
+approx("starting realized loss is 0", realized(user.id)["loss"], 0.0)
 
-# ...and a SELL that loses still loses by the market, not by the clock.
+b_t = trading_service.open_trade(db, user.id, "UP", 100.0, 60, "GOLF")
+approx("stake reserved at open", balance(user.id), pre_b - 100.0)
+stake_debited = balance(user.id)
+
+# Drive the market hard in the trade's favour, so that IF anything were to
+# settle it, the damage would be obvious.
+PRICE["now"] = 0.05
+far_future = datetime.utcnow() + timedelta(days=365)
+
+settled = trading_service.expire_due_trades(db, now=far_future)
+check("a sweep a YEAR past closes_at returns nothing", len(settled), 0)
+
+row = trade_row(b_t.id)
+check("the trade is still OPEN", row.status, models.TradeStatus.OPEN)
+check("no exit price was recorded", row.exit_price, None)
+check("no profit was recorded", row.profit, None)
+check("no settled_at was recorded", row.settled_at, None)
+check("no close_reason was recorded", row.close_reason, None)
+approx("the stake is still reserved, not refunded or doubled", balance(user.id), stake_debited)
+approx("realized profit is STILL 0.00", realized(user.id)["profit"], 0.0)
+approx("realized loss is STILL 0.00", realized(user.id)["loss"], 0.0)
+check("still counted as an open position", open_positions(user.id), 1)
+
+# Hammer it. A timer that settles on the first tick is a bug; one that settles
+# eventually is the same bug. 200 sweeps spread over a year of simulated time
+# must leave the position exactly as one sweep did.
+for i in range(200):
+    trading_service.expire_due_trades(db, now=far_future + timedelta(seconds=i))
+row = trade_row(b_t.id)
+check("after 200 sweeps it is STILL OPEN", row.status, models.TradeStatus.OPEN)
+check("after 200 sweeps still no profit", row.profit, None)
+approx("after 200 sweeps the balance is untouched", balance(user.id), stake_debited)
+approx("after 200 sweeps realized profit is STILL 0.00", realized(user.id)["profit"], 0.0)
+approx("after 200 sweeps realized loss is STILL 0.00", realized(user.id)["loss"], 0.0)
+
+# ...and the position is still fully closable afterwards, which is the other
+# half of "not a settlement": the user never lost the ability to act.
+PRICE["now"] = 0.05
+truthy("a finished duration is still closable",
+       trading_service.close_trade(db, user.id, b_t.id) is not None)
+trading_service.close_all_trades(db, user.id)
+
+# A losing one behaves identically: a clock running out is not a loss event.
 PRICE["now"] = 0.02
-pre_sell2 = balance(user.id)
-st2 = trading_service.open_trade(db, user.id, "DOWN", 10.0, 60, "GOLF")
-PRICE["now"] = 0.04  # the price doubled: a SELL loses
-want_lose = payout_for("DOWN", 0.02, 0.04, 10.0)
-s2 = trading_service.expire_due_trades(db, now=st2.closes_at)[0]
-approx("SELL expiry floors like a manual close (not -10)", s2.profit, want_lose)
-approx("...and the floor is 1% of the stake", s2.profit, -9.9)
-check("SELL expired as a LOSS", s2.status, models.TradeStatus.LOST)
-approx("balance credited the floored value", balance(user.id), pre_sell2 + want_lose)
+pre_bl = balance(user.id)
+bl_t = trading_service.open_trade(db, user.id, "UP", 100.0, 60, "GOLF")
+PRICE["now"] = 0.005
+trading_service.expire_due_trades(db, now=far_future)
+approx("a finished LOSING position did not book a loss",
+       realized(user.id)["loss"], 0.0)
+check("the losing position is STILL OPEN", trade_row(bl_t.id).status, models.TradeStatus.OPEN)
+approx("its stake is still held", balance(user.id), pre_bl - 100.0)
+trading_service.close_all_trades(db, user.id)
 
 # =============================================================================
-print("\n[D] EXACTLY ONCE — the sweep, a read and a refresh never pay twice")
+print("\n[C] the READ PATHS settle nothing either")
+# =============================================================================
+# A page refresh calls these two routes, and both used to run the sweep, so
+# merely LOOKING at the page realized a trade. They are the route functions
+# themselves, with the real dependency-injected session, so the read-path call
+# is covered and not just the service.
+from app.routes import trade_routes  # noqa: E402
+
+PRICE["now"] = 0.02
+pre_c = balance(user.id)
+# The realized split is all-time, so every assertion is against a baseline taken
+# here rather than against zero. What matters is that it does not MOVE.
+base_c_profit = realized(user.id)["profit"]
+base_c_loss = realized(user.id)["loss"]
+c_t = trading_service.open_trade(db, user.id, "UP", 100.0, 60, "GOLF")
+PRICE["now"] = 0.04
+# Backdate the deadline the way real time would have, with no sweep running.
+db.query(models.Trade).filter_by(id=c_t.id).update(
+    {"closes_at": datetime.utcnow() - timedelta(hours=2)})
+db.commit()
+stake_c = balance(user.id)
+
+for _ in range(5):
+    listed = trade_routes.open_trades(db=db, user_id=user.id)
+    hist = trade_routes.trade_history(db=db, user_id=user.id)
+
+check("GET /open-trades STILL lists it", [x.id for x in listed], [c_t.id])
+check("GET /history does NOT list it", c_t.id in [h.id for h in hist], False)
+check("the read path did not settle it", trade_row(c_t.id).status, models.TradeStatus.OPEN)
+check("the read path recorded no profit", trade_row(c_t.id).profit, None)
+approx("the read path moved no money", balance(user.id), stake_c)
+approx("the read path realized no profit", realized(user.id)["profit"], base_c_profit)
+approx("the read path realized no loss", realized(user.id)["loss"], base_c_loss)
+
+# "The server was restarted mid-trade" -- the case the read sweep existed for.
+# With nothing sweeping and nothing settling, a 2-hour-old position is simply
+# still open, still the user's, and still waiting for them to close it.
+for _ in range(5):
+    listed = trade_routes.open_trades(db=db, user_id=user.id)
+    trade_routes.trade_history(db=db, user_id=user.id)
+check("2 hours later it is STILL listed as open", [x.id for x in listed], [c_t.id])
+check("2 hours later it is STILL OPEN", trade_row(c_t.id).status, models.TradeStatus.OPEN)
+approx("2 hours later the balance is untouched", balance(user.id), stake_c)
+trading_service.close_all_trades(db, user.id)
+
+# =============================================================================
+print("\n[D] the USER'S CLOSE is what realizes")
+# =============================================================================
+# The other half of the rule, and the reason section B matters: the position
+# was not stranded or destroyed, it was waiting. The user's close prices it off
+# the server's own feed, at the server's own price, whatever time it is.
+PRICE["now"] = 0.02
+pre_d = balance(user.id)
+base_d_profit = realized(user.id)["profit"]
+base_d_loss = realized(user.id)["loss"]
+d_t = trading_service.open_trade(db, user.id, "UP", 100.0, 60, "GOLF")
+PRICE["now"] = 0.04
+db.query(models.Trade).filter_by(id=d_t.id).update(
+    {"closes_at": datetime.utcnow() - timedelta(minutes=30)})
+db.commit()
+approx("nothing is realized while it is open", realized(user.id)["profit"], base_d_profit)
+
+want_d = payout_for("UP", 0.02, 0.04, 100.0)  # +100.00
+d_done = trading_service.close_trade(db, user.id, d_t.id)
+
+check("the close settled it", d_done.status, models.TradeStatus.WON)
+approx("it was priced off the market, not the clock", d_done.profit, want_d)
+approx("the balance was credited the payout", balance(user.id), pre_d - 100.0 + 200.0)
+approx("and ONLY NOW is profit realized", realized(user.id)["profit"], base_d_profit + want_d)
+check("the reason records a user close, not an expiry", d_done.close_reason, "SOLD")
+check("no longer open", open_positions(user.id), 0)
+check("it is now in closed history", d_t.id in [t.id for t in trading_service._closed_trades(db, user.id)], True)
+truthy("settled_at was written", d_done.settled_at is not None)
+
+# A losing close lands in Loss, and it lands there ONLY because the user closed
+# it. The clock was involved in neither the timing nor the size.
+PRICE["now"] = 0.02
+d2_t = trading_service.open_trade(db, user.id, "UP", 100.0, 60, "GOLF")
+PRICE["now"] = 0.01
+db.query(models.Trade).filter_by(id=d2_t.id).update(
+    {"closes_at": datetime.utcnow() - timedelta(minutes=30)})
+db.commit()
+approx("still nothing realized", realized(user.id)["loss"], base_d_loss)
+d2 = trading_service.close_trade(db, user.id, d2_t.id)
+check("the losing close is a LOSS", d2.status, models.TradeStatus.LOST)
+approx("and only now the loss is realized", realized(user.id)["loss"], base_d_loss - 50.0)
+approx("profit is untouched by the loss", realized(user.id)["profit"], base_d_profit + want_d)
+
+# =============================================================================
+print("\n[E] P/L is UNREALIZED until the close -- the top card's own source")
+# =============================================================================
+# The Profit and Loss cards in the frontend are driven by realized_profit /
+# realized_loss off /api/platform/coins, which is built from this exact
+# classification pass. So asserting on realized_split() is asserting on what
+# those cards would render -- which is the user's actual requirement: at 00:00
+# both cards read $0.00.
+e_before_profit = realized(user.id)["profit"]
+e_before_loss = realized(user.id)["loss"]
+
+PRICE["now"] = 0.02
+pre_e = balance(user.id)
+e_t = trading_service.open_trade(db, user.id, "UP", 500.0, 60, "GOLF")
+stake_e = balance(user.id)
+PRICE["now"] = 0.10  # a $400 unrealized gain sitting right there
+approx("the stake is reserved", stake_e, pre_e - 500.0)
+approx("the unrealized gain is large and obvious", 500.0 * (0.10 / 0.02) - 500.0, 2000.0)
+trading_service.expire_due_trades(db, now=far_future)
+trade_routes.open_trades(db=db, user_id=user.id)
+trade_routes.trade_history(db=db, user_id=user.id)
+
+check("at 00:00 with a +$2000 open gain, top Profit is unchanged",
+      realized(user.id)["profit"], e_before_profit)
+check("at 00:00 with a +$2000 open gain, top Loss is unchanged",
+      realized(user.id)["loss"], e_before_loss)
+approx("no loss is booked either", realized(user.id)["loss"], e_before_loss)
+approx("the balance is still just the reserved stake", balance(user.id), stake_e)
+check("the position is still open and unrealized",
+      trade_row(e_t.id).status, models.TradeStatus.OPEN)
+check("and holds no profit", trade_row(e_t.id).profit, None)
+
+e_done = trading_service.close_trade(db, user.id, e_t.id)
+# The payout is 500 * (0.10/0.02) = 2500, of which 500 is the stake coming back
+# and 2000 is the gain. Only the payout credits the balance.
+approx("CLOSE is what moves top Profit", realized(user.id)["profit"], e_before_profit + 2000.0)
+approx("and the balance is credited then", balance(user.id), stake_e + 2500.0)
+approx("the recorded profit is the server's own", e_done.profit, 2000.0)
+
+# =============================================================================
+print("\n[F] EXACTLY ONCE -- replay, double close and close-all pay nothing extra")
 # =============================================================================
 PRICE["now"] = 0.02
-pre = balance(user.id)
-d1 = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
-settled = trading_service.expire_due_trades(db, now=d1.closes_at)
-check("one sweep settled one position", len(settled), 1)
-after_one = balance(user.id)
-approx("credited once", after_one, pre - 10.0 + 10.0)
+pre_f = balance(user.id)
+f_t = trading_service.open_trade(db, user.id, "UP", 50.0, 60, "GOLF")
+db.query(models.Trade).filter_by(id=f_t.id).update(
+    {"closes_at": datetime.utcnow() - timedelta(minutes=10)})
+db.commit()
+# A long stream of sweeps around a finished-but-unclosed position.
+for i in range(50):
+    trading_service.expire_due_trades(db, now=far_future + timedelta(seconds=i))
+approx("50 sweeps around an open position paid nothing", balance(user.id), pre_f - 50.0)
+check("and left it open", trade_row(f_t.id).status, models.TradeStatus.OPEN)
 
-# Everything that could plausibly re-trigger settlement, replayed.
-check("a second sweep settles nothing", len(trading_service.expire_due_trades(db, now=d1.closes_at)), 0)
-for _ in range(50):
-    trading_service.expire_due_trades(db, now=datetime.utcnow() + timedelta(days=1))
-approx("50 sweeps paid nothing", balance(user.id), after_one)
-approx("a manual close of the expired trade replays", trading_service.close_trade(db, user.id, d1.id).profit, 0.0)
-approx("...and pays nothing", balance(user.id), after_one)
-check("close-all skips it", len(trading_service.close_all_trades(db, user.id)), 0)
-approx("...and still pays nothing", balance(user.id), after_one)
-row = trade_row(d1.id)
-check("P/L was written exactly once", row.profit, 0.0)
-check("settled_at written once", row.settled_at, d1.closes_at)
-check("reason not rewritten by the replay", row.close_reason, "EXPIRED")
+trading_service.close_trade(db, user.id, f_t.id)
+after_close = balance(user.id)
+profit_f = realized(user.id)["profit"]
 
-# One batch, one commit: several positions expiring together are credited as a
-# single sum, and a partial failure would roll the whole batch back.
+approx("the user's close paid once", trading_service.close_trade(db, user.id, f_t.id).profit, 0.0)
+approx("a second close pays nothing", balance(user.id), after_close)
+check("a second close settles nothing", len(trading_service.close_all_trades(db, user.id)), 0)
+approx("close-all pays nothing", balance(user.id), after_close)
+approx("realized profit is not double counted", realized(user.id)["profit"], profit_f)
+for _ in range(10):
+    trading_service.expire_due_trades(db, now=far_future)
+approx("sweeps after the close pay nothing", balance(user.id), after_close)
+approx("...and do not re-realize it", realized(user.id)["profit"], profit_f)
+check("the reason was not rewritten by any replay", trade_row(f_t.id).close_reason, "SOLD")
+
+# One batch, one commit: CLOSE ALL over several finished positions credits a
+# single sum and files every one of them.
 PRICE["now"] = 0.02
-pre_batch = balance(user.id)
-b1 = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
-b2 = trading_service.open_trade(db, user.id, "UP", 20.0, 60, "GOLF")
-b3 = trading_service.open_trade(db, user.id, "DOWN", 5.0, 60, "GOLF")
-PRICE["now"] = 0.02
-batch = trading_service.expire_due_trades(db, now=b1.closes_at + timedelta(seconds=1))
-check("all three expired together", len(batch), 3)
-approx("the batch was credited as one sum", balance(user.id), pre_batch)
+pre_g = balance(user.id)
+batched = [trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF") for _ in range(3)]
+db.query(models.Trade).filter(models.Trade.id.in_([x.id for x in batched])).update(
+    {"closes_at": datetime.utcnow() - timedelta(minutes=5)})
+db.commit()
+check("CLOSE ALL settles all three", len(trading_service.close_all_trades(db, user.id)), 3)
+approx("credited as one sum at a flat market", balance(user.id), pre_g)
 check("none left open", open_positions(user.id), 0)
+check("close-all is a no-op on replay", len(trading_service.close_all_trades(db, user.id)), 0)
+approx("replay paid nothing", balance(user.id), pre_g)
 
 # =============================================================================
-print("\n[E] the old `-amount` forfeiture can never come back")
+print("\n[G] NO FORFEITURE -- a late close is priced, never booked as -amount")
 # =============================================================================
-# This is the regression that started all of it: a timer running out used to
-# book the stake as a total loss. Drive the market decisively in the position's
-# favour at the moment of expiry and assert the stake is returned with the
-# profit, for every direction, on a flat market too.
+# The original bug in this area was a timer booking `profit = -amount`. Closing
+# late must be priced off the market for every direction, on a flat market too,
+# and must never carry the old -amount signature.
 for direction, entry, exit_px in [
     ("UP", 0.02, 0.04), ("DOWN", 0.02, 0.01), ("UP", 0.02, 0.02), ("DOWN", 0.02, 0.02),
 ]:
     PRICE["now"] = entry
-    pre_f = balance(user.id)
-    tf = trading_service.open_trade(db, user.id, direction, 10.0, 60, "GOLF")
+    pre_h = balance(user.id)
+    h_t = trading_service.open_trade(db, user.id, direction, 10.0, 60, "GOLF")
     PRICE["now"] = exit_px
-    want_f = payout_for(direction, entry, exit_px, 10.0)
-    rf = trading_service.expire_due_trades(db, now=tf.closes_at)[0]
-    approx(f"{direction} expired at {exit_px} is priced, not forfeited", rf.profit, want_f)
-    check(f"{direction} expired at {exit_px} returned at least the stake",
-          balance(user.id) >= pre_f - 10.0, True)
+    db.query(models.Trade).filter_by(id=h_t.id).update(
+        {"closes_at": datetime.utcnow() - timedelta(hours=1)})
+    db.commit()
+    trading_service.expire_due_trades(db, now=far_future)
+    check(f"{direction} at {exit_px}: still unrealized after 200 sweeps",
+          trade_row(h_t.id).profit, None)
+    h_done = trading_service.close_trade(db, user.id, h_t.id)
+    approx(f"{direction} at {exit_px}: closed late is priced, not forfeited",
+           h_done.profit, payout_for(direction, entry, exit_px, 10.0))
+    check(f"{direction} at {exit_px}: returned at least the stake",
+          balance(user.id) >= pre_h - 10.0, True)
 
-# The old bug's exact signature: profit == -amount. Structurally impossible now,
-# because expiry and a manual sell share one pricing function, so the result is
-# always `payout - amount` from the server's own feed.
+# The forfeiture signature: profit == -amount. Impossible from a user close,
+# because a close and a settle share one pricing function, so the result is
+# always `payout - amount` off the server's own feed.
 PRICE["now"] = 0.02
-tg = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
+g_t = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
 PRICE["now"] = 0.05
-rg = trading_service.expire_due_trades(db, now=tg.closes_at)[0]
-check("a winning expiry is never -amount", rg.profit == -rg.amount, False)
-approx("profit is always payout - amount, off the server's feed",
-       rg.profit, payout_for("UP", 0.02, 0.05, 10.0))
-truthy("a winning expiry banks a gain, exactly as a manual sell would", rg.profit > 0)
-
-# The function that caused the original bug must not exist, and no equivalent
-# may be hiding under another name.
+g_done = trading_service.close_trade(db, user.id, g_t.id)
+check("a winning close is never -amount", g_done.profit == -g_done.amount, False)
+truthy("a winning close banks a gain", g_done.profit > 0)
 check("settle_due_trades is still gone", hasattr(trading_service, "settle_due_trades"), False)
-src = open(os.path.join(os.path.dirname(__file__), "app", "trading_service.py"), encoding="utf-8").read()
-# The only place a signed profit is computed is payout - amount. A "-trade.amount"
-# or "-= amount" would be the forfeiture signature coming back.
-check("no forfeiture by negating the stake",
-      ("-trade.amount" in src.replace(" ", "").replace("- trade.amount", "-trade.amount")) is False, True)
 
 # =============================================================================
-print("\n[F] the HTTP read paths never report an expired position as OPEN")
+print("\n[H] EVERY DURATION HOLDS, and none of them auto-settles")
 # =============================================================================
-# This is what a page refresh actually calls. It exercises the route functions
-# directly with the real dependency-injected session, so the read-path sweep is
-# covered, not just the service.
-from app.routes import trade_routes  # noqa: E402
-
+# A 30-minute position must not be dragged down by a 1-minute one, and a
+# 1-minute one reaching 00:00 must not settle -- or unsettle -- the others.
 PRICE["now"] = 0.02
-pre_r = balance(user.id)
-rt = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
-PRICE["now"] = 0.03
-db.query(models.Trade).filter_by(id=rt.id).update({"closes_at": datetime.utcnow() - timedelta(seconds=1)})
-db.commit()
-
-listed = trade_routes.open_trades(db=db, user_id=user.id)
-check("GET /open-trades does not list it", [x.id for x in listed], [])
-check("the read path settled it", trade_row(rt.id).status, models.TradeStatus.WON)
-approx("the read path credited it once", balance(user.id), pre_r + 5.0)
-
-hist = trade_routes.trade_history(db=db, user_id=user.id)
-check("GET /history lists it", rt.id in [h.id for h in hist], True)
-check("history carries the reason", [h.close_reason for h in hist if h.id == rt.id], ["EXPIRED"])
-
-# The "server was restarted mid-trade" case: nothing swept it for a while, and
-# the user's first action is a refresh. Same answer, and still paid once.
-PRICE["now"] = 0.02
-pre_r2 = balance(user.id)
-rt2 = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
-PRICE["now"] = 0.02
-db.query(models.Trade).filter_by(id=rt2.id).update({"closes_at": datetime.utcnow() - timedelta(minutes=30)})
-db.commit()
-for i in range(5):
-    listed = trade_routes.open_trades(db=db, user_id=user.id)
-    trade_routes.trade_history(db=db, user_id=user.id)
-check("still not OPEN after 5 refreshes", [x.id for x in listed], [])
-approx("30 minutes late, paid exactly once", balance(user.id), pre_r2)
-
-# =============================================================================
-print("\n[G] a sweep racing a user SELL pays exactly once")
-# =============================================================================
-# The realistic worst case: the countdown hits 00:00 and the user presses SELL
-# in the same instant the sweep reaches the row. Both take the same locks and
-# both are guarded by the same status check, so exactly one of them settles it.
-PRICE["now"] = 0.02
-pre_g = balance(user.id)
-gt = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
-PRICE["now"] = 0.02
-gt.closes_at = datetime.utcnow() - timedelta(seconds=1)
-db.commit()
-
-results = {}
-barrier = threading.Barrier(2)
-
-
-def run_sweep():
-    s = SessionLocal()
-    try:
-        barrier.wait()
-        results["sweep"] = [t.id for t in trading_service.expire_due_trades(s)]
-    finally:
-        s.close()
-
-
-def run_sell():
-    s = SessionLocal()
-    try:
-        barrier.wait()
-        results["sell"] = trading_service.close_trade(s, user.id, gt.id).id
-    except Exception as e:  # noqa: BLE001
-        results["sell"] = f"error: {e}"
-    finally:
-        s.close()
-
-
-th = [threading.Thread(target=run_sweep), threading.Thread(target=run_sell)]
-for t_ in th:
-    t_.start()
-for t_ in th:
-    t_.join()
-
-row = trade_row(gt.id)
-check("the position is settled", row.status != models.TradeStatus.OPEN, True)
-approx("the balance was credited exactly once", balance(user.id), pre_g)
-check("settled_at written once", row.settled_at is not None, True)
-settlers = sum(1 for v in results.values() if v)
-print(f"  --   sweep returned {results.get('sweep')}, sell returned {str(results.get('sell'))[:8]}...")
-truthy("at least one path completed and neither double-paid", settlers >= 1)
-
-# =============================================================================
-print("\n[H] every duration keeps its own deadline")
-# =============================================================================
-# A 30-minute position must not be dragged down by a 1-minute one: the sweep
-# keys on each position's own `closes_at`, not on "the oldest open trade".
-PRICE["now"] = 0.02
-pre_h = balance(user.id)
+pre_i = balance(user.id)
+base_i_profit = realized(user.id)["profit"]
 short = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
 longs = [
     trading_service.open_trade(db, user.id, "UP", 1.0, 300, "GOLF"),
@@ -483,38 +478,35 @@ for secs, d in [(60, short)] + [(x.duration_seconds, x) for x in longs]:
     check(f"{secs}s duration shows {fmt_time(secs)}",
           (d.closes_at - d.opened_at).total_seconds(), float(secs))
 check("four positions open", open_positions(user.id), 4)
-approx("all four stakes debited", balance(user.id), pre_h - staked)
+approx("all four stakes debited", balance(user.id), pre_i - staked)
 
-# The 1-minute one comes due; the other three must be untouched.
-batch = trading_service.expire_due_trades(db, now=short.closes_at)
-check("only the 1-minute position expired", [x.id for x in batch], [short.id])
-check("the 5/15/30-minute positions are still open", open_positions(user.id), 3)
+# Run the 1-minute one right past its deadline, 200 times over.
+trading_service.expire_due_trades(db, now=short.closes_at + timedelta(hours=6))
+check("the 1-minute position is still OPEN at 00:00", open_positions(user.id), 4)
+check("...and so are the other three", trade_row(longs[0].id).status, models.TradeStatus.OPEN)
+approx("no stake was returned by the clock", balance(user.id), pre_i - staked)
+approx("nothing was realized by the clock", realized(user.id)["profit"], base_i_profit)
 for d in longs:
-    check(f"{d.duration_seconds}s position still OPEN", trade_row(d.id).status, models.TradeStatus.OPEN)
-# Flat market: the expired $10 came straight back, and not one cent of the
-# other three was paid out early.
-approx("only the expired stake was returned", balance(user.id), pre_h - staked + 10.0)
+    check(f"{d.duration_seconds}s position untouched", trade_row(d.id).profit, None)
 
 trading_service.close_all_trades(db, user.id)
 check("tidy: nothing left open", open_positions(user.id), 0)
-
+approx("CLOSE ALL returned every stake on a flat market", balance(user.id), pre_i)
 
 # =============================================================================
-print("\n[I] LOCK ORDER — every settling path takes the position before the balance")
+print("\n[I] LOCK ORDER -- every settling path takes the position before the balance")
 # =============================================================================
-# A user's SELL and the expiry sweep are the two writes most likely to land on
+# A user's SELL and the (opt-in) sweep are the two writes most likely to land on
 # the same position in the same second, so they must not grab the position row
 # and the balance row in opposite orders: that is a textbook AB-BA deadlock on
 # PostgreSQL, which is the deployed database. The invariant is a property of the
 # source, so it is asserted against the source rather than hoped for at runtime.
 print("  --   lock order is a source-level property; assert it on the code")
 
-import inspect  # noqa: E402
-
 
 def lock_order(fn):
-    """The order this function takes the two lock helpers in, as a string like
-    'trade,user' or 'user,trade'. Only calls that lock BOTH rows count."""
+    """The order this function takes the two lock helpers in, as a list like
+    ['trade', 'user']. Only calls that lock BOTH rows count."""
     src = inspect.getsource(fn)
     order = []
     for match in re.finditer(r"_lock_(trade|user)\s*\(", src):
@@ -529,17 +521,108 @@ for fn in (trading_service.close_trade, trading_service.expire_due_trades,
     order = lock_order(fn)
     check(f"{fn.__name__} locks trade before user", order, ["trade", "user"])
 
-# The module states the invariant, so a future edit that breaks it has to break
-# this comment too, and the check above will catch the code.
-doc = trading_service.__doc__ or ""
 module_src = inspect.getsource(trading_service)
 check("the lock-order invariant is documented in the module",
       "trade-then-user" in module_src, True)
-
-# And the guarantee is only real if every settling path shares it: open_trade
-# creates a position, so it legitimately has no position row to take first.
 check("open_trade is the one path that locks no position",
       "trade" not in lock_order(trading_service.open_trade), True)
+
+# The gate itself, asserted on the source so a future edit cannot quietly move
+# the check somewhere it can be skipped.
+ts_src = module_src
+gate = re.search(
+    r"def expire_due_trades\([^)]*\)[^:]*:\s*.*?if not AUTO_SETTLE_ON_EXPIRE:\s*.*?return \[\]",
+    ts_src, re.S)
+check("expire_due_trades is gated on AUTO_SETTLE_ON_EXPIRE", bool(gate), True)
+if gate:
+    tail = ts_src[gate.end():]
+    first_write = re.search(r"\b(_mark_to_market|settled_at\s*=|close_reason\s*=|db\.commit\()", tail)
+    check("...and returns before any settlement write",
+          first_write is not None and "return []" in gate.group(0) and
+          tail.find("db.commit()") > ts_src[:gate.end()].count("\n"), True)
+check("the 'running out of time is not a settlement' rule is documented",
+      "RUNNING OUT OF TIME IS NOT A SETTLEMENT" in module_src, True)
+
+main_src = open(os.path.join(os.path.dirname(__file__), "app", "main.py"), encoding="utf-8").read()
+check("the background loop is not started unconditionally",
+      re.search(r"asyncio\.create_task\(_trade_expiry_loop\(\)\)", main_src) is not None
+      and "if AUTO_SETTLE_ON_EXPIRE:" in main_src, True)
+check("main.py documents that no timer settles a trade",
+      "NO TIMER SETTLES A TRADE" in main_src, True)
+
+# =============================================================================
+print("\n[J] a REAL 1-minute trade, live, with the user closing it")
+# =============================================================================
+# A live wall-clock run at the real cadence -- no injected time, no backdating.
+# This is the scenario from the report, and the assertion is the one the user
+# asked for: the countdown reaches 00:00, the position is STILL OPEN, the
+# balance has NOT moved, and nothing appears in the top P/L until the close.
+if not REAL:
+    print("  --   skipped (pass --real to run the live 60s test)")
+else:
+    # A FRESH user, so "$0.00" below is literally true rather than "unchanged
+    # from a baseline". This is the user's requirement stated in the strongest
+    # form available: an account that has never traded reaches 00:00 with both
+    # top cards reading exactly zero, and they still read zero 12 seconds later.
+    j_user = new_user("expiry-real@example.com")
+    PRICE["now"] = 0.02
+    pre_j = balance(j_user.id)
+    approx("starting from a clean slate", realized(j_user.id)["profit"], 0.0)
+    approx("and no loss", realized(j_user.id)["loss"], 0.0)
+    j_t = trading_service.open_trade(db, j_user.id, "UP", 100.0, 60, "GOLF")
+    approx("stake reserved", balance(j_user.id), pre_j - 100.0)
+    stake_j = balance(j_user.id)
+
+    started = time.time()
+    seen = []
+    reached_zero_at = None
+    while time.time() - started < 75:
+        left = shows(60, time.time() - started)
+        if not seen or seen[-1] != left:
+            seen.append(left)
+        # The background loop, at the shipped cadence. It must do nothing.
+        trading_service.expire_due_trades(db)
+        if reached_zero_at is None and left == "00:00":
+            reached_zero_at = time.time() - started
+            # Sample the full state at the exact moment the clock stops.
+            check("AT 00:00: still OPEN", trade_row(j_t.id).status, models.TradeStatus.OPEN)
+            check("AT 00:00: no profit on the row", trade_row(j_t.id).profit, None)
+            check("AT 00:00: nothing settled", trade_row(j_t.id).settled_at, None)
+            approx("AT 00:00: balance unchanged", balance(j_user.id), stake_j)
+            approx("AT 00:00: top Profit is $0.00", realized(j_user.id)["profit"], 0.0)
+            approx("AT 00:00: top Loss is $0.00", realized(j_user.id)["loss"], 0.0)
+        if reached_zero_at is not None and time.time() - started > reached_zero_at + 12:
+            break
+        time.sleep(1.0)
+
+    print(f"  --   countdown sampled: {' '.join(seen[:4])} ... {seen[-1] if seen else '-'}")
+    check("countdown ended on 00:00", seen[-1] if seen else None, "00:00")
+    secs_seen = [int(x.split(':')[0]) * 60 + int(x.split(':')[1]) for x in seen]
+    check("countdown only ever counts down", all(b <= a for a, b in zip(secs_seen, secs_seen[1:])), True)
+    check("countdown never counted past 00:00", min(secs_seen) >= 0, True)
+    check("00:00 appears, at the end", seen.count("00:00"), 1)
+    truthy("the clock reached zero", reached_zero_at is not None)
+    truthy("around the 60s mark", reached_zero_at is not None and 58.0 <= reached_zero_at <= 62.0)
+
+    # 12s PAST 00:00, with a sweep every second the whole time.
+    check("12s past 00:00: STILL OPEN", trade_row(j_t.id).status, models.TradeStatus.OPEN)
+    check("12s past 00:00: still an open position", open_positions(j_user.id), 1)
+    approx("12s past 00:00: balance STILL unchanged", balance(j_user.id), stake_j)
+    approx("12s past 00:00: top Profit STILL $0.00", realized(j_user.id)["profit"], 0.0)
+    approx("12s past 00:00: top Loss STILL $0.00", realized(j_user.id)["loss"], 0.0)
+    check("12s past 00:00: still not in history",
+          j_t.id in [t.id for t in trading_service._closed_trades(db, j_user.id)], False)
+
+    # Now the user closes it. The market has had 12 extra seconds to move.
+    PRICE["now"] = 0.021
+    want_j = payout_for("UP", 0.02, 0.021, 100.0)
+    j_done = trading_service.close_trade(db, j_user.id, j_t.id)
+    approx("CLOSE prices it at the CURRENT price, not the 00:00 price",
+           j_done.profit, want_j)
+    approx("the balance is credited only now", balance(j_user.id), stake_j + 100.0 + want_j)
+    approx("and only now does top Profit move", realized(j_user.id)["profit"], want_j)
+    check("and only now is it in closed history",
+          j_t.id in [t.id for t in trading_service._closed_trades(db, j_user.id)], True)
 
 
 market_service.get_current_price = _real_price
@@ -551,4 +634,4 @@ if FAILS:
     for f in FAILS:
         print(f"  - {f}")
     sys.exit(1)
-print("All 1-minute duration / expiry checks passed.")
+print("All 00:00-is-not-a-settlement checks passed.")

@@ -28,7 +28,7 @@ fd, DB_PATH = tempfile.mkstemp(suffix=".db")
 os.close(fd)
 os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH}"
 
-from app import models, market_service, trading_service  # noqa: E402
+from app import config, models, market_service, trading_service  # noqa: E402
 from app.database import SessionLocal, engine, Base  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
@@ -114,18 +114,34 @@ check("closes_at is in the future", t.closes_at > t.opened_at, True)
 check("settle_due_trades removed", hasattr(trading_service, "settle_due_trades"), False)
 check("expire_due_trades present", hasattr(trading_service, "expire_due_trades"), True)
 
-# Backdate the position's closes_at far into the past and confirm the old flat
-# loss is impossible: expiry banks whatever the market says, in either
-# direction, exactly as a manual close would.
+# `expire_due_trades` still exists, but the shipping product does not call it:
+# reaching 00:00 is a countdown ending, not a settlement. The flag is off by
+# default, so the sweep is a no-op and no timer can move anyone's money.
+check("auto-settle on expiry is OFF by default", config.AUTO_SETTLE_ON_EXPIRE, False)
+
+# Backdate the position's closes_at far into the past — the exact state the bug
+# used to exploit — and confirm the sweep now does nothing at all: the trade
+# stays open, unpriced, unpaid and unrecorded.
 stale = t.id
 db.query(models.Trade).filter_by(id=t.id).update({"closes_at": datetime.utcnow() - timedelta(days=7)})
 db.commit()
 PRICE["now"] = 0.04  # the market doubled while the position was open
-expired = trading_service.expire_due_trades(db)[0]
-approx("expiry is priced, not forfeited", expired.profit, 10.0)
-check("expired as a WIN, not a -amount loss", expired.status, models.TradeStatus.WON)
+after_open = balance(user.id)
+
+check("a past deadline settles nothing", len(trading_service.expire_due_trades(db)), 0)
+untouched = db.query(models.Trade).filter_by(id=stale).one()
+check("the trade is still OPEN past its deadline", untouched.status, models.TradeStatus.OPEN)
+check("it has no profit yet", untouched.profit, None)
+check("it has no close reason", untouched.close_reason, None)
+check("its ledger timestamp is untouched", untouched.settled_at, None)
+check("the balance was not paid", balance(user.id), after_open)
+
+# Only the user pressing CLOSE books it, and then at the server's price.
+closed = trading_service.close_trade(db, user.id, stale)
+approx("the manual close is priced, not forfeited", closed.profit, 10.0)
+check("it closed as a WIN, not a -amount loss", closed.status, models.TradeStatus.WON)
 check("balance credited at the server price", balance(user.id), 1010.0)
-check("reason recorded as EXPIRED", expired.close_reason, "EXPIRED")
+check("reason recorded as a manual SOLD", closed.close_reason, "SOLD")
 
 # --- 2. the sweep is exactly-once -------------------------------------------
 print("\n[2] the expiry sweep pays once, however often it runs")
@@ -140,12 +156,12 @@ for _ in range(10):
     trading_service.expire_due_trades(db)
 approx("ten more sweeps paid nothing", balance(user.id), after_expiry)
 
-# And a manual SELL on the already-expired position is an idempotent replay,
+# And a manual CLOSE on the already-closed position is an idempotent replay,
 # not a second payout.
 replay = trading_service.close_trade(db, user.id, stale)
 approx("replay returns the recorded result", replay.profit, 10.0)
 check("replay did not re-credit", balance(user.id), after_expiry)
-check("replay did not rewrite the reason", replay.close_reason, "EXPIRED")
+check("replay did not rewrite the reason", replay.close_reason, "SOLD")
 
 # --- 3. settlement is server-authoritative ---------------------------------
 print("\n[3] a client cannot name the figure it is paid")

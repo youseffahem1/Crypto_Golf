@@ -11,33 +11,36 @@ Trade model (momentum/exit style):
                       while the price is up banks a gain; selling while it's
                       down salvages what's left.
   * close_all_trades() closes every OPEN position in ONE transaction.
-  * expire_due_trades() closes every OPEN position whose duration has elapsed,
-                      on the server's own schedule, at the server's own price.
+  * expire_due_trades() is the settle-on-expiry machinery. It is INERT by
+                      default (config.AUTO_SETTLE_ON_EXPIRE is off) and takes no
+                      action of any kind.
 
 LIFECYCLE: OPEN -> WON / LOST.
 
-A position leaves OPEN in exactly one of two ways, and both end in the same
-place — the same pricing function, the same fields, the same one-time credit:
+A position leaves OPEN in exactly ONE way: the user closes it.
 
-  * the user closes it early (close_trade / close_all_trades), or
-  * its chosen duration elapses and `expire_due_trades()` settles it.
+  * close_trade() closes a single still-OPEN position, or
+  * close_all_trades() closes every OPEN position in ONE transaction.
 
-`closes_at` is what the second rule keys on. It is written once at open as
-`opened_at + duration_seconds` and is the server's own deadline: a 1-minute
-trade has `closes_at == opened_at + 60s` and is settled the moment that
-passes. The frontend draws its countdown from the same timestamp, so the
-number on screen and the moment the server acts on are the same instant.
+RUNNING OUT OF TIME IS NOT ONE OF THOSE WAYS. `closes_at` is a deadline for how
+long the position runs and nothing more. It is written once at open as
+`opened_at + duration_seconds`, and when it passes the position stays OPEN: its
+P/L stays UNREALIZED, the balance is untouched, and the account's Profit and
+Loss do not move. The frontend's countdown stops at 00:00 for the same reason
+and does not post a close of its own. Only the user closing the position turns
+00:00 into a result.
 
-Expiring a position is NOT a forfeiture. This is the important part, and it
-is the exact opposite of the old `settle_due_trades()` that was removed
-earlier: that function force-booked any position whose `closes_at` had passed
-as a total loss (`profit = -amount`), so waiting for the timer destroyed the
-stake and turned a lucky position into a loss. Expiry here runs the position
-through the SAME `_mark_to_market` a manual sell runs through — the server's
-own live price, the trade's own entry price, the trade's own direction. A
-1-minute BUY that is up when its minute is up books a win; a SELL that is
-down books a win. The clock decides WHEN a position ends, never WHAT it is
-worth.
+    00:00            -> the duration is finished. That is ALL it means.
+    CLOSE (the user) -> price it, book the P/L, credit the balance, file it.
+
+So a position is priced whenever the user closes it and never before, and being
+left open past its deadline costs nothing and forfeits nothing. This is the
+exact opposite of the old `settle_due_trades()` that was removed earlier, which
+force-booked any elapsed position as a total loss (`profit = -amount`) on a
+timer, destroying a stake the moment the clock ran out. Here the clock does
+nothing at all; the user decides when a result exists, and when they do, it is
+computed by the SAME `_mark_to_market` a manual sell uses — the server's own
+live price, the trade's own entry price, the trade's own direction.
 
 Three rules make the whole lifecycle hold:
 
@@ -46,19 +49,15 @@ Three rules make the whole lifecycle hold:
     own direction. A `value` sent by the client is accepted by the request
     schema for backward compatibility and then ignored, so no client can name
     the figure it is paid.
-  * THE SERVER OWNS THE DEADLINE. `closes_at` is written by the server, and
-    `expire_due_trades()` is the only thing that acts on it. The client
-    reports "this one's up" by calling the ordinary close endpoint — which
-    settles at the server's price under the same rules — but the server would
-    have settled the position on its own schedule regardless, so a client
-    that never speaks, loses its connection, or lies about the time changes
-    nothing.
+  * THE SERVER OWNS THE DEADLINE. `closes_at` is written by the server and the
+    client's countdown is drawn from it, so the number on screen and the
+    instant it stops are the same instant. It does not, however, authorise
+    anything: with auto-settlement off, no timer anywhere turns a past
+    `closes_at` into a settled trade, so a client that never speaks, loses its
+    connection, or lies about the time still cannot move a balance.
   * A CLOSE APPLIES EXACTLY ONCE. Settlement locks the trade row, so two
     concurrent closes of the same position cannot both credit the balance;
     a repeat close returns the already-recorded result and moves no money.
-    The expiry sweep takes the same locks and the same status guard, so a
-    position that a user SELLs and the sweep reaches in the same instant is
-    settled by one of them and replayed by the other — never paid twice.
 
 Every platform coin (GOLF, NOVA, ABC, …) has its own authoritative walk
 and its own symbol on the trade; the rules are identical for all of them.
@@ -70,7 +69,13 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from . import models, market_service
-from .config import TRADE_PAYOUT_RATE, MIN_TRADE_AMOUNT, MAX_TRADE_AMOUNT, PLATFORM_COINS
+from .config import (
+    TRADE_PAYOUT_RATE,
+    MIN_TRADE_AMOUNT,
+    MAX_TRADE_AMOUNT,
+    PLATFORM_COINS,
+    AUTO_SETTLE_ON_EXPIRE,
+)
 
 TRADEABLE_SYMBOLS = tuple(s for s in PLATFORM_COINS if s)
 
@@ -317,12 +322,13 @@ def open_trade(
         user_id=user_id, symbol=symbol, direction=direction, amount=amount, entry_price=entry_price,
         payout_rate=TRADE_PAYOUT_RATE, duration_seconds=duration_seconds,
         status=models.TradeStatus.OPEN, opened_at=now,
-        # The position's deadline, and the only one that exists: the server's
-        # own expiry sweep settles this position the moment it passes, at the
-        # server's own price (see expire_due_trades). It is also the exact
-        # timestamp the client counts down to, so the on-screen number and the
-        # moment the server acts are the same instant. A 1-minute trade is
-        # therefore 60.0 seconds from `now` — no rounding, no client clock.
+        # The position's deadline, and the only one that exists: the timestamp
+        # the client counts down to. It is a COUNTDOWN and nothing more. When it
+        # passes, the trade's duration is over and that is the whole effect: the
+        # position stays open, stays priced live, keeps showing its unrealized
+        # P/L, and the balance reserved for it stays reserved. Only the user
+        # pressing CLOSE books it, at the server's own price. A 1-minute trade
+        # is therefore 60.0 seconds from `now` — no rounding, no client clock.
         closes_at=now + timedelta(seconds=duration_seconds),
     )
     db.add(trade)
@@ -451,23 +457,32 @@ def close_all_trades(db: Session, user_id: str, symbol: str | None = None) -> li
 # =============================================================================
 # Expiry — the position's duration running out
 # =============================================================================
-# This is the one function that turns a past `closes_at` into a settled trade.
-# It is deliberately the SAME settlement as a manual close, differing only in
-# who asked:
+# RUNNING OUT OF TIME IS NOT A SETTLEMENT. This is the single most important
+# rule in the module, so it is stated before anything else here:
 #
-#     close_trade()          "the user pressed SELL"
-#     expire_due_trades()    "the position's duration elapsed"
+#     00:00  ->  the duration is over. That is ALL it means.
 #
-# and not in how the result is decided. Both price through `_mark_to_market`,
-# so an expiry reads the server's own live feed and applies the trade's own
-# direction exactly as a sale would. That is the whole point, and it is what the
-# old `settle_due_trades()` got wrong: that function booked any elapsed
-# position as `profit = -amount`, a flat total loss, so a 1-minute trade that
-# was $5 in the money at the 60-second mark was destroyed by the clock instead
-# of banked. Here the clock decides WHEN, never WHAT. Nothing about reaching
-# `closes_at` forfeits a stake.
+# A position whose `closes_at` has passed stays OPEN. Its P/L stays UNREALIZED,
+# the trading balance is untouched, and the account's Profit and Loss do not
+# move. `close_trade()` — the user pressing CLOSE — is the ONLY event in this
+# module that prices a position, credits a balance, books a result and files a
+# trade into closed history.
 #
-# WHY IT IS SAFE TO CALL FREQUENTLY, FROM ANYWHERE
+# `expire_due_trades()` below is the machinery that used to turn a past
+# `closes_at` into a settled trade. It is retained, unchanged, and gated behind
+# `config.AUTO_SETTLE_ON_EXPIRE`, which defaults to OFF. With the flag off it
+# returns an empty list and touches nothing at all, so all three of its call
+# sites (the background loop and both read endpoints) are inert by construction
+# rather than by each caller remembering to skip it. Turning the flag back on
+# reinstates settle-on-expiry, which prices through the identical `_mark_to_market`
+# a manual close uses — the clock would decide WHEN, never WHAT.
+#
+# WHY THE MACHINERY IS KEPT RATHER THAN DELETED
+# It is correct code and it is one env var away. Deleting it would make
+# reinstate-on-expiry a rewrite instead of a switch, and would take the
+# exactly-once locking and the SQLite sweep lock with it.
+#
+# WHY IT WAS SAFE TO CALL FREQUENTLY, FROM ANYWHERE (still true when re-enabled)
 # Every write goes through the same two guards as the manual paths:
 #
 #   * the position row is locked, and its status re-read under that lock, so a
@@ -496,23 +511,35 @@ def due_trades_query(db: Session, now: datetime):
 
 
 def expire_due_trades(db: Session, now: datetime | None = None, limit: int = 500) -> list[models.Trade]:
-    """Settle every OPEN position whose `closes_at` has passed. Returns the
-    positions settled by THIS call (empty when there was nothing to do).
+    """Settle every OPEN position whose `closes_at` has passed — ONLY IF
+    `AUTO_SETTLE_ON_EXPIRE` is on, which it is NOT by default.
 
-    Called from two places on purpose, so expiry never depends on a timer being
-    alive:
-      * `_trade_expiry_loop` in main.py, once a second, so a position ends
-        promptly even if nobody is looking at the page;
-      * the read endpoints, so a client that refreshes, reconnects or switches
-        tabs finds the expired position already closed and never sees it as
-        OPEN. The second caller is what makes "the server is the source of
-        truth" true even for a server that was restarted mid-trade.
+    SHIPPED BEHAVIOUR: this is a no-op. It returns an empty list and does not
+    read, write or lock anything. Reaching `closes_at` is not a settlement: the
+    position stays OPEN, its P/L stays UNREALIZED, and the balance and the
+    account Profit/Loss are untouched until the user closes it through
+    `close_trade()`. The client's own countdown stops at 00:00 for the same
+    reason, and does not post a close either.
+
+    The gate is here, at the one function every caller shares, rather than in
+    the three callers themselves (the background loop in main.py and both read
+    endpoints). A gate in the callers is a rule three places can each forget; a
+    gate here makes "nothing settles on a timer" a property of the system.
+
+    Retained rather than deleted so reinstate-on-expiry stays a config change.
+    Re-enabling it prices every settlement through the identical
+    `_mark_to_market` a manual close uses, so the clock would decide WHEN, never
+    WHAT, and no position would be forfeited by running out of time.
 
     `now` is injectable so a test can settle a position without sleeping 60
     seconds. Never raises: a failure here is logged and the positions stay OPEN
     for the next sweep, which is the safe direction to fail in — an unsettled
     position is retried, a half-credited one is not.
     """
+    if not AUTO_SETTLE_ON_EXPIRE:
+        # The duration ended. Nothing else did. Take no action of any kind.
+        return []
+
     now = now or datetime.utcnow()
 
     # Cheap check before taking the lock or touching a row: the overwhelmingly

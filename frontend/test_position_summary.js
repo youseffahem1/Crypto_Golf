@@ -63,9 +63,11 @@ function summaryFor(ledgerSeed, floatingPl) {
   api.vtSeedRealized(ledgerSeed);
   const sp = api.vtSplit(floatingPl);
   const acct = api.vtRealizedTotals();
-  const of = api.vtSplit(floatingPl);
-  const totalProfit = acct.profit + of.profit;
-  const totalLoss = acct.loss + of.loss;
+  /* Headline rows read CLOSED trades only. `floatingPl` is still passed in and
+     still reported, because the page does still price each open position for its
+     own per-position P/L cell — it just no longer reaches these two totals. */
+  const totalProfit = acct.profit;
+  const totalLoss = acct.loss;
   return {
     profit: totalProfit > 0 ? '+' + sandbox.money(totalProfit) : sandbox.money(0),
     loss: totalLoss < 0 ? '−' + sandbox.money(Math.abs(totalLoss)) : sandbox.money(0),
@@ -78,15 +80,22 @@ function summaryFor(ledgerSeed, floatingPl) {
 }
 const D = (id, profit) => ({ id, sym: 'GOLF', profit });
 
-console.log('[0] the real page binds Profit / Loss to the account TOTAL');
-/* The client asked for this block to be the one place that shows everything
-   they have made and lost, so the rows now read the closed-trade totals PLUS
-   the P/L still riding on open positions, over every coin. What they must never
-   do is read the single last trade's `sp`, or let the two halves net out. */
-check('Profit row is the realized total plus the open profit',
-  /const totalProfit=acct\.profit\+of\.profit;/.test(rowsSrc), true);
-check('Loss row is the realized total plus the open loss',
-  /const totalLoss=acct\.loss\+of\.loss;/.test(rowsSrc), true);
+console.log('[0] the real page binds Profit / Loss to the REALIZED total only');
+/* This block USED to read the closed-trade totals PLUS the P/L still riding on
+   open positions. The client has since asked for that to stop: a position's
+   unrealized move is not a result, and folding it in made the headline Profit
+   and Loss tick with every candle while the user was still holding, then jump a
+   second time when the position actually closed. So the two rows now read the
+   closed-trade totals alone. What they must still never do is read the single
+   last trade's `sp`, or let the two halves net out against each other. */
+check('Profit row is the realized total, with no open half',
+  /const totalProfit=acct\.profit;/.test(rowsSrc), true);
+check('Loss row is the realized total, with no open half',
+  /const totalLoss=acct\.loss;/.test(rowsSrc), true);
+check('unrealized profit is never folded into the headline',
+  /const totalProfit=acct\.profit\+/.test(rowsSrc), false);
+check('unrealized loss is never folded into the headline',
+  /const totalLoss=acct\.loss\+/.test(rowsSrc), false);
 check('Profit row is written from that total', /setN\('vtaPProfit',totalProfit>/.test(rowsSrc), true);
 check('Loss row is written from that total', /setN\('vtaPLoss',totalLoss</.test(rowsSrc), true);
 check('the open half is never the single last trade', /setN\('vtaPProfit',[^)]*sp\./.test(rowsSrc), false);
@@ -97,11 +106,18 @@ check('nor the loss half', /setN\('vtaPLoss',[^)]*sp\./.test(rowsSrc), false);
 check('open positions are priced with their own coin', /window\.vantaServerPrices/.test(openSrc), true);
 check('an unpriced position is left out, not guessed',
   /skipped\+\+/.test(openSrc) && /awaiting price/.test(rowsSrc), true);
-/* Balance must stay funds + FLOATING only, or a settled payout is counted twice
-   — it is already inside `funds`. */
-check('Balance adds only the floating part',
-  /const total=funds\+openAll\.net;/.test(rowsSrc), true);
-check('and never a realized total', /const total=funds\+[^;]*(totalProfit|totalLoss|acct\.)/.test(rowsSrc), false);
+/* Balance is the AVAILABLE figure and nothing else. It used to be
+   `funds + openAll.net`, which made it a second, invented balance that moved
+   with the market while the user held — so on a $500 account with a $100
+   position open it kept reading near $500 even though $100 was already
+   committed. The server's `usdt_balance` is already net of every open stake, so
+   the row must show it as-is: adding a stake back in, or adding floating P/L on
+   top, would both be a balance the server knows nothing about. */
+check('Balance is the available funds figure alone',
+  /setN\('vtaPBalance',money\(funds\)\)/.test(rowsSrc), true);
+check('and it does not add the floating P/L',
+  /const total=funds\+openAll\.net;/.test(rowsSrc), false);
+check('and never a realized total', /vtaPBalance',\s*money\([^)]*(totalProfit|totalLoss|acct\.)/.test(rowsSrc), false);
 check('totals read the deal records', /vtDeals\(\)\.forEach\(vtNoteRealized\)/.test(rowsSrc), true);
 
 /* The client's other requirement: the LIVE per-trade P/L must stay per-trade.
@@ -196,33 +212,35 @@ r = summaryFor([D('t1', 0.24)], 0);
 summaryFor([D('t1', 0.24), D('t2', 0.50)], 0);
 check('Profit after re-seed', r.profit, '+$0.24');
 
-console.log('\n[9] an OPEN position\'s P/L DOES count — it is already the client\'s');
-/* This is the change the client asked for: until a trade closes, its P/L is
-   theirs, so the block counts it. Once it closes, the same money leaves the
-   floating half and arrives in the funds — the total does not jump. */
+console.log('\n[9] an OPEN position\'s P/L is not a result until it settles');
+/* The client asked for this to stop. While a position is open its move is a
+   quote, not a result: reading it as one made the headline tick on every candle
+   while the user was still holding, then move a second time at the real close.
+   The per-position P/L cell still prices it, so the number is never hidden. */
 r = summaryFor([D('t1', 0.24)], 12.75);
-check('Profit = closed + open', r.profit, '+$12.99');
+check('Profit is the closed trades only', r.profit, '+$0.24');
+check('Loss stays clean while the gain is open', r.loss, '$0.00');
 check('the realized part is unchanged', r.acctProfit, 0.24);
-check('floating net is still reported separately', r.net, 12.75);
+check('floating net is still computed, for the per-position row', r.net, 12.75);
 r = summaryFor([D('t1', 0.24)], -8);
-check('an open LOSS lands in Loss', r.loss, '−$8.00');
+check('an open LOSS is not booked as a Loss either', r.loss, '$0.00');
 check('and never reduces Profit', r.profit, '+$0.24');
 
-console.log('\n[9b] an open loss never cancels a closed win, or the reverse');
+console.log('\n[9b] a closed win and a closed loss stay apart, and stay separate');
 r = summaryFor([D('t1', 100), D('t2', -60)], 40);
-check('Profit is the two profit halves only', r.profit, '+$140.00');
-check('Loss is the loss halves only', r.loss, '−$60.00');
+check('Profit is the closed wins only', r.profit, '+$100.00');
+check('Loss is the closed losses only', r.loss, '−$60.00');
 r = summaryFor([D('t1', 100)], -250);
-check('a big open loss still leaves Profit alone', r.profit, '+$100.00');
-check('and shows the whole loss', r.loss, '−$250.00');
+check('a big open loss leaves Profit alone', r.profit, '+$100.00');
+check('and does not invent a Loss', r.loss, '$0.00');
 
-console.log('\n[9c] with nothing closed, the open P/L is the whole total');
+console.log('\n[9c] with nothing closed, both headline rows are empty');
 r = summaryFor([], 75);
-check('Profit', r.profit, '+$75.00');
+check('Profit', r.profit, '$0.00');
 check('Loss', r.loss, '$0.00');
 r = summaryFor([], -75);
 check('Profit', r.profit, '$0.00');
-check('Loss', r.loss, '−$75.00');
+check('Loss', r.loss, '$0.00');
 
 console.log('\n[10] clearing a result does not erase a real trade');
 /* vtClearLastSettled only nulls the on-screen result; the ledger is separate. */
@@ -230,19 +248,19 @@ r = summaryFor([D('t1', 0.24), D('t2', -60)], 0);
 check('totals survive a Clear', r.profit, '+$0.24');
 check('totals survive a Clear (loss)', r.loss, '−$60.00');
 
-console.log('\n[11] closing a trade moves it from the open half to the closed half');
-/* Before: $40 is floating on an open position. After: the same $40 arrives as a
-   closed winning trade. The total is identical, which is the point — the client
-   never sees their money appear twice or vanish. */
+console.log('\n[11] the money is booked once, when the trade actually closes');
+/* Before: $40 is floating on an open position and nothing is banked. After: the
+   server settles the same $40 and it arrives in the ledger. The headline moves
+   once, at the close, rather than drifting with the price and jumping again. */
 const floating = summaryFor([], 40);
 const closed = summaryFor([D('t1', 40)], 0);
-check('the total is the same either side of the close',
-  closed.profit, floating.profit);
-check('Profit', closed.profit, '+$40.00');
-/* Balance adds ONLY the floating half, because a settled payout is already
-   inside `funds` — adding the realized total there would count it twice. */
-check('Balance before the close adds the floating', 1000 + 40, 1040);
-check('Balance after the close adds nothing extra', 1040, 1040);
+check('nothing is banked while the position is open', floating.profit, '$0.00');
+check('Profit after the close', closed.profit, '+$40.00');
+check('the ledger did not gain it twice', closed.acctProfit, 40);
+/* Balance is `funds` as the server reports it: already net of every open stake
+   and of every settled payout. It is never `funds + floating`, which was a
+   second invented balance. */
+check('Balance is the available figure, not an inflated one', 1000, 1000);
 
 console.log('\n[12] a $0 breakeven trade is neither profit nor loss');
 r = summaryFor([D('t1', 0.24), D('t2', 0)], 0);

@@ -4647,13 +4647,41 @@ async function createTrade(direction) {
         result: null
     };
 
+    /* STAKE RESERVATION, SHOWN IMMEDIATELY.
+
+       The server has already taken the $100 out of the available balance in
+       the POST above — it debits the stake and writes the position in one
+       transaction — and the authoritative number comes back in the next
+       refreshBalance(). This line is only about the FRAME in between: the
+       request has returned, so the money is demonstrably committed, and
+       waiting a round-trip to say so leaves the header reading $500 while a
+       $100 position is open, which is precisely the report.
+
+       It is a projection of the server's answer, not a second balance system:
+       it subtracts the stake the server actually reserved, and the awaited
+       refresh below immediately overwrites it with the server's own figure. If
+       the two ever disagreed the server would win, because the server is the only
+       one of the two that is not a guess.
+
+       The amount subtracted is `serverTrade.amount`, not the number typed into
+       the ticket. The server is what rounded it, clamped it and decided what was
+       affordable, so subtracting the request could briefly show a figure the
+       server never recorded. The typed value is only a fallback for a response
+       that somehow omitted it. */
+    const reserved = Number(serverTrade && serverTrade.amount) > 0
+      ? Number(serverTrade.amount)
+      : Number(amount);
+    balance = Math.max(0, Number(balance) - reserved);
+    updateBalance();
+    vantaRenderAccountPanel();
+
     trades.push(trade);
 
     createMarker(trade);
     renderOpenTrades();
     positionAllTrades();
 
-    refreshBalance();
+    await refreshBalance();
 
     showToast(
         `${direction === "UP" ? "↑ BUY" : "↓ SELL"} opened • ${price(trade.entryPrice)}`
@@ -15262,30 +15290,34 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     const sr=ls0?vtSplit(ls0.profit):null;
 
     /* ---- account summary ----------------------------------------------------
-       Profit and Loss are the ACCOUNT totals, split so a loss is never shown as
-       a negative profit. Two halves go into them:
-         - the closed trade records, merged below and keyed by trade id, so
-           re-reading the same deal can never double-count it;
-         - the P/L still riding on open positions, priced per coin below.
-       The client asked for this block to be the one place that shows everything
-       they have made and lost, so an open position counts here from the moment
-       it is opened — its money is already theirs — and stops counting the
-       instant it closes and its payout lands in the funds. Neither half is ever
-       taken from the last trade's number on screen, and the two are never netted
-       against each other:
-         open win + closed loss -> Profit +$X   Loss -$Y
-         open loss + closed win -> Profit +$Y   Loss -$X                    */
+       Profit and Loss here are REALIZED, and only realized. They are built
+       from the closed trade records alone, merged below and keyed by trade id
+       so re-reading the same deal can never double-count it.
+
+       This block used to add the floating P/L of every OPEN position on top:
+
+           totalProfit = realized.profit + unrealized.profit
+           totalLoss   = realized.loss   + unrealized.loss
+
+       which is exactly what the client asked to be removed. A position's
+       unrealized move is not a result — it is the market breathing — and
+       folding it in made the headline Profit and Loss tick up and down with
+       every candle while the user was still holding, then jump a second time
+       when the position actually closed. It also let a losing OPEN position
+       sit in the headline Loss before a single dollar had been lost. So the
+       open book is deliberately absent from both halves, and the per-position
+       row in the POSITIONS table below is where a position's live P/L belongs.
+       Neither half is ever netted against the other:
+         closed +$20 and closed -$60  ->  Profit +$20   Loss -$60      */
     vtDeals().forEach(vtNoteRealized);
     const acct=vtRealizedTotals();
 
-    /* vtOpenNetAll prices every open position with its OWN coin's price, so the
-       totals cover the whole account and not just the symbol on screen. Both
-       halves are split by the same vtSplit, which is what keeps an open loss
-       from ever showing up as a negative profit. */
+    /* Still computed, but ONLY to describe the open book in the sub-line and to
+       colour the per-position rows. It must not reach the two totals above. */
     const openAll=vtOpenNetAll(all, sym);
-    const of=vtSplit(openAll.net);
-    const totalProfit=acct.profit+of.profit;
-    const totalLoss=acct.loss+of.loss;
+
+    const totalProfit=acct.profit;
+    const totalLoss=acct.loss;
 
     setN('vtaPProfit',totalProfit>0?'+'+money(totalProfit):money(0));
     const profitEl=$('vtaPProfit');
@@ -15294,34 +15326,43 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
     const lossEl=$('vtaPLoss');
     if(lossEl) lossEl.className='vta-acct-v '+(totalLoss<0?'down':'zero');
 
-    /* Balance is the only row that mixes the two: funds on the account were
-       already credited the real payout when each trade closed, so the realized
-       half of the totals above must NOT be added again. Only the still-open
-       floating P/L is missing from the balance, and only that belongs here —
-       and it is every open position's, so closing a trade in another coin moves
-       this row too. */
+    /* BALANCE is the AVAILABLE trading balance, and nothing else.
+
+       This row used to be `funds + openAll.net` — the balance plus the
+       floating P/L of every open position. That made it a second, invented
+       balance that moved with the market while the user held, so the figure on
+       screen was never the figure they could actually trade with: open a $100
+       position on a $500 account and this row kept reading near $500 even
+       though $100 of it was already committed. It is now the same number the
+       header shows, which is the server's own `usdt_balance` — already net of
+       every open stake, because the server debits the stake at open and credits
+       the real payout at close (see createTrade's comment). Adding a stake back
+       in, or adding floating P/L on top, would both be a client-side balance
+       that the server knows nothing about. */
     const funds=vtFunds();
     setN('vtaPDeposit',money(funds));
     setN('vtaPSwap',money(swap));
     setN('vtaPComm',money(comm));
-    const total=funds+openAll.net;
-    setN('vtaPBalance',money(total));
+    setN('vtaPBalance',money(funds));
     const balEl=$('vtaPBalance');
-    if(balEl) balEl.className='vta-acct-v '+(openAll.net>0?'up':openAll.net<0?'down':'');
+    if(balEl) balEl.className='vta-acct-v';
     const sub=$('vtaAcctSub');
     if(sub){
       /* Both halves are described separately, so a client with open trades and no
-         closed ones is not told "no trades yet" while money is on screen. */
+         closed ones is not told "no trades yet" while money is on screen. The
+         open figure is deliberately described as a POSITION, never as a won or
+         lost amount: those words are reserved for closed results. */
       const open=openAll.count?(openAll.count+(openAll.count===1?' open position':' open positions')):'';
       const shut=acct.count?(acct.count+(acct.count===1?' closed trade':' closed trades')):'';
       const parts=[];
       if(open) parts.push(open);
       if(shut) parts.push(shut);
+      if(open) parts.push('P/L unrealized until they close');
       if(open||shut) parts.push('won '+money(totalProfit)+' · lost '+money(Math.abs(totalLoss)));
       sub.textContent=parts.length?parts.join(' · '):'No trades yet';
-      /* A position whose price has not arrived is left out of the totals, so it
-         says so rather than passing off a short figure as if it were the whole
-         account. */
+      /* A position whose price has not arrived is left out of the per-position
+         rows, so it says so rather than passing off a short figure as if it
+         were the whole account. */
       if(openAll.skipped) sub.textContent+=' · '+openAll.skipped+' awaiting price';
     }
     const meta=$('vtaPosMeta');

@@ -21,6 +21,16 @@ def open_trade(payload: schemas.TradeOpenRequest, db: Session = Depends(get_db),
 
 @router.get("/open-trades", response_model=list[schemas.TradeOut])
 def open_trades(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """The positions still OPEN right now.
+
+    Anything whose duration has already elapsed is settled BEFORE this list is
+    built, so an expired position can never be reported as OPEN — not because
+    a filter hides it, but because it has actually been closed and credited by
+    the time this query runs. That is what makes the server the source of truth
+    for expiry: a client that reloads, reconnects, or switches tabs mid-minute
+    finds the position already in its history, with the price the server
+    charged, and never has to sell it by hand."""
+    trading_service.expire_due_trades(db)
     return (
         db.query(models.Trade)
         .filter_by(user_id=user_id, status=models.TradeStatus.OPEN)
@@ -34,6 +44,10 @@ def trade_history(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
+    """Closed positions, newest first. Runs the expiry sweep for the same
+    reason as /open-trades, so a position that ended on its own is already
+    listed here rather than appearing on the next poll."""
+    trading_service.expire_due_trades(db)
     q = db.query(models.Trade).filter(
         models.Trade.user_id == user_id, models.Trade.status != models.TradeStatus.OPEN
     )

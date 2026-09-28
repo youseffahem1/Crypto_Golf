@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 from .database import Base, engine, SessionLocal
-from . import models, market_service, deposit_monitor
+from . import models, market_service, deposit_monitor, trading_service
 from .routes import (
     auth_routes, wallet_routes, trade_routes, swap_routes, golf_routes,
     market_routes, transfer_routes, message_routes, users_routes, admin_routes,
@@ -14,7 +14,7 @@ from .routes import (
 )
 from .config import (
     ALLOWED_ORIGINS, MARKET_TICK_INTERVAL_SECONDS, DEPOSIT_POLL_INTERVAL_SECONDS,
-    COIN_PRICE_REFRESH_SECONDS,
+    COIN_PRICE_REFRESH_SECONDS, TRADE_EXPIRY_SWEEP_SECONDS,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -165,6 +165,14 @@ def _migrate():
     for table, column, decl in [
         ("wallet_transfers", "kind", "VARCHAR(20) DEFAULT 'BALANCE' NOT NULL"),
         ("wallet_transfers", "usd_value", "FLOAT"),
+        # trades.close_reason records HOW a position left OPEN: "SOLD" when the
+        # user closed it early, "EXPIRED" when its duration elapsed and the
+        # server settled it. Nullable, so every pre-existing trade reads NULL
+        # and nothing is rewritten — and NULL is correct for them, because
+        # they predate the distinction. No query filters on it: `status`
+        # remains the authority for whether a position is settled, so adding
+        # the column changes no existing behaviour whatsoever.
+        ("trades", "close_reason", "VARCHAR(20)"),
     ]:
         _add_column(table, column, decl)
 
@@ -199,17 +207,21 @@ def health():
 
 # =============================================================================
 # Background loops — the things that must keep running independent of any
-# single HTTP request: the authoritative demo market tick, deposit monitoring,
-# and the CoinGecko price table. Each loop swallows its own exceptions so one
-# bad iteration can never kill the whole background task.
+# single HTTP request: the authoritative demo market tick, trade expiry,
+# deposit monitoring, and the CoinGecko price table. Each loop swallows its own
+# exceptions so one bad iteration can never kill the whole background task.
 #
-# There is deliberately NO trade-settlement loop. A previous version ran
-# `settle_due_trades()` every two seconds, which force-settled any position
-# whose `closes_at` had passed into a total loss (profit = -amount) — so a
-# position was destroyed by the clock and its stake forfeited without the user
-# ever doing anything. Positions now stay open until they are explicitly
-# closed, so there is nothing for such a loop to do. Closing is a user action
-# and happens in trading_service.close_trade() / close_all_trades().
+# TRADE EXPIRY IS A TIMER, NOT A PENALTY. `_trade_expiry_loop` settles any
+# position whose `closes_at` has passed, so a 1-minute trade is a 60-second
+# trade whether or not anyone is watching. It calls
+# `trading_service.expire_due_trades()`, which prices the position exactly as a
+# manual SELL does — the server's own feed, the trade's own direction — so
+# expiry banks a winning position instead of destroying it. A previous version
+# of this loop force-settled elapsed positions as a flat total loss
+# (profit = -amount), which is what made a timer running out equivalent to
+# throwing the stake away; that logic is gone and must not come back. The
+# expiry sweep is ALSO run from the trade read endpoints, so a server that was
+# restarted mid-trade still closes the position the moment anybody looks at it.
 # =============================================================================
 
 async def _market_tick_loop():
@@ -222,6 +234,18 @@ async def _market_tick_loop():
         finally:
             db.close()
         await asyncio.sleep(MARKET_TICK_INTERVAL_SECONDS)
+
+
+async def _trade_expiry_loop():
+    while True:
+        db = SessionLocal()
+        try:
+            trading_service.expire_due_trades(db)
+        except Exception as e:
+            logging.error(f"[trade_expiry_loop] {e}")
+        finally:
+            db.close()
+        await asyncio.sleep(TRADE_EXPIRY_SWEEP_SECONDS)
 
 
 async def _deposit_poll_loop():
@@ -250,5 +274,6 @@ async def _coin_price_refresh_loop():
 @app.on_event("startup")
 async def start_background_loops():
     asyncio.create_task(_market_tick_loop())
+    asyncio.create_task(_trade_expiry_loop())
     asyncio.create_task(_deposit_poll_loop())
     asyncio.create_task(_coin_price_refresh_loop())

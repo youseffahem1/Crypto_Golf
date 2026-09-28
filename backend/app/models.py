@@ -130,7 +130,7 @@ class Trade(Base):
     payout_rate = Column(Float, nullable=False)
     duration_seconds = Column(Integer, nullable=False)
     status = Column(Enum(TradeStatus), default=TradeStatus.OPEN, nullable=False)
-    profit = Column(Float, nullable=True)  # signed: positive on WON, negative (=-amount) on LOST
+    profit = Column(Float, nullable=True)  # signed: positive on WON, negative on LOST
     # A winning trade's profit may be moved into the wallet exactly once. This
     # flag is what makes that a guarantee rather than a UI convention: the
     # moment the profit is transferred the trade is stamped, and every later
@@ -138,8 +138,21 @@ class Trade(Base):
     # never stamped and is never transferable.
     profit_moved = Column(Boolean, default=False, server_default=false(), nullable=False)
     opened_at = Column(DateTime, default=datetime.utcnow)
+    # The moment this position's duration runs out. It is written once, at
+    # open, as `opened_at + duration_seconds`, and it is the ONE deadline the
+    # server acts on: expire_due_trades() settles every OPEN position whose
+    # closes_at has passed, and the frontend draws its countdown straight from
+    # this timestamp. Both sides therefore measure the same instant from the
+    # same value, so the client clock can never disagree with the server about
+    # when a trade is over.
     closes_at = Column(DateTime, nullable=False)
     settled_at = Column(DateTime, nullable=True)
+    # Why a position left the OPEN state: "SOLD" (the user closed it early) or
+    # "EXPIRED" (its duration elapsed and the server settled it). NULL on a
+    # position that is still open. Purely descriptive — status is the
+    # authority, and this exists so a client and an operator can tell the two
+    # apart instead of seeing one undifferentiated CLOSED.
+    close_reason = Column(String, nullable=True)
 
     user = relationship("User", back_populates="trades")
 

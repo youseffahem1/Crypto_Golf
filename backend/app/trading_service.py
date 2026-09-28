@@ -11,33 +11,60 @@ Trade model (momentum/exit style):
                       while the price is up banks a gain; selling while it's
                       down salvages what's left.
   * close_all_trades() closes every OPEN position in ONE transaction.
+  * expire_due_trades() closes every OPEN position whose duration has elapsed,
+                      on the server's own schedule, at the server's own price.
 
-A POSITION STAYS OPEN UNTIL IT IS EXPLICITLY CLOSED.
+LIFECYCLE: OPEN -> WON / LOST.
 
-`closes_at` is still recorded, because it is part of the position the user
-chose (its duration is shown on the chart and in the position table) — but it
-is display metadata ONLY. Nothing expires, nothing is force-settled, and the
-background loop that used to turn a past `closes_at` into a total loss has
-been removed. A stake is never forfeited by waiting: the timer running out
-changes nothing about the position or the balance, so the trade survives a
-page refresh, a browser restart, days of inactivity and a logout, and it is
-only ever settled by the user pressing Close (one) or Close All, or by an
-explicit call to close_trade()/close_all_trades().
+A position leaves OPEN in exactly one of two ways, and both end in the same
+place — the same pricing function, the same fields, the same one-time credit:
 
-Two rules make that guarantee hold:
+  * the user closes it early (close_trade / close_all_trades), or
+  * its chosen duration elapses and `expire_due_trades()` settles it.
+
+`closes_at` is what the second rule keys on. It is written once at open as
+`opened_at + duration_seconds` and is the server's own deadline: a 1-minute
+trade has `closes_at == opened_at + 60s` and is settled the moment that
+passes. The frontend draws its countdown from the same timestamp, so the
+number on screen and the moment the server acts on are the same instant.
+
+Expiring a position is NOT a forfeiture. This is the important part, and it
+is the exact opposite of the old `settle_due_trades()` that was removed
+earlier: that function force-booked any position whose `closes_at` had passed
+as a total loss (`profit = -amount`), so waiting for the timer destroyed the
+stake and turned a lucky position into a loss. Expiry here runs the position
+through the SAME `_mark_to_market` a manual sell runs through — the server's
+own live price, the trade's own entry price, the trade's own direction. A
+1-minute BUY that is up when its minute is up books a win; a SELL that is
+down books a win. The clock decides WHEN a position ends, never WHAT it is
+worth.
+
+Three rules make the whole lifecycle hold:
 
   * THE SERVER OWNS THE RESULT. The exit price is read from the server's own
     feed and the credited value is derived from it together with the trade's
     own direction. A `value` sent by the client is accepted by the request
     schema for backward compatibility and then ignored, so no client can name
     the figure it is paid.
+  * THE SERVER OWNS THE DEADLINE. `closes_at` is written by the server, and
+    `expire_due_trades()` is the only thing that acts on it. The client
+    reports "this one's up" by calling the ordinary close endpoint — which
+    settles at the server's price under the same rules — but the server would
+    have settled the position on its own schedule regardless, so a client
+    that never speaks, loses its connection, or lies about the time changes
+    nothing.
   * A CLOSE APPLIES EXACTLY ONCE. Settlement locks the trade row, so two
     concurrent closes of the same position cannot both credit the balance;
     a repeat close returns the already-recorded result and moves no money.
+    The expiry sweep takes the same locks and the same status guard, so a
+    position that a user SELLs and the sweep reaches in the same instant is
+    settled by one of them and replayed by the other — never paid twice.
 
 Every platform coin (GOLF, NOVA, ABC, …) has its own authoritative walk
 and its own symbol on the trade; the rules are identical for all of them.
 """
+import logging
+import threading
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -46,6 +73,14 @@ from . import models, market_service
 from .config import TRADE_PAYOUT_RATE, MIN_TRADE_AMOUNT, MAX_TRADE_AMOUNT, PLATFORM_COINS
 
 TRADEABLE_SYMBOLS = tuple(s for s in PLATFORM_COINS if s)
+
+# Serialises the expiry sweep inside this process. The row locks are what make
+# settlement exactly-once against the DATABASE (PostgreSQL in production), but
+# SQLite has no row locks, and the sweep is reachable from both the background
+# loop and the read endpoints — so two request threads could otherwise read the
+# same OPEN row and both credit. This lock makes it one at a time, which is
+# enough: the sweep is cheap when there is nothing due.
+_expiry_sweep_lock = threading.Lock()
 
 
 class TradingError(Exception):
@@ -66,10 +101,13 @@ class TradingError(Exception):
 # to an ordinary read; local dev is single-writer and cannot interleave two
 # requests on the same session anyway.
 #
-# LOCK ORDER IS ALWAYS trade-then-user. close_trade() and close_all_trades()
-# both take the position rows before the balance row, so the two paths can
-# never deadlock against each other by grabbing the same two rows in opposite
-# orders.
+# LOCK ORDER IS ALWAYS trade-then-user, and every path that settles a position
+# obeys it: close_trade(), close_all_trades() and expire_due_trades() all take
+# the position rows before the balance row. That is what stops a user's SELL
+# and the expiry sweep — the two writes most likely to meet on the same
+# position in the same second — from grabbing the same two rows in opposite
+# orders and deadlocking. open_trade() is exempt because it creates a position
+# rather than settling one, so it has no position row to take first.
 
 def _lock_trade(db: Session, user_id: str, trade_id: str) -> models.Trade | None:
     """This user's own position, locked for update. Returns None if the trade
@@ -279,9 +317,12 @@ def open_trade(
         user_id=user_id, symbol=symbol, direction=direction, amount=amount, entry_price=entry_price,
         payout_rate=TRADE_PAYOUT_RATE, duration_seconds=duration_seconds,
         status=models.TradeStatus.OPEN, opened_at=now,
-        # Display metadata only: this is the duration the user picked, shown on
-        # the chart and in the position table. It does NOT schedule a
-        # settlement — the position stays open until it is explicitly closed.
+        # The position's deadline, and the only one that exists: the server's
+        # own expiry sweep settles this position the moment it passes, at the
+        # server's own price (see expire_due_trades). It is also the exact
+        # timestamp the client counts down to, so the on-screen number and the
+        # moment the server acts are the same instant. A 1-minute trade is
+        # therefore 60.0 seconds from `now` — no rounding, no client clock.
         closes_at=now + timedelta(seconds=duration_seconds),
     )
     db.add(trade)
@@ -310,10 +351,12 @@ def close_trade(
         closes cannot both credit the balance. A repeat close of an
         already-settled position is NOT an error and moves no money: it
         returns the recorded result, which is what makes a double-click on
-        Close, or a retry after a dropped response, safe.
-      * NON-DESTRUCTIVE TO WAITING. Nothing about this function depends on
-        `closes_at`; a position closed days after it was opened settles
-        normally, and one that is never closed stays open.
+        Close, a retry after a dropped response, and a user SELL racing the
+        expiry sweep all safe.
+      * THE CLOCK IS NOT A FORFEITURE. Closing early and being closed by
+        `closes_at` run the identical pricing; this function neither reads
+        `closes_at` nor treats lateness as a loss, so a position closed long
+        after it was opened settles at the live market like any other.
 
     Never called with client-supplied prices."""
     trade = _lock_trade(db, user_id, trade_id)
@@ -336,6 +379,7 @@ def close_trade(
     payout = _mark_to_market(db, trade)
     user.usdt_balance = float(user.usdt_balance or 0.0) + payout
     trade.settled_at = datetime.utcnow()
+    trade.close_reason = "SOLD"
 
     # One commit for the position row AND the balance row: there is no window
     # in which one has been written without the other.
@@ -371,32 +415,192 @@ def close_all_trades(db: Session, user_id: str, symbol: str | None = None) -> li
     if not rows:
         return []
 
+    # LOCK ORDER: positions first, THEN the balance row — the invariant this
+    # module documents, shared with close_trade() and expire_due_trades().
+    # An earlier draft locked the user first and then re-read the positions
+    # with a plain count, which both inverted the order against a manual SELL
+    # and left the "still open?" check racing the very rows it was guarding.
+    # A real FOR UPDATE per row makes the check a fact rather than a guess.
+    locked: list[models.Trade] = []
+    for trade in rows:
+        live = _lock_trade(db, user_id, trade.id)
+        if live and live.status == models.TradeStatus.OPEN:
+            locked.append(live)
+    if not locked:
+        return []
+
     user = _lock_user(db, user_id)
     if not user:
+        db.rollback()
         raise TradingError("User not found")
 
     now = datetime.utcnow()
     credited = 0.0
-    for trade in rows:
-        credited += _mark_to_market(db, trade)
-        trade.settled_at = now
-
-    # Re-assert the open filter before crediting: if anything changed the rows
-    # underneath us we must not pay for a position twice.
-    still_open = (
-        db.query(models.Trade)
-        .filter(
-            models.Trade.id.in_([t.id for t in rows]),
-            models.Trade.status == models.TradeStatus.OPEN,
-        )
-        .count()
-    )
-    if still_open != len(rows):
-        db.rollback()
-        raise TradingError("Positions changed while closing — please try again.")
+    for live in locked:
+        credited += _mark_to_market(db, live)
+        live.settled_at = now
+        live.close_reason = "SOLD"
 
     user.usdt_balance = float(user.usdt_balance or 0.0) + credited
     db.commit()
-    for trade in rows:
-        db.refresh(trade)
-    return rows
+    for live in locked:
+        db.refresh(live)
+    return locked
+
+
+# =============================================================================
+# Expiry — the position's duration running out
+# =============================================================================
+# This is the one function that turns a past `closes_at` into a settled trade.
+# It is deliberately the SAME settlement as a manual close, differing only in
+# who asked:
+#
+#     close_trade()          "the user pressed SELL"
+#     expire_due_trades()    "the position's duration elapsed"
+#
+# and not in how the result is decided. Both price through `_mark_to_market`,
+# so an expiry reads the server's own live feed and applies the trade's own
+# direction exactly as a sale would. That is the whole point, and it is what the
+# old `settle_due_trades()` got wrong: that function booked any elapsed
+# position as `profit = -amount`, a flat total loss, so a 1-minute trade that
+# was $5 in the money at the 60-second mark was destroyed by the clock instead
+# of banked. Here the clock decides WHEN, never WHAT. Nothing about reaching
+# `closes_at` forfeits a stake.
+#
+# WHY IT IS SAFE TO CALL FREQUENTLY, FROM ANYWHERE
+# Every write goes through the same two guards as the manual paths:
+#
+#   * the position row is locked, and its status re-read under that lock, so a
+#     trade that is no longer OPEN is skipped rather than paid again;
+#   * all of a user's positions are settled in ONE commit, and the balance is
+#     credited once for that whole batch, so a failure part-way through cannot
+#     leave some settled and others not;
+#   * `_expiry_sweep_lock` keeps two sweeps in this process from interleaving on
+#     a database without row locks (SQLite).
+#
+# So the caller may run it on a timer, on a read, or both, and run it as often
+# as it likes: the worst a redundant call can do is find nothing due.
+
+def due_trades_query(db: Session, now: datetime):
+    """The OPEN positions whose duration has already elapsed, oldest deadline
+    first. One place, so the timer and the read paths can never disagree about
+    which positions are due."""
+    return (
+        db.query(models.Trade)
+        .filter(
+            models.Trade.status == models.TradeStatus.OPEN,
+            models.Trade.closes_at <= now,
+        )
+        .order_by(models.Trade.closes_at.asc(), models.Trade.id.asc())
+    )
+
+
+def expire_due_trades(db: Session, now: datetime | None = None, limit: int = 500) -> list[models.Trade]:
+    """Settle every OPEN position whose `closes_at` has passed. Returns the
+    positions settled by THIS call (empty when there was nothing to do).
+
+    Called from two places on purpose, so expiry never depends on a timer being
+    alive:
+      * `_trade_expiry_loop` in main.py, once a second, so a position ends
+        promptly even if nobody is looking at the page;
+      * the read endpoints, so a client that refreshes, reconnects or switches
+        tabs finds the expired position already closed and never sees it as
+        OPEN. The second caller is what makes "the server is the source of
+        truth" true even for a server that was restarted mid-trade.
+
+    `now` is injectable so a test can settle a position without sleeping 60
+    seconds. Never raises: a failure here is logged and the positions stay OPEN
+    for the next sweep, which is the safe direction to fail in — an unsettled
+    position is retried, a half-credited one is not.
+    """
+    now = now or datetime.utcnow()
+
+    # Cheap check before taking the lock or touching a row: the overwhelmingly
+    # common case is that nothing is due, and this keeps the per-second loop
+    # from doing real work every second.
+    if due_trades_query(db, now).first() is None:
+        return []
+
+    if not _expiry_sweep_lock.acquire(blocking=False):
+        # Another sweep in this process is already working through the same
+        # set. Skipping is correct, not a lost update: that sweep either
+        # settles this position or leaves it for the next one, and the caller
+        # re-reads the open list either way.
+        return []
+    try:
+        rows = due_trades_query(db, now).limit(limit).all()
+        if not rows:
+            return []
+
+        # Oldest deadline first is a stable order, so two overlapping sweeps
+        # cannot deadlock waiting on the same two rows in opposite directions
+        # (same rule as close_all_trades).
+        by_user: dict[str, list[models.Trade]] = {}
+        for trade in rows:
+            by_user.setdefault(trade.user_id, []).append(trade)
+
+        settled: list[models.Trade] = []
+        for user_id in sorted(by_user):
+            candidates = by_user[user_id]
+
+            # LOCK ORDER: positions first, THEN the balance row — the same
+            # order close_trade() uses, and the invariant this module
+            # documents. An earlier draft of this function locked the user
+            # first to group the credit, which put it in the exact opposite
+            # order to a manual SELL: the sweep holding the user and waiting
+            # for a position, the SELL holding that position and waiting for
+            # the user. That is a textbook AB-BA deadlock on PostgreSQL, and
+            # a user SELL racing expiry is the single most likely race there
+            # is, so the credit grouping is not worth it.
+            live_trades: list[models.Trade] = []
+            for trade in candidates:
+                # Re-read under the lock. A user's SELL, a CLOSE ALL or an
+                # earlier sweep may have settled this position between the
+                # query above and this line; status is the guard that makes
+                # "exactly once" true, and skipping is a no-op, not an error.
+                live = _lock_trade(db, user_id, trade.id)
+                if live and live.status == models.TradeStatus.OPEN:
+                    live_trades.append(live)
+
+            if not live_trades:
+                continue
+
+            user = _lock_user(db, user_id)
+            if not user:
+                # No balance row to credit. Release the position locks we just
+                # took and leave these positions OPEN rather than settle them
+                # into a hole; nothing is lost, because the stake was never
+                # debited from a row that does not exist.
+                db.rollback()
+                continue
+
+            credited = 0.0
+            for live in live_trades:
+                credited += _mark_to_market(db, live)
+                live.settled_at = now
+                live.close_reason = "EXPIRED"
+
+            # One balance write for the whole batch, in the same commit as the
+            # position rows — there is no instant at which a position is closed
+            # and its money has not been credited, or the reverse.
+            user.usdt_balance = float(user.usdt_balance or 0.0) + credited
+            try:
+                db.commit()
+            except Exception:
+                # Never leave a balance credited against positions that are
+                # still OPEN: roll the whole batch back and let the next sweep
+                # retry it as one unit.
+                db.rollback()
+                continue
+            for live in live_trades:
+                db.refresh(live)
+                settled.append(live)
+
+        return settled
+    except Exception:
+        db.rollback()
+        logging.error("[expire_due_trades] sweep failed; positions stay open for retry")
+        return []
+    finally:
+        _expiry_sweep_lock.release()
+

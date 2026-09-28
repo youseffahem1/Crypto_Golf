@@ -48,6 +48,16 @@ MAX_TRADE_AMOUNT = float(os.environ.get("MAX_TRADE_AMOUNT", "100000"))
 # CoinGecko (soft failure: falls back to last known / default prices).
 COIN_PRICE_REFRESH_SECONDS = int(os.environ.get("COIN_PRICE_REFRESH_SECONDS", "180"))
 
+# How often the server settles positions whose chosen duration has elapsed.
+# Deliberately the same 1s cadence as MARKET_TICK_INTERVAL_SECONDS: the exit
+# price of an expired position is the server's live price read at expiry, so
+# sweeping at the same rate the market itself ticks keeps that price the price
+# at the moment the duration ran out rather than a stale or an over-advanced
+# one. This is a bound on lateness, not a source of truth — the read endpoints
+# run the same sweep (trading_service.expire_due_trades), so expiry still
+# happens promptly on a server whose loop is not running.
+TRADE_EXPIRY_SWEEP_SECONDS = float(os.environ.get("TRADE_EXPIRY_SWEEP_SECONDS", "1"))
+
 # --- Wallet structure -------------------------------------------------------
 # Currency groups that drive the two-wallet layout served to the frontend
 # (see GET /api/wallet/layout). A coin is either a platform-issued coin whose

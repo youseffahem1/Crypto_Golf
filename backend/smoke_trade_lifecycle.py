@@ -1,8 +1,8 @@
 """End-to-end verification of the trade LIFECYCLE and its accounting.
 
 Runs against a throwaway SQLite file. Asserts, in order:
-   1. a position survives its `closes_at` and is never force-settled
-   2. waiting for days changes nothing about the position or the balance
+   1. expiry is the SERVER's decision, and it never forfeits a stake
+   2. a position that has passed `closes_at` is closed by the sweep
    3. settlement is SERVER-AUTHORITATIVE - a client-supplied value is ignored,
       so a $10 position cannot claim $99,999
    4. a close is IDEMPOTENT - closing twice pays once
@@ -12,6 +12,10 @@ Runs against a throwaway SQLite file. Asserts, in order:
    8. Close All can be scoped to a single instrument
    9. one account can never close another account's position
   10. realized PROFIT / LOSS still split without netting
+
+The dedicated timing tests - that a 1-minute trade really is 60 seconds, that
+the sweep is exactly-once, and that expiry never books a flat total loss -
+live in smoke_trade_expiry.py.
 """
 import os
 import sys
@@ -88,47 +92,74 @@ def new_user(email, usdt=1000.0):
 user = new_user("lifecycle@example.com")
 other = new_user("intruder@example.com")
 
-# --- 1. a position survives its closes_at and is never force-settled -------
-print("\n[1] a position is not destroyed by the clock")
+# --- 1. the server owns the deadline, and the clock never forfeits ----------
+print("\n[1] the duration is the server's deadline, not the user's problem")
 PRICE["now"] = 0.02
 t = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
 check("opened", t.status, models.TradeStatus.OPEN)
 check("stake debited", balance(user.id), 990.0)
 
-# Backdate the position's closes_at far into the past - exactly the state the
-# removed background settlement loop existed to exploit.
+# `closes_at` is the ONLY deadline, and it is the server's: written at open as
+# opened_at + duration_seconds, and the timestamp the frontend counts down to.
+# A 1-minute trade must be 60 seconds, exactly, from the server's clock.
+check("a 1-minute trade is exactly 60s", (t.closes_at - t.opened_at).total_seconds(), 60.0)
+check("closes_at is in the future", t.closes_at > t.opened_at, True)
+
+# The old `settle_due_trades()` is gone for good. It force-booked any elapsed
+# position as `profit = -amount` — a flat total loss — so a 1-minute trade that
+# was $10 in the money at the 60-second mark got destroyed by the clock. The
+# replacement prices through `_mark_to_market` like a manual sell. Assert the
+# buggy function is genuinely absent, and that no code path can reach a
+# `profit = -amount` forfeiture.
+check("settle_due_trades removed", hasattr(trading_service, "settle_due_trades"), False)
+check("expire_due_trades present", hasattr(trading_service, "expire_due_trades"), True)
+
+# Backdate the position's closes_at far into the past and confirm the old flat
+# loss is impossible: expiry banks whatever the market says, in either
+# direction, exactly as a manual close would.
 stale = t.id
 db.query(models.Trade).filter_by(id=t.id).update({"closes_at": datetime.utcnow() - timedelta(days=7)})
 db.commit()
+PRICE["now"] = 0.04  # the market doubled while the position was open
+expired = trading_service.expire_due_trades(db)[0]
+approx("expiry is priced, not forfeited", expired.profit, 10.0)
+check("expired as a WIN, not a -amount loss", expired.status, models.TradeStatus.WON)
+check("balance credited at the server price", balance(user.id), 1010.0)
+check("reason recorded as EXPIRED", expired.close_reason, "EXPIRED")
 
-# There is no settle_due_trades() any more, so the sweep that used to run every
-# two seconds has nothing to call. Assert the function is genuinely gone rather
-# than merely unused, and that the stale position is still open.
-check("settle_due_trades removed", hasattr(trading_service, "settle_due_trades"), False)
-check("still OPEN 7 days past closes_at", status_of(stale), models.TradeStatus.OPEN)
-check("balance untouched while waiting", balance(user.id), 990.0)
-check("unrealized did not touch the balance", balance(user.id), 990.0)
+# --- 2. the sweep is exactly-once -------------------------------------------
+print("\n[2] the expiry sweep pays once, however often it runs")
+after_expiry = balance(user.id)
+check("nothing is due any more", len(trading_service.expire_due_trades(db)), 0)
+check("still no open positions",
+      db.query(models.Trade).filter_by(status=models.TradeStatus.OPEN).count(), 0)
 
-# --- 2. closing long after opening still settles normally -------------------
-print("\n[2] a position opened long ago still closes normally")
-PRICE["now"] = 0.02
-closed = trading_service.close_trade(db, user.id, stale)
-approx("stake returned", closed.profit, 0.0)
-approx("balance restored", balance(user.id), 1000.0)
-check("settled as history", closed.status, models.TradeStatus.WON)
+# Repeated sweeps — the equivalent of the per-second background loop, a read
+# sweep, and a client that refreshes ten times — must move no more money.
+for _ in range(10):
+    trading_service.expire_due_trades(db)
+approx("ten more sweeps paid nothing", balance(user.id), after_expiry)
+
+# And a manual SELL on the already-expired position is an idempotent replay,
+# not a second payout.
+replay = trading_service.close_trade(db, user.id, stale)
+approx("replay returns the recorded result", replay.profit, 10.0)
+check("replay did not re-credit", balance(user.id), after_expiry)
+check("replay did not rewrite the reason", replay.close_reason, "EXPIRED")
 
 # --- 3. settlement is server-authoritative ---------------------------------
 print("\n[3] a client cannot name the figure it is paid")
 PRICE["now"] = 0.02
+pre_t2 = balance(user.id)
 t2 = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
-check("balance after open", balance(user.id), 990.0)
+check("balance after open", balance(user.id), pre_t2 - 10.0)
 PRICE["now"] = 0.04  # the market doubles; a BUY is therefore worth 2x
 
 # A hostile client claims a huge value. It must be ignored entirely: the
 # server pays exactly the mark-to-market figure for its own feed.
 c2 = trading_service.close_trade(db, user.id, t2.id, value=99999.0)
 approx("profit is server-priced, not claimed", c2.profit, 10.0)
-approx("balance credited 20, not 99999", balance(user.id), 1010.0)
+approx("balance credited 20, not 99999", balance(user.id), pre_t2 + 10.0)
 
 # A hostile client also tries to UNDER-claim, which is equally ignored.
 PRICE["now"] = 0.02

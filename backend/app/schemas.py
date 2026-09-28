@@ -103,6 +103,10 @@ class TradeOut(BaseModel):
     opened_at: datetime
     closes_at: datetime
     settled_at: Optional[datetime] = None
+    # "SOLD" | "EXPIRED" | None. Which of the two ended this position. Sent so
+    # the client can render an expiry as an expiry rather than as a manual
+    # sell; the server never reads it back.
+    close_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

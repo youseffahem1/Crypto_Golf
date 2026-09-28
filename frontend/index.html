@@ -421,14 +421,15 @@ body {
     transition: top .12s linear;
 }
 
-/* A position whose duration is over. It is NOT settled and does NOT go away:
-   the user still owns it and still has to close it by hand. So it is dimmed
-   rather than hidden, greyscale rather than deleted, and stays on the chart for
-   as long as it stays open. Only the clock is finished, and the dimming is what
-   says so — a live position must never be mistakable for a finished one, because
-   a finished one no longer counts down. */
-.trade-marker.is-expired { opacity: .45; filter: grayscale(1); }
-.trade-marker.is-expired .trade-time { color: var(--down) !important; }
+/* A position whose duration is over does not appear on the chart at all.
+   Its marker is removed outright by vantaMarkExpired(), so this rule no longer
+   has a live subject: it is kept only as a belt-and-braces guard for a marker
+   that is mid-removal when a paint lands. The chart is a picture of what is
+   running — a stopped trade sitting on it, dimmed or not, would be showing a
+   position that is no longer live as though it were. The frozen result is not
+   lost by this: it is in the positions list, at full strength, waiting to be
+   collected. */
+.trade-marker.is-expired { display: none; }
 
 /* The entry line is always drawn from the exact entry price. */
 .trade-line {
@@ -826,13 +827,25 @@ body {
 }
 
 /* A position whose duration is over: still open, still closable, still showing
-   an UNREALIZED P/L — only the clock is done. The row is dimmed so it cannot be
-   read as live, its 00:00 drops the gold so a stopped timer does not look like
-   a running one, and the button is labelled CLOSE so it is obvious that pressing
-   it is what actually realizes the trade. */
+   a P/L that is NOT yet realized — only the clock is done. The row is dimmed so
+   it cannot be read as live, its 00:00 drops the gold so a stopped timer does
+   not look like a running one, and the button is labelled CLOSE so it is
+   obvious that pressing it is what actually realizes the trade. */
 .open-trade.is-finished { opacity: .78; }
 .open-countdown.is-done { color: var(--down); }
 .open-trade.is-finished .open-sell { background: rgba(141,114,255,.18); }
+
+/* The P/L of a FINISHED position is LOCKED, and it has to be obvious that it is
+   a locked number rather than a live one. The dotted underline is the signal:
+   it reads as "this is settled at a figure", next to the solid live figures
+   above it that keep ticking. Nothing is dimmed away — the user still has to
+   read this number and decide to collect it — but it must not look like it is
+   still moving. */
+.open-value.is-frozen {
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    cursor: help;
+}
 
 .open-live {
     margin-top: 5px;
@@ -4601,6 +4614,13 @@ async function createTrade(direction) {
             endTime: Date.now() + duration.seconds * 1000,
             expired: false,
             result: null,
+            /* Practice has no server, so the freeze is computed locally at 00:00
+               by vantaFreezeDemoTrade() — the same rule, the same moment, the
+               same promise. It lands in these same two fields, so every
+               consumer below reads a live trade and a finished one through one
+               path and cannot tell which is which by accident. */
+            frozenProfit: null,
+            frozenExitPrice: null,
             demo: true
         };
 
@@ -4655,7 +4675,13 @@ async function createTrade(direction) {
            from whenever this page happened to render. */
         endTime: vantaTradeEndMs(serverTrade),
         expired: false,
-        result: null
+        result: null,
+        /* A brand-new position has no frozen result: the server only writes one
+           once the duration ends. Null here is what tells the row to keep
+           showing a live, floating P/L — and what stops `vantaFrozenProfit`
+           from mistaking "not frozen yet" for a frozen zero. */
+        frozenProfit: null,
+        frozenExitPrice: null
     };
 
     /* STAKE RESERVATION, SHOWN IMMEDIATELY.
@@ -4814,10 +4840,67 @@ function vantaForgetPeak(id) {
     delete window.__vantaPeak[String(id)];
 }
 
+/* The FROZEN result — the number a finished position has stopped at.
+
+   Once a position's duration ends, the SERVER records the price at that instant
+   and this is the figure it guarantees to pay. It is deliberately read from
+   the server's `frozen_profit` and never recomputed from the live feed, because
+   a recomputed figure drifts: the user would watch a number that is no longer
+   the number they are about to be paid, and no longer the number the top cards
+   will show.
+
+   Returns null while the position is still counting down, which is what lets
+   the callers below keep using the live price for a LIVE trade and the frozen
+   one for a FINISHED trade without a second code path. */
+function vantaFrozenProfit(trade) {
+    if (!trade) return null;
+    if (trade.frozenProfit !== null && trade.frozenProfit !== undefined) {
+        return Number(trade.frozenProfit);
+    }
+    return null;
+}
+
+/* Is this position finished AND does the server have its frozen figure?
+   A position can read as expired on the client a moment before the freeze
+   round-trips, so the two are checked separately rather than assumed. */
+function vantaIsFrozen(trade) {
+    return vantaFrozenProfit(trade) !== null;
+}
+
+/* Practice mode has no server to do it, so the freeze happens here instead: at
+   00:00, the current price is recorded and the result stops moving. Identical
+   contract to the server's — nothing is paid, booked or moved to the top cards
+   until the user closes — so a practice account behaves like a real one and the
+   UI code above needs no second path. */
+function vantaFreezeDemoTrade(trade, now) {
+    if (!trade || !trade.demo) return false;
+    if (vantaFrozenProfit(trade) !== null) return false;
+    if (!vantaIsExpired(trade, now)) return false;
+    const entry = Number(trade.entryPrice) || 0;
+    const px = (typeof currentPrice !== "undefined" && Number(currentPrice) > 0)
+        ? Number(currentPrice)
+        : (entry || 1);
+    if (!entry) return false;
+    const amount = Number(trade.amount) || 0;
+    const ratio = px / entry;
+    const sell = trade.direction === "DOWN" || trade.direction === "SELL";
+    let value = sell ? amount * (2 - ratio) : amount * ratio;
+    if (sell && value < amount * 0.01) value = amount * 0.01;
+    trade.frozenExitPrice = px;
+    trade.frozenProfit = value - amount;
+    return true;
+}
+
 function closeValueFor(trade) {
     const amount = Number(trade.amount) || 0;
     if (!amount) return 0;
     const entry = Number(trade.entryPrice) || 0;
+    /* A FINISHED position is worth exactly what the server froze, forever. The
+       live feed is not consulted at all: that is the whole promise, and using
+       the live price here would make the Live Value box and the row disagree
+       with the amount the user is actually going to be paid. */
+    const frozen = vantaFrozenProfit(trade);
+    if (frozen !== null) return Math.max(0, amount + frozen);
     vantaTrackPeak(trade, (typeof currentPrice !== "undefined" && !isNaN(currentPrice)) ? currentPrice : entry);
     const now = (typeof currentPrice !== "undefined" && !isNaN(currentPrice) && Number(currentPrice) > 0)
         ? Number(currentPrice)
@@ -5248,25 +5331,27 @@ function vantaIsExpired(trade, now) {
     return (now || Date.now()) >= end;
 }
 
-/* Marks a position as past its deadline, in both the local mirror and the chart
-   marker, so nothing on screen can keep drawing it as live.
+/* A position's duration has ended. This is the moment the trade LEAVES THE
+   CHART: its marker and everything on it — the arrow, the entry price, the
+   countdown — are removed, because none of it is live any more and a chart
+   that keeps showing a stopped trade is a chart that lies about the account.
 
-   This DOES NOT SETTLE ANYTHING. It flips a flag and greys a chart marker. No
-   request, no price, no ledger entry, no balance move — the position stays open
-   and stays the user's to close. Returns true only on the first marking, so a
-   repeated tick is a no-op. */
+   What it deliberately does NOT do:
+     * settle anything — no request, no price, no ledger entry, no balance move;
+     * remove the position from the list — it stays in the open positions where
+       the user can read its frozen result and press CLOSE or CLOSE ALL;
+     * touch the top PROFIT / LOSS cards, which stay at $0.00 until the user
+       collects.
+
+   The only thing that changes is presentation: the marker goes, the row freezes
+   at 00:00, and the row's P/L switches to the server's frozen figure. Returns
+   true only on the first pass, so a repeated tick is a no-op. */
 function vantaMarkExpired(trade, now) {
     if (!trade || trade.expired) return false;
     if (!vantaIsExpired(trade, now)) return false;
     trade.expired = true;
-    const marker = document.querySelector(`[data-trade-id="${trade.id}"]`);
-    if (marker) {
-        marker.classList.add("is-expired");
-        /* The marker's own time label, on the chart — NOT the row's CLOSE
-           button, which must stay live and closable at 00:00 and forever after. */
-        const timer = marker.querySelector(".trade-time");
-        if (timer) timer.textContent = "EXPIRED";
-    }
+    /* Off the chart. Not greyed, not labelled — gone. */
+    removeTradeMarker(trade);
     return true;
 }
 
@@ -5330,7 +5415,7 @@ function renderOpenTrades() {
             <div class="open-right">
                 <div class="open-amount">${money(trade.amount)}</div>
                 <div class="open-countdown${finished ? " is-done" : ""}" data-countdown="${trade.id}">${finished ? "00:00" : formatTime(remaining)}</div>
-                <div class="open-value" data-openval="${trade.id}">${rpl >= 0 ? "+" : "−"}${money(Math.abs(rpl))}</div>
+                <div class="open-value${vantaIsFrozen(trade) ? " is-frozen" : ""}" data-openval="${trade.id}"${vantaIsFrozen(trade) ? ' title="Locked when the timer reached 00:00. This is the amount you get when you close."' : ""}>${rpl >= 0 ? "+" : "−"}${money(Math.abs(rpl))}</div>
                 <button type="button" class="open-sell" data-exit="${trade.id}">${finished ? "CLOSE" : "SELL"}</button>
             </div>
         `;
@@ -5451,15 +5536,19 @@ function updateTrades() {
 
         if (oval) {
 
-            const v =
-                closeValueFor(
-                    trade
-                );
+            /* A FINISHED position shows the server's FROZEN profit, and shows
+               the same number on every tick from here on. It is NOT recomputed
+               from the live price, so it cannot drift away from the money — the
+               figure shown at 00:00 is the figure that will be paid.
 
+               A position still counting down keeps its live, floating P/L,
+               because that one genuinely is still moving and the user needs to
+               see it while deciding whether to close early. */
+            const frozen = vantaFrozenProfit(trade);
             const dpl =
-                v - Number(
-                    trade.amount
-                );
+                frozen !== null
+                    ? frozen
+                    : (closeValueFor(trade) - Number(trade.amount));
 
             oval.textContent =
                 (dpl >= 0 ? "+" : "−") +
@@ -5472,41 +5561,25 @@ function updateTrades() {
                 ? "var(--up)"
                 : "var(--down)";
 
-        }
-
-
-        const marker =
-            document.querySelector(
-                `[data-trade-id="${trade.id}"]`
-            );
-
-
-        if (marker) {
-
-            const timer =
-                marker.querySelector(
-                    ".trade-time"
-                );
-
-
-            /* The chart marker's clock is the same clock, so it stops in the
-               same place: at 00:00, and never written again. Leaving it running
-               would be the one place on screen still implying the duration is
-               live. It is not re-marked here — vantaMarkExpired() has already
-               labelled this MARKER "EXPIRED", and that label is what stays.
-               That word describes the marker only: the duration is over, not
-               the position. The row's own countdown still reads 00:00 and its
-               CLOSE button is still live. */
-            if (timer && !expired) {
-
-                timer.textContent =
-                    formatTime(
-                        remaining
-                    );
-
+            /* Say WHY it stopped moving, so a number that no longer ticks does
+               not read as a bug. */
+            if (frozen !== null) {
+                oval.title =
+                    "Locked when the timer reached 00:00. This is the amount you get when you close.";
+                oval.classList.add("is-frozen");
+            } else {
+                oval.title = "";
+                oval.classList.remove("is-frozen");
             }
 
         }
+
+
+        /* The chart marker is GONE once the duration ends — vantaMarkExpired()
+           above removed it. There is deliberately no code here to keep it in
+           sync, tint it or freeze its clock: a finished trade does not appear
+           on the chart at all. It lives in the positions list, with its locked
+           result, until the user collects it. */
 
         /* Nothing in this loop decides a result, prices a position, or books
            one. It draws a countdown, freezes it at 00:00, and keeps the live
@@ -5547,52 +5620,67 @@ function removeTradeMarker(trade) {
 /* =========================================================
    EXPIRY — the countdown reaching 00:00
 
-   00:00 MEANS THE DURATION IS OVER. IT DOES NOT MEAN THE TRADE
-   IS SETTLED. This is the whole rule, and nothing below may
-   soften it:
+   00:00 MEANS THE DURATION IS OVER AND THE RESULT IS LOCKED.
+   IT DOES NOT MEAN THE TRADE IS SETTLED. This is the whole
+   rule, and nothing below may soften it:
 
-     00:00        -> the timer stops. The countdown stops. The
-                      position stays OPEN and its P/L stays
-                      UNREALIZED. Nothing is booked.
-     CLOSE (the   -> price it, book the P/L, update the top
-     user)          Profit OR Loss, update the Trading Balance,
-                      move it to closed history.
+     00:00        -> the timer stops at 00:00, the trade LEAVES
+                      THE CHART, and its P/L FREEZES at whatever
+                      the server recorded. Nothing is booked.
+     CLOSE /      -> collect it: book the locked P/L, update the
+     CLOSE ALL      top Profit OR Loss, credit the Trading
+     (the user)     Balance, file it in closed history.
 
    Reaching zero used to POST /api/trade/close, which is why a trade
    that ran out of time booked a result, moved the balance and showed
    up in the top Profit/Loss without the user ever asking. That request
    is gone, and so is every other automatic settlement at zero.
 
-   What this function does now, in full, is mark the position as
-   finished so the UI can stop the timers and label it:
+   What this function does now, in full, is:
 
-     1. updateTrades() has already stopped writing the countdown.
-     2. vantaMarkExpired() flags it and marks the chart marker.
+     1. practice: record the current price as the frozen result
+        (vantaFreezeDemoTrade) — live accounts get theirs from the
+        server's own feed via vantaSyncTrades();
+     2. remove the trade's chart marker (vantaMarkExpired), because a
+        stopped trade does not belong on a chart of live positions;
+     3. stop the countdown at 00:00, which updateTrades() has already
+        done by simply not writing it again.
 
-   That is all. It makes no network call. It books no result. It is
+   That is all. It makes no network call and books no result. It is
    also deliberately not load-bearing: if it never ran, the position
-   would still be OPEN on the server, still unrealized, and still
-   closable by hand — the failure mode is a stale label, never a
+   would still be OPEN, still hold its reserved balance, and still be
+   closable by hand — and the next server poll would freeze it anyway.
+   The failure mode is a marker left on the chart for one tick, never a
    settled trade.
 
    The client is not the only place this is enforced. The server does
    not settle on a timer either (config.AUTO_SETTLE_ON_EXPIRE is off
-   and trading_service.expire_due_trades is inert), so a closed tab, a
-   dropped connection or a page that never reaches 00:00 all leave the
-   position open. Only the user closing it books anything, and the
-   server prices that close off its own feed. */
+   and trading_service.expire_due_trades is inert): it only RECORDS
+   the price. So a closed tab, a dropped connection or a page that
+   never reaches 00:00 all leave the position open with its balance
+   intact — and the freeze still lands, because the server runs its
+   own sweep. Only the user closing it books anything, and the server
+   pays the FROZEN price, so the number they watched stop moving is
+   the number they get. */
 
 function vantaExpireDueTrades() {
     if (!trades || !trades.length) return;
     const now = Date.now();
 
-    /* A position past its deadline: mark it finished, and stop there.
-       There is deliberately no request here. A trade that reached
-       00:00 is still the user's to close, and until they do, it is
-       still open: still priced live, still showing its unrealized P/L,
-       still holding the balance that was reserved for it, and still
-       absent from the top Profit, the top Loss and closed history. */
-    trades.forEach(t => { vantaMarkExpired(t, now); });
+    /* A position past its deadline. Practice freezes its own result here,
+       because there is no server to ask. A live position is NOT frozen here:
+       the price is the server's own, and inventing one on the client is
+       exactly the drift the freeze exists to prevent — it waits for
+       vantaSyncTrades() to deliver `frozen_profit`.
+
+       Either way there is deliberately no request here and nothing is
+       booked. The position stays the user's to collect: still open, still
+       holding the balance reserved for it, and still absent from the top
+       Profit, the top Loss and closed history. */
+    trades.forEach(t => {
+        vantaFreezeDemoTrade(t, now);
+        vantaMarkExpired(t, now);
+    });
 }
 
 
@@ -5621,7 +5709,37 @@ async function vantaSyncTrades() {
     }
 
     openList.forEach(st => {
-        if (trades.some(t => t.id === st.id)) return;
+        const existing = trades.find(t => t.id === st.id);
+        /* The server's frozen figure, if it has one yet. */
+        const frozenProfit =
+            st.frozen_profit === null || st.frozen_profit === undefined
+                ? null
+                : Number(st.frozen_profit);
+
+        if (existing) {
+            /* A trade this tab already knows about may have reached 00:00 since
+               the last poll. The client CANNOT work this out on its own — the
+               frozen price is the server's own feed, and the guarantee only
+               holds if the client shows what the server recorded. So the frozen
+               values are refreshed from the server on every poll, for existing
+               trades as well as new ones.
+
+               Until the server has frozen it, `frozen_profit` is null and the
+               row keeps its live P/L — the brief window where the countdown
+               reads 00:00 and the freeze is still in flight. */
+            if (frozenProfit !== null) {
+                existing.frozenProfit = frozenProfit;
+                existing.frozenExitPrice = st.frozen_exit_price ?? null;
+            }
+            /* Once the server has frozen it, the position is finished: flag it
+               so the countdown stops, and make sure its marker is off the chart
+               even if this tab missed the exact 00:00 tick. */
+            if (frozenProfit !== null) {
+                vantaMarkExpired(existing, now);
+            }
+            return;
+        }
+
         const active = (st.symbol || "GOLF") === (window.vantaActiveCoin || "GOLF");
         const trade = {
             id: st.id,
@@ -5636,10 +5754,21 @@ async function vantaSyncTrades() {
                second it left off rather than restarting a fresh minute. */
             endTime: vantaTradeEndMs(st),
             expired: false,
-            result: null
+            result: null,
+            /* Set when the server has already frozen this one — e.g. the tab
+               was closed through 00:00 and reopened after. */
+            frozenProfit: frozenProfit,
+            frozenExitPrice: st.frozen_exit_price ?? null
         };
         trades.push(trade);
-        createMarker(trade);
+        /* A trade the server has already frozen is FINISHED: it never gets a
+           chart marker, because it is not running. This is the reload case for
+           the rule "a finished trade leaves the chart". */
+        if (vantaIsFrozen(trade) || vantaIsExpired(trade, now)) {
+            trade.expired = true;
+        } else {
+            createMarker(trade);
+        }
     });
 
     renderOpenTrades();

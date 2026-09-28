@@ -164,10 +164,16 @@ if (updateTrades) {
   ok('flags the position as expired', /vantaMarkExpired\(/.test(updateTrades));
   ok('hands expired positions to the (now inert) marker pass',
     /vantaExpireDueTrades\(\)/.test(updateTrades));
-  /* The chart marker's clock is the same clock and must stop in the same place,
-     or 00:00 on the chart would keep counting while the row had stopped. */
-  ok('the chart marker timer is guarded too',
-    /if\s*\(\s*timer\s*&&\s*!\s*expired\s*\)/.test(updateTrades));
+  /* The chart marker is REMOVED at 00:00, so there is no chart clock left to
+     guard. The old rule was "stop the marker's timer too"; the new one is
+     "the marker is not on the chart at all", which is stronger — a stopped
+     timer is still a live-looking trade sitting on a chart of live trades.
+     So the assertion is that no code path writes to a marker any more. */
+  ok('nothing writes to a chart marker after it is created',
+    !/\[\s*`?data-trade-id=/.test(updateTrades) &&
+    !/marker\.querySelector/.test(updateTrades));
+  ok('the row countdown is the only clock left on screen',
+    /if\s*\(\s*countdown\s*&&\s*!\s*expired\s*\)/.test(updateTrades));
 }
 const timeLeft = fnBody('vantaTimeLeft');
 ok('remaining is clamped at zero, never negative',
@@ -316,9 +322,18 @@ ok('the per-position close button is not gated on expiry either',
 const liveBox = /const lv = trades\.filter\(t => \(t\.symbol \|\| "GOLF"\) === lvSym\);/;
 ok('the Live Value box still counts a finished position', liveBox.test(src));
 const markExpired = fnBody('vantaMarkExpired');
-ok('the chart marker is marked expired', !!markExpired && /is-expired/.test(markExpired));
-ok('an expired marker is styled distinctly',
-  /\.trade-marker\.is-expired/.test(src));
+/* A finished trade LEAVES THE CHART. Not greyed, not labelled, not left with a
+   stopped clock: removed. Everything on the marker — arrow, entry price,
+   countdown — describes a position that is no longer running, and the chart is
+   a picture of what is running. */
+ok('a finished trade is taken OFF the chart', !!markExpired && /removeTradeMarker\(/.test(markExpired));
+ok('it is removed rather than restyled',
+  !!markExpired && !/classList/.test(markExpired) && !/textContent\s*=/.test(markExpired));
+ok('but it is NOT removed from the positions list',
+  !!markExpired && !/trades\.splice|trades\s*=\s*trades\.filter/.test(markExpired));
+ok('marking it still makes no request', !!markExpired && !/vantaApi/.test(markExpired));
+ok('an expired marker is not drawn at all',
+  /\.trade-marker\.is-expired\s*\{[^}]*display:\s*none/.test(src));
 const sync = fnBody('vantaSyncTrades');
 ok('the sync re-checks expiry against the server', !!sync && /vantaExpireDueTrades\(\)/.test(sync));
 ok('the sync still reads the reason from the server for legacy rows',
@@ -327,6 +342,49 @@ ok('the sync still reads the reason from the server for legacy rows',
    intervals, so one trade was driven by two countdowns at once. */
 const enterApp = fnBody('vantaEnterApp');
 ok('entering the app is idempotent', !!enterApp && /__vantaAppEntered\s*=\s*true/.test(src));
+
+console.log('\n[8b] the P/L FREEZES at 00:00, and the number is the SERVER\'s');
+/* Three separate promises, and it is worth keeping them apart:
+ *
+ *   1. it stops moving      — a frozen figure does not drift;
+ *   2. it is the server's   — the client may not invent the price, or the
+ *                             number on screen drifts away from the money;
+ *   3. it is what gets paid — the server settles from the same frozen field.
+ *
+ * (3) is the server's half and is proved in backend/smoke_trade_expiry.py.
+ * This is (1) and (2). */
+const frozenFn = fnBody('vantaFrozenProfit') || '';
+ok('there is one reader for the frozen result', !!frozenFn);
+ok('it reads the server field, it does not compute one',
+  /frozenProfit/.test(frozenFn) && !/currentPrice/.test(frozenFn));
+ok('"not frozen yet" is null, never 0',
+  /return null/.test(frozenFn) && !/frozenProfit\s*\|\|\s*0/.test(frozenFn));
+ok('a frozen zero is still a frozen position',
+  /frozenProfit\s*!==\s*null\s*&&[\s\S]{0,20}frozenProfit\s*!==\s*undefined/.test(frozenFn));
+
+const closeValFn = fnBody('closeValueFor') || '';
+ok('a frozen position is valued from the frozen figure',
+  /vantaFrozenProfit\(trade\)/.test(closeValFn));
+ok('...and the live feed is not consulted for it',
+  closeValFn.indexOf('vantaFrozenProfit') < closeValFn.indexOf('vantaTrackPeak'));
+ok('a live position still tracks the market',
+  /currentPrice/.test(closeValFn));
+
+/* The row must SHOW the frozen figure rather than a live one. */
+ok('the row P/L prefers the frozen figure',
+  /frozen\s*!==\s*null\s*\?\s*frozen\s*:\s*\(closeValueFor\(trade\)/.test(updateTrades));
+ok('a frozen row is marked as locked, so it does not read as live',
+  /is-frozen/.test(updateTrades) && /\.open-value\.is-frozen/.test(src));
+ok('and is told why it stopped', /Locked when the timer reached/.test(src));
+
+/* The server has to be able to deliver the freeze, which means the field has
+   to survive the round-trip. */
+ok('the sync reads the server frozen_profit', /frozen_profit/.test(sync || ''));
+ok('the sync refreshes it for trades it already knows about',
+  /existing\.frozenProfit\s*=/.test(sync || ''));
+ok('a trade the server already froze gets NO chart marker',
+  /vantaIsFrozen\(trade\)[\s\S]{0,200}createMarker|createMarker[\s\S]{0,120}!vantaIsFrozen/.test(sync || ''));
+ok('a freshly opened trade is not frozen', /frozenProfit:\s*null/.test(src));
 
 console.log('\n[9] the countdown is read from the server timestamp');
 const endMs = fnBody('vantaTradeEndMs');
@@ -395,7 +453,12 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
   const timeLeftSrc = fnSrc('vantaTimeLeft');
   const isExpiredSrc = fnSrc('vantaIsExpired');
   const markSrc = fnSrc('vantaMarkExpired');
-  if (!timeLeftSrc || !isExpiredSrc || !markSrc) {
+  const frozenProfitSrc = fnSrc('vantaFrozenProfit');
+  const isFrozenSrc = fnSrc('vantaIsFrozen');
+  const freezeDemoSrc = fnSrc('vantaFreezeDemoTrade');
+  const closeValueSrc = fnSrc('closeValueFor');
+  if (!timeLeftSrc || !isExpiredSrc || !markSrc || !frozenProfitSrc ||
+      !isFrozenSrc || !freezeDemoSrc || !closeValueSrc) {
     ok('could not lift the expiry helpers for the runtime check', false); return;
   }
 
@@ -430,10 +493,24 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
      verbatim. `Date` is shadowed inside the sandbox so the page's own
      `Date.now()` reads our controllable clock — that is what lets us drive the
      countdown to exactly 00:00 and then 30 seconds past it. */
-  const document = { querySelector: () => null };
   const posted = [];
   const vantaApi = (p) => { posted.push('api:' + p); return Promise.reject(new Error('no network here')); };
   const CLOCK = { now: Date.now() };
+  const MARKET = { now: 0.02 };
+
+  /* A chart with one live marker on it, so we can watch the trade leave it. */
+  const markerEl = {
+    remove() { markers.splice(markers.indexOf(this), 1); },
+    querySelector: () => null,
+    classList: { add() {} },
+  };
+  const markers = [markerEl];
+  const document = {
+    querySelector: (sel) => {
+      const m = /data-trade-id="([^"]+)"/.exec(sel || '');
+      return m && m[1] === 't1' && markers.indexOf(markerEl) >= 0 ? markerEl : null;
+    },
+  };
 
   /* Build the sandbox: declare the stubs, then append the real function bodies. */
   let sandbox;
@@ -444,38 +521,54 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
       'var trades = __trades;',
       'var vantaApi = __vantaApi;',
       'var __vantaClosing = new Set();',
-      'var __vantaExpireRetryAt = 0;',
       'var accountMode = "live";',
       'var posted = __posted;',
+      /* The market, live: a valueOf object so every read of the bare
+         `currentPrice` identifier in the page's own code sees the CURRENT
+         price, not a snapshot taken when the sandbox was built. */
+      'var currentPrice = { valueOf: __price };',
+      /* The chart. Real enough for removeTradeMarker() to find and delete the
+         marker, so we can assert the trade genuinely LEAVES the chart. */
+      'var __markers = __markers;',
+      'function removeTradeMarker(trade) {',
+      '  var el = document.querySelector(\'[data-trade-id="\' + trade.id + \'"]\');',
+      '  if (el) { el.remove(); posted.push("removeMarker:" + trade.id); }',
+      '}',
+      'function vantaTrackPeak() {}',
+      'function vantaForgetPeak() {}',
       /* Recorded, and asserted empty below. */
       'function refreshBalance() { posted.push("refreshBalance"); }',
       'function vantaRefreshInfoCards() { posted.push("cards"); }',
       'function renderOpenTrades() { posted.push("renderOpenTrades"); }',
       'function positionAllTrades() { posted.push("positionAllTrades"); }',
       'function vantaSetLastSettled() { posted.push("resultPanel"); }',
-      'function vantaForgetPeak() { posted.push("forgetPeak"); }',
-      'function removeTradeMarker() { posted.push("removeMarker"); }',
       'function closePositions() { posted.push("closePositions"); }',
-      'function closeValueFor() { return 0; }',
       'function showResultToast() { posted.push("toast"); }',
       'var vantaNoteRealizedTrade = __noteRealized;',
-      /* The page's real code, unmodified. */
+      /* The page's real code, unmodified — including the freeze, so the
+         "stops moving" assertions below are driven by shipped code rather than
+         by this file. */
+      frozenProfitSrc, isFrozenSrc, freezeDemoSrc, closeValueSrc,
       timeLeftSrc, isExpiredSrc, markSrc, body,
       'return {',
       '  timeLeft: vantaTimeLeft,',
       '  isExpired: vantaIsExpired,',
-      '  markExpired: vantaMarkExpired,',
+      '  frozenProfit: vantaFrozenProfit,',
+      '  isFrozen: vantaIsFrozen,',
+      '  closeValue: closeValueFor,',
       '  expire: vantaExpireDueTrades,',
       '  trades: function () { return trades; }',
       '};',
     ].join('\n');
     /* eslint-disable no-new-func */
     sandbox = new Function('__document', '__vantaApi', '__noteRealized',
-                           '__posted', '__trades', '__now', wrapper)(
+                           '__posted', '__trades', '__now', '__price',
+                           '__markers', wrapper)(
       document, vantaApi, noteRealized, posted,
       [{ id: 't1', symbol: 'GOLF', direction: 'UP', amount: STAKE,
-         entryPrice: 0.02, endTime: CLOCK.now + 60000, expired: false, result: null }],
-      () => CLOCK.now);
+         entryPrice: 0.02, endTime: CLOCK.now + 60000, expired: false, result: null,
+         frozenProfit: null, frozenExitPrice: null }],
+      () => CLOCK.now, () => MARKET.now, markers);
   } catch (e) {
     ok('the real expiry functions execute in a sandbox: ' + e.message, false);
     return;
@@ -489,6 +582,7 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
   eq('at open the balance is the stake already reserved', balance.toFixed(2), '400.00');
   eq('nothing has been posted yet', posted.length, 0);
   eq('the countdown is at 60s', sandbox.timeLeft(sandbox.trades()[0], CLOCK.now), 60);
+  eq('while it runs, the trade IS on the chart', markers.length, 1);
 
   /* ---- run the clock up to 00:00, ticking every second like the real loop ---- */
   for (let s = 0; s <= 59; s++) {
@@ -504,6 +598,9 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
   eq('at 00:00 the balance is untouched', balance.toFixed(2), '400.00');
   eq('at 00:00 the realized ledger is empty', REALIZED.length, 0);
 
+  /* ---- the trade LEAVES THE CHART at 00:00 ---- */
+  eq('at 00:00 the trade is OFF the chart', markers.length, 0);
+
   /* ---- keep ticking 30 more seconds PAST zero: the bug fired here ---- */
   for (let s = 0; s < 30; s++) {
     CLOCK.now += 1000;
@@ -518,16 +615,55 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
     sandbox.timeLeft(sandbox.trades()[0], CLOCK.now), 0);
   eq('...and stays at 0 an hour later, never restarting',
     sandbox.timeLeft(sandbox.trades()[0], CLOCK.now + 3600000), 0);
-  eq('THE ENTIRE EXPIRY PASS MADE NO NETWORK CALL', posted.length, 0,
+  eq('and it never came BACK onto the chart', markers.length, 0);
+  eq('THE ENTIRE EXPIRY PASS MADE NO NETWORK CALL',
+    posted.filter(p => p.indexOf('api:') === 0).length, 0,
     'posted: ' + JSON.stringify(posted));
   eq('and never asked the close path', posted.indexOf('closePositions'), -1);
   eq('and never refreshed the balance or the cards', posted.indexOf('refreshBalance'), -1);
-  eq('and never removed the position or the marker', posted.indexOf('removeMarker'), -1);
   eq('and never re-rendered a result panel', posted.indexOf('resultPanel'), -1);
   eq('and never showed a toast', posted.indexOf('toast'), -1);
 
+  /* ---- the P/L FREEZES at 00:00, and stays frozen ----
+     A live position's P/L is recomputed from the market on every tick. Once the
+     duration ends it must stop, and it must stop at the figure the server
+     froze — not at whatever the market happens to be doing now. So: read the
+     value, then move the market a long way, and prove the value did not budge.
+     That is the difference between "frozen" and "merely hidden". */
+  const t = sandbox.trades()[0];
+  /* Live accounts get the frozen figure from the server's own feed. Stand in
+     for that here, exactly as vantaSyncTrades() would. */
+  t.frozenProfit = 50.00;
+  t.frozenExitPrice = 0.03;
+  eq('the frozen P/L is read from the server, not recomputed',
+    sandbox.frozenProfit(t), 50);
+  eq('a frozen position is flagged frozen', sandbox.isFrozen(t), true);
+  eq('its value is the frozen one', sandbox.closeValue(t), STAKE + 50);
+
+  MARKET.now = 0.90;   // the market goes wild after the deadline
+  for (let s = 0; s < 5; s++) { CLOCK.now += 1000; sandbox.expire(); }
+  eq('the market doubled, and the P/L did NOT move', sandbox.closeValue(t), STAKE + 50);
+  eq('the frozen profit is unchanged', sandbox.frozenProfit(t), 50);
+  eq('the top Profit is still $0.00 after the market moved', fmt(realizedTotals().profit), '$0.00');
+  eq('the top Loss is still $0.00 after the market moved', fmtLoss(realizedTotals().loss), '$0.00');
+
+  /* A position still counting down must KEEP moving — the freeze is not a
+     blanket "stop updating", or the user would lose sight of a live position. */
+  const live = { id: 'live1', symbol: 'GOLF', direction: 'UP', amount: STAKE,
+                 entryPrice: 0.02, endTime: CLOCK.now + 60000, expired: false,
+                 result: null, frozenProfit: null, frozenExitPrice: null };
+  sandbox.trades().push(live);
+  MARKET.now = 0.02;
+  const before = sandbox.closeValue(live);
+  MARKET.now = 0.04;
+  const after = sandbox.closeValue(live);
+  ok('a LIVE position still tracks the market', after > before,
+    'before ' + before.toFixed(2) + ', after ' + after.toFixed(2));
+  eq('a live position is not flagged frozen', sandbox.isFrozen(live), false);
+  eq('a live position has no frozen profit', sandbox.frozenProfit(live), null);
+
   /* ---- now the user presses CLOSE: the result appears, once ---- */
-  const serverProfit = 50.00;   // priced by the server, not by this file
+  const serverProfit = 50.00;   // the frozen figure, paid by the server
   noteRealized({ id: 't1', sym: 'GOLF', profit: serverProfit });
   balance += STAKE + serverProfit;
 

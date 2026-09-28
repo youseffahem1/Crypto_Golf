@@ -285,28 +285,86 @@ check("the $25 position is still OPEN", row(t3.id).status, models.TradeStatus.OP
 approx("the realized total so far is +$10", realized(user.id)["profit"], 10.0)
 
 # =============================================================================
-print("\n[H] CLOSE ALL settles every open position exactly once")
+print("\n[H] CLOSE ALL collects FINISHED positions only")
 # =============================================================================
+# Two positions are open and still counting down ($50 and $25). CLOSE ALL is a
+# "collect" button, not a "settle everything" button: pressing it while trades
+# are still running must not touch them, because the user is watching a live
+# position and expects the countdown to keep meaning something.
 before = trading_balance(user.id)
-PRICE["now"] = 0.03
+PRICE["now"] = 0.03  # +50% on both — tempting money that is not ours yet
+early = trading_service.close_all_trades(db, user.id)
+check("CLOSE ALL collects nothing while positions are still running", len(early), 0)
+approx("...and pays nothing", trading_balance(user.id), before)
+check("...and both are still OPEN", open_positions(user.id), 2)
+approx("...and both are still reserved ($75)", open_staked(user.id), 75.0)
+check("the live ones have no frozen result", row(t2.id).frozen_exit_price, None)
+
+# Now let the minute run out. This is 00:00, and it is NOT a settlement.
+freeze_at = max(row(t2.id).closes_at, row(t3.id).closes_at)
+frozen = trading_service.freeze_due_trades(db, now=freeze_at)
+check("both positions were frozen at 00:00", len(frozen), 2)
+for t_ in (t2, t3):
+    r_ = row(t_.id)
+    approx(f"${int(r_.amount)} froze at the 00:00 price of $0.03", r_.frozen_exit_price, 0.03)
+    approx(f"${int(r_.amount)}'s frozen P/L is +50%", r_.frozen_profit, r_.amount * 0.5)
+    check(f"${int(r_.amount)} is STILL OPEN — 00:00 is not a settlement",
+          r_.status, models.TradeStatus.OPEN)
+    check(f"${int(r_.amount)} has no realized profit yet", r_.profit, None)
+    check(f"${int(r_.amount)} has no exit_price yet", r_.exit_price, None)
+    check(f"${int(r_.amount)} is not settled_at", r_.settled_at, None)
+    check(f"${int(r_.amount)} has no close_reason yet", r_.close_reason, None)
+approx("freezing moved no money", trading_balance(user.id), before)
+approx("the stakes are still reserved", open_staked(user.id), 75.0)
+approx("the summary is still silent", realized(user.id)["profit"], 10.0)
+
+# The market then does whatever it likes. The frozen figure is already a fact.
+PRICE["now"] = 0.006  # -70%: freezing NOW would have been a disaster
+approx("the market collapsed, and the frozen price did not",
+        row(t2.id).frozen_exit_price, 0.03)
+approx("nor did the frozen P/L", row(t2.id).frozen_profit, 25.0)
+check("a second freeze pass is a no-op",
+      len(trading_service.freeze_due_trades(db, now=freeze_at)), 0)
+approx("and the price is still the 00:00 one", row(t2.id).frozen_exit_price, 0.03)
+
+# Now the user presses CLOSE ALL, and is paid what they were shown at 00:00.
 batch = trading_service.close_all_trades(db, user.id)
-check("both remaining positions were returned", len(batch), 2)
+check("both finished positions were collected", len(batch), 2)
 check("nothing is open any more", open_positions(user.id), 0)
 approx("nothing is reserved", open_staked(user.id), 0.0)
 
-expected = before
-for t_ in (t2, t3):
-    ratio = 0.03 / float(row(t_.id).entry_price)
-    expected += float(t_.amount) * ratio
-approx("the balance is credited each stake at the server's price", trading_balance(user.id), expected)
+# $50 and $25 at +50% — NOT the $15 and $7.50 the live price would have paid.
+approx("the balance is credited each stake at its FROZEN price",
+        trading_balance(user.id), before + 75.0 * 1.5)
 r = realized(user.id)
 check("all three trades are in the summary", r["count"], 3)
+approx("the total realized P/L is +$10 +$25 +$12.50", r["profit"], 47.5)
+check("and they settled as wins",
+      [row(t_.id).status for t_ in (t2, t3)],
+      [models.TradeStatus.WON, models.TradeStatus.WON])
 
 # A second CLOSE ALL must move nothing.
 settled = trading_balance(user.id)
 again = trading_service.close_all_trades(db, user.id)
 check("a second CLOSE ALL returns nothing", len(again), 0)
 approx("...and pays nothing", trading_balance(user.id), settled)
+
+# A live position is never collected by accident, even in the same batch as a
+# finished one — this is the mixed case the UI actually hits.
+PRICE["now"] = 0.02
+u2 = make_user(500.0, "stake-h2@test.local")
+done = trading_service.open_trade(db, u2.id, "UP", 40.0, 60, "GOLF")
+running = trading_service.open_trade(db, u2.id, "UP", 60.0, 60, "GOLF")
+PRICE["now"] = 0.03
+trading_service.freeze_due_trades(db, now=done.closes_at)
+PRICE["now"] = 0.01  # the running one is now deeply underwater
+mixed = trading_service.close_all_trades(db, u2.id)
+check("CLOSE ALL collected only the finished one", len(mixed), 1)
+check("...and it is the one that was finished", mixed[0].id, done.id)
+check("the running position is untouched", row(running.id).status, models.TradeStatus.OPEN)
+check("...with no frozen result", row(running.id).frozen_exit_price, None)
+approx("...and its stake still reserved", float(row(running.id).amount), 60.0)
+approx("the finished one was paid its frozen +$20", row(done.id).profit, 20.0)
 
 # =============================================================================
 print("\n[I] an OPEN position moves NO realized summary")
@@ -383,7 +441,13 @@ PRICE["now"] = 0.02
 t2 = trading_service.open_trade(db, user.id, "UP", 100.0, 60, "GOLF")
 approx("a further stake leaves the wallet at $0", wallet_balance(user.id), 0.0)
 PRICE["now"] = 0.024
-trading_service.close_all_trades(db, user.id)
+# CLOSE ALL collects FINISHED positions, and this one is still running, so it
+# is CLOSE that has to be pressed — the same distinction the CLOSE ALL button
+# makes in the UI.
+check("CLOSE ALL ignores a still-running position",
+      len(trading_service.close_all_trades(db, user.id)), 0)
+approx("...so nothing was paid out", trading_balance(user.id), 420.0)
+trading_service.close_trade(db, user.id, t2.id)
 approx("closing everything still leaves the wallet at $0", wallet_balance(user.id), 0.0)
 approx("...while trading moved on its own: $520 - $100 staked + $120 back",
        trading_balance(user.id), 540.0)

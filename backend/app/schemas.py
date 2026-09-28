@@ -107,6 +107,18 @@ class TradeOut(BaseModel):
     # the client can render an expiry as an expiry rather than as a manual
     # sell; the server never reads it back.
     close_reason: Optional[str] = None
+    # The FROZEN result, present only once the position's duration has ended.
+    # `frozen_profit` is the guaranteed figure: it is the profit implied by the
+    # price the server recorded at 00:00, it is what the user sees on the
+    # position from that moment, and it is exactly what a later CLOSE or CLOSE
+    # ALL pays. It is NOT realized — `profit` above stays NULL until the user
+    # collects, which is what keeps the top PROFIT / LOSS cards at $0.00.
+    # A client that recomputed P/L from the live feed after 00:00 would show a
+    # number that drifts away from the money, which is precisely what these
+    # fields exist to prevent.
+    frozen_exit_price: Optional[float] = None
+    frozen_profit: Optional[float] = None
+    frozen_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

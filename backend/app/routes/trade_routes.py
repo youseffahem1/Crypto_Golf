@@ -21,16 +21,19 @@ def open_trade(payload: schemas.TradeOpenRequest, db: Session = Depends(get_db),
 
 @router.get("/open-trades", response_model=list[schemas.TradeOut])
 def open_trades(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
-    """The positions still OPEN right now.
+    """The positions still OPEN right now — including the FINISHED ones.
 
-    Anything whose duration has already elapsed is settled BEFORE this list is
-    built, so an expired position can never be reported as OPEN — not because
-    a filter hides it, but because it has actually been closed and credited by
-    the time this query runs. That is what makes the server the source of truth
-    for expiry: a client that reloads, reconnects, or switches tabs mid-minute
-    finds the position already in its history, with the price the server
-    charged, and never has to sell it by hand."""
-    trading_service.expire_due_trades(db)
+    A position whose duration has elapsed is NOT closed by this endpoint. It is
+    FROZEN: the server records the price at the deadline and returns it as
+    `frozen_profit` / `frozen_exit_price`, so the client can show the user a
+    figure that will not move. The row stays OPEN, the balance reserved for it
+    stays reserved, and it stays out of the top PROFIT / LOSS cards and out of
+    closed history until the user closes it or presses CLOSE ALL.
+
+    That is why this endpoint returns finished positions at all: they are still
+    the user's to collect, and a client that dropped them here would lose money
+    the server has already promised."""
+    trading_service.freeze_due_trades(db)
     return (
         db.query(models.Trade)
         .filter_by(user_id=user_id, status=models.TradeStatus.OPEN)
@@ -44,10 +47,10 @@ def trade_history(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Closed positions, newest first. Runs the expiry sweep for the same
+    """Closed positions, newest first. Runs the freeze sweep for the same
     reason as /open-trades, so a position that ended on its own is already
-    listed here rather than appearing on the next poll."""
-    trading_service.expire_due_trades(db)
+    priced and waiting to be collected rather than looking live."""
+    trading_service.freeze_due_trades(db)
     q = db.query(models.Trade).filter(
         models.Trade.user_id == user_id, models.Trade.status != models.TradeStatus.OPEN
     )
@@ -80,16 +83,22 @@ def close_all_trades_route(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Close every open position in ONE atomic transaction.
+    """Collect every FINISHED position in ONE atomic transaction.
 
-    Supply `symbol` to close a single instrument, or omit it to close the
-    whole book — which is what the "CLOSE ALL" button sends. Either way the
-    balance is credited once for the whole batch, so a failure part-way
-    through cannot leave some positions closed and others not.
+    Supply `symbol` to collect a single instrument, or omit it to collect the
+    user's whole finished book — which is what the "CLOSE ALL" button sends.
+    Either way the balance is credited once for the whole batch, so a failure
+    part-way through cannot leave some positions collected and others not.
 
-    Positions that are already closed are excluded, so pressing CLOSE ALL
-    twice moves money only once. Having nothing open is not an error: the
-    response is simply an empty list."""
+    "Finished" means the duration has ended and the server has recorded its
+    price. A position still counting down is NOT touched: it has no guaranteed
+    figure to collect, and selling it here would be a sale the user did not ask
+    for, at a price they never saw settle. Those are closed with their own CLOSE
+    button, priced live, whenever the user chooses.
+
+    Already-collected positions are excluded, so pressing CLOSE ALL twice moves
+    money only once. Having nothing finished is not an error: the response is
+    simply an empty list."""
     try:
         closed = trading_service.close_all_trades(
             db, user_id, payload.symbol if payload else None

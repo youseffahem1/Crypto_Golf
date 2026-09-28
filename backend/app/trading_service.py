@@ -6,41 +6,57 @@ the client sends at close time.
 
 Trade model (momentum/exit style):
   * open_trade()      debits the stake and records the entry price.
-  * close_trade()     closes a still-OPEN position at the server's live price
-                      and credits that value back to the balance. Selling
-                      while the price is up banks a gain; selling while it's
-                      down salvages what's left.
-  * close_all_trades() closes every OPEN position in ONE transaction.
-  * expire_due_trades() is the settle-on-expiry machinery. It is INERT by
-                      default (config.AUTO_SETTLE_ON_EXPIRE is off) and takes no
-                      action of any kind.
+  * close_trade()     closes a still-OPEN position and credits that value back
+                       to the balance. A position still inside its duration is
+                       priced off the live feed; a position past `closes_at` is
+                       paid its FROZEN price, the one recorded at 00:00.
+  * close_all_trades() collects every FINISHED position in ONE transaction.
+  * freeze_due_trades() records the price of every position whose `closes_at`
+                       has passed, and does nothing else.
+  * expire_due_trades() is the old settle-on-expiry machinery. It is INERT by
+                       default (config.AUTO_SETTLE_ON_EXPIRE is off) and takes no
+                       action of any kind.
 
 LIFECYCLE: OPEN -> WON / LOST.
 
-A position leaves OPEN in exactly ONE way: the user closes it.
+A position leaves OPEN in exactly ONE way: the user collects it.
 
-  * close_trade() closes a single still-OPEN position, or
-  * close_all_trades() closes every OPEN position in ONE transaction.
+  * close_trade() collects a single still-OPEN position, or
+  * close_all_trades() collects every FINISHED position in ONE transaction.
 
-RUNNING OUT OF TIME IS NOT ONE OF THOSE WAYS. `closes_at` is a deadline for how
-long the position runs and nothing more. It is written once at open as
-`opened_at + duration_seconds`, and when it passes the position stays OPEN: its
-P/L stays UNREALIZED, the balance is untouched, and the account's Profit and
-Loss do not move. The frontend's countdown stops at 00:00 for the same reason
-and does not post a close of its own. Only the user closing the position turns
-00:00 into a result.
+REACHING `closes_at` IS NOT ONE OF THOSE WAYS. `closes_at` is a deadline for how
+long the position runs, and when it passes the server RECORDS A PRICE — and
+records nothing else. The position stays OPEN, the balance is untouched, and the
+account's Profit and Loss do not move. The frontend's countdown stops at 00:00
+for the same reason and does not post a close of its own.
 
-    00:00            -> the duration is finished. That is ALL it means.
-    CLOSE (the user) -> price it, book the P/L, credit the balance, file it.
+    00:00            -> the duration is finished; the price is recorded and
+                        frozen. The trade leaves the chart, stays in the
+                        positions list, and is still closable.
+    CLOSE (the user) -> book the recorded P/L, credit the balance, file it.
 
-So a position is priced whenever the user closes it and never before, and being
-left open past its deadline costs nothing and forfeits nothing. This is the
-exact opposite of the old `settle_due_trades()` that was removed earlier, which
-force-booked any elapsed position as a total loss (`profit = -amount`) on a
-timer, destroying a stake the moment the clock ran out. Here the clock does
-nothing at all; the user decides when a result exists, and when they do, it is
-computed by the SAME `_mark_to_market` a manual sell uses — the server's own
-live price, the trade's own entry price, the trade's own direction.
+So the clock fixes the PRICE and the user fixes the PAYMENT, and the two are
+deliberately separate: nothing the server does on a timer may move the user's
+money. The recorded figure is immutable, so however long the user waits, and
+however far the market travels in the meantime, they are paid exactly what they
+were shown. A position still inside its duration is priced live, as it always
+was, and Close All deliberately does not touch those — it is a collect button,
+not a liquidate button.
+
+This is the exact opposite of the old `settle_due_trades()` that was removed
+earlier, which force-booked any elapsed position as a total loss
+(`profit = -amount`) on a timer, destroying a stake the moment the clock ran
+out. Here the clock records a number; the user decides when money moves, and
+when it does it is computed by the SAME pricing a manual sell uses — from the
+server's own feed, the trade's own entry price, the trade's own direction.
+
+One honest caveat on "the price at 00:00". The market is a random walk, so
+there is no historical price to look up afterwards; the figure recorded is the
+one the server was quoting at the moment it saw the deadline end. That is
+bounded by the sweep interval (1s by default — the same cadence the market
+itself ticks), not by the sweep being punctual. What is absolute, and what the
+tests pin, is that the number cannot move afterwards. Bounded lateness is a
+measurement; a promise that drifts is a lie.
 
 Three rules make the whole lifecycle hold:
 
@@ -181,29 +197,91 @@ def _exit_value(amount: float, entry: float, exit_price: float, direction) -> fl
     return amount * ratio
 
 
-def _mark_to_market(db: Session, trade: models.Trade) -> float:
-    """Price an OPEN position with the server's feed, write the realized result
-    onto the row, and return the amount to credit. Does not touch any balance —
-    the caller owns the commit, so a single transaction covers the position
-    rows and the balance row together."""
+def _live_exit_price(db: Session, trade: models.Trade) -> float:
+    """The server's own current price for this position's instrument, with the
+    usual fallbacks so a feed hiccup can never produce a zero-priced exit."""
     symbol = (trade.symbol or "GOLF").strip().upper()
     try:
-        exit_price = float(market_service.get_current_price(db, symbol) or 0.0)
+        px = float(market_service.get_current_price(db, symbol) or 0.0)
     except Exception:
-        exit_price = 0.0
+        px = 0.0
+    if px <= 0:
+        px = float(trade.entry_price or 0.0)
+    return px or 1.0
 
+
+def _payout_for_price(trade: models.Trade, exit_price: float) -> tuple[float, float]:
+    """(payout, signed profit) for an EXPLICIT exit price. Pure arithmetic — no
+    I/O, no clock, no feed — so the same code prices a live close, a frozen
+    close and a legacy expiry sweep, and a position can never be paid two
+    different amounts for the same price."""
     entry = float(trade.entry_price or 0.0) or exit_price or 1.0
     if exit_price <= 0:
         exit_price = entry
-
     amount = float(trade.amount or 0.0)
     payout = _exit_value(amount, entry, exit_price, trade.direction)
-    profit = round(payout - amount, 6)
+    return payout, round(payout - amount, 6)
 
+
+def _book_result(trade: models.Trade, exit_price: float, profit: float) -> None:
+    """Write a REALIZED result onto the row. Only ever called at settlement
+    time — the frozen columns are the non-realized counterpart and are written
+    by freeze_due_trades() instead."""
     trade.exit_price = round(exit_price, 8)
     trade.profit = profit
     trade.status = models.TradeStatus.WON if profit >= 0 else models.TradeStatus.LOST
+
+
+def _mark_to_market(db: Session, trade: models.Trade) -> float:
+    """Price an OPEN position at the LIVE price, write the realized result onto
+    the row, and return the amount to credit. Does not touch any balance —
+    the caller owns the commit, so a single transaction covers the position
+    rows and the balance row together."""
+    exit_price = _live_exit_price(db, trade)
+    payout, profit = _payout_for_price(trade, exit_price)
+    _book_result(trade, exit_price, profit)
     return payout
+
+
+def _mark_to_frozen(trade: models.Trade) -> float:
+    """Price an OPEN position at the price the server FROZEN at its deadline,
+    write the realized result, and return the amount to credit.
+
+    This is the payout path for any position that has passed 00:00. It reads
+    `frozen_exit_price` and never the live feed, so the figure the user was
+    shown at 00:00 is exactly the figure they are paid, however long they wait
+    before pressing CLOSE or CLOSE ALL."""
+    exit_price = float(trade.frozen_exit_price or 0.0)
+    if exit_price <= 0:
+        # Defensive only: a settled-from-frozen row always has a price, because
+        # _freeze_row() writes the price and the profit together or not at all.
+        exit_price = float(trade.entry_price or 0.0) or 1.0
+    payout, profit = _payout_for_price(trade, exit_price)
+    _book_result(trade, exit_price, profit)
+    return payout
+
+
+def _freeze_row(db: Session, trade: models.Trade) -> bool:
+    """Record the current server price as this position's frozen result.
+
+    Writes ONLY the frozen_* columns. It does not set `exit_price`, `profit`,
+    `status`, `settled_at` or `close_reason`, and it does not touch the user's
+    balance — because reaching 00:00 is a countdown ending, not a settlement.
+    The position stays OPEN, keeps its reserved balance, and stays out of the
+    top PROFIT / LOSS cards and closed history until the user collects it.
+
+    Idempotent: a position that already has a frozen price is left untouched,
+    so however often this runs the promise cannot change."""
+    if trade.status != models.TradeStatus.OPEN:
+        return False
+    if trade.frozen_exit_price is not None:
+        return False
+    exit_price = _live_exit_price(db, trade)
+    _payout, profit = _payout_for_price(trade, exit_price)
+    trade.frozen_exit_price = round(exit_price, 8)
+    trade.frozen_profit = profit
+    trade.frozen_at = datetime.utcnow()
+    return True
 
 
 # =============================================================================
@@ -325,8 +403,8 @@ def open_trade(
         # The position's deadline, and the only one that exists: the timestamp
         # the client counts down to. It is a COUNTDOWN and nothing more. When it
         # passes, the trade's duration is over and that is the whole effect: the
-        # position stays open, stays priced live, keeps showing its unrealized
-        # P/L, and the balance reserved for it stays reserved. Only the user
+        # server records the price (see freeze_due_trades), the position stays
+        # OPEN, and the balance reserved for it stays reserved. Only the user
         # pressing CLOSE books it, at the server's own price. A 1-minute trade
         # is therefore 60.0 seconds from `now` — no rounding, no client clock.
         closes_at=now + timedelta(seconds=duration_seconds),
@@ -359,10 +437,13 @@ def close_trade(
         returns the recorded result, which is what makes a double-click on
         Close, a retry after a dropped response, and a user SELL racing the
         expiry sweep all safe.
-      * THE CLOCK IS NOT A FORFEITURE. Closing early and being closed by
-        `closes_at` run the identical pricing; this function neither reads
-        `closes_at` nor treats lateness as a loss, so a position closed long
-        after it was opened settles at the live market like any other.
+      * THE CLOCK IS NOT A FORFEITURE, AND IT IS NOT A PROFIT EITHER. Closing
+        early and closing long after 00:00 both settle; neither is a loss. This
+        function reads `closes_at` for exactly one purpose: to decide WHICH price
+        to pay. A position still inside its duration is priced live. A position
+        past its deadline is priced at the FROZEN price the server recorded at
+        the deadline, so the figure the user watched stop moving at 00:00 is the
+        figure they are paid. It is never priced as a loss for being late.
 
     Never called with client-supplied prices."""
     trade = _lock_trade(db, user_id, trade_id)
@@ -382,7 +463,18 @@ def close_trade(
     if not user:
         raise TradingError("User not found")
 
-    payout = _mark_to_market(db, trade)
+    # A position whose deadline has passed but whose freeze has not run yet
+    # (the sweep is on a loop; this close got there first) is frozen HERE, in
+    # this same transaction, so it can never be settled at a different price
+    # than the one a concurrent read would have frozen.
+    if trade.frozen_exit_price is None and trade.closes_at <= datetime.utcnow():
+        _freeze_row(db, trade)
+
+    if trade.frozen_exit_price is not None:
+        payout = _mark_to_frozen(trade)
+    else:
+        payout = _mark_to_market(db, trade)
+
     user.usdt_balance = float(user.usdt_balance or 0.0) + payout
     trade.settled_at = datetime.utcnow()
     trade.close_reason = "SOLD"
@@ -395,24 +487,41 @@ def close_trade(
 
 
 def close_all_trades(db: Session, user_id: str, symbol: str | None = None) -> list[models.Trade]:
-    """Close EVERY open position for this user in ONE atomic transaction.
+    """Collect every FINISHED position for this user in ONE atomic transaction.
 
-    This is what the "CLOSE ALL" button calls. It is the bulk sibling of
-    close_trade() and shares its pricing, so closing one position and closing
-    all of them can never produce different numbers for the same position.
+    This is what the "CLOSE ALL" button calls, and it is a COLLECTION, not a
+    liquidation:
+
+        it closes positions whose duration has ended (00:00), and only those.
+
+    A position still inside its duration is deliberately left alone. It has no
+    frozen result yet, so there is no guaranteed figure to collect, and closing
+    it here would sell the user a position they did not ask to sell at a price
+    they never saw settle. Those are closed with their own CLOSE button, priced
+    live, whenever the user chooses.
+
+    Every collected position is paid its FROZEN price via `_mark_to_frozen`, so
+    the batch total is exactly the sum of the figures already on screen.
 
     Unlike a loop of single closes, this is a single lock set and a single
     commit: the whole batch either lands in full or not at all. Positions are
     taken in a stable order (oldest first) purely so two concurrent CLOSE ALL
     presses can't deadlock waiting on each other.
 
-    `symbol` restricts the batch to one instrument; omitted, it closes the
-    user's whole book. Trades already closed are excluded, so calling this
-    twice credits the balance once. A user with nothing open is not an error —
-    it returns an empty list."""
+    `symbol` restricts the batch to one instrument; omitted, it collects the
+    user's whole finished book. Trades already closed are excluded, so calling
+    this twice credits the balance once. A user with nothing finished is not an
+    error — it returns an empty list."""
+    # Anything whose duration ended but whose freeze has not run yet is frozen
+    # first, in its own commit, so it is collectable by this same press. Running
+    # the sweep here rather than relying on the loop is what makes CLOSE ALL
+    # dependable at the exact instant a position hits 00:00.
+    freeze_due_trades(db)
+
     q = db.query(models.Trade).filter(
         models.Trade.user_id == user_id,
         models.Trade.status == models.TradeStatus.OPEN,
+        models.Trade.frozen_exit_price.isnot(None),
     )
     if symbol:
         sym = symbol.strip().upper()
@@ -430,7 +539,7 @@ def close_all_trades(db: Session, user_id: str, symbol: str | None = None) -> li
     locked: list[models.Trade] = []
     for trade in rows:
         live = _lock_trade(db, user_id, trade.id)
-        if live and live.status == models.TradeStatus.OPEN:
+        if live and live.status == models.TradeStatus.OPEN and live.frozen_exit_price is not None:
             locked.append(live)
     if not locked:
         return []
@@ -443,7 +552,7 @@ def close_all_trades(db: Session, user_id: str, symbol: str | None = None) -> li
     now = datetime.utcnow()
     credited = 0.0
     for live in locked:
-        credited += _mark_to_market(db, live)
+        credited += _mark_to_frozen(live)
         live.settled_at = now
         live.close_reason = "SOLD"
 
@@ -455,59 +564,107 @@ def close_all_trades(db: Session, user_id: str, symbol: str | None = None) -> li
 
 
 # =============================================================================
-# Expiry — the position's duration running out
+# Reaching 00:00 — the freeze
 # =============================================================================
 # RUNNING OUT OF TIME IS NOT A SETTLEMENT. This is the single most important
 # rule in the module, so it is stated before anything else here:
 #
-#     00:00  ->  the duration is over. That is ALL it means.
+#     00:00  ->  the duration is over, and the result is LOCKED.
 #
-# A position whose `closes_at` has passed stays OPEN. Its P/L stays UNREALIZED,
-# the trading balance is untouched, and the account's Profit and Loss do not
-# move. `close_trade()` — the user pressing CLOSE — is the ONLY event in this
-# module that prices a position, credits a balance, books a result and files a
-# trade into closed history.
+# A position whose `closes_at` has passed stays OPEN. Its trading balance is
+# untouched, the account's Profit and Loss cards do not move, and it is not in
+# closed history. What DOES happen is that the server records the price at that
+# instant and stops:
 #
-# `expire_due_trades()` below is the machinery that used to turn a past
+#     frozen_exit_price / frozen_profit  —  written, never touched again
+#     exit_price / profit / status       —  NOT written; those are realized
+#     user balance                       —  NOT credited
+#
+# So the number on screen at 00:00 is a promise, not a projection: it cannot
+# drift, and it is the exact figure paid when the user finally collects.
+#
+# `close_trade()` (the per-position CLOSE button) and `close_all_trades()` (the
+# CLOSE ALL button) are the ONLY things in this module that price a position for
+# real, credit a balance, book a result and file a trade into closed history —
+# and for a finished position both of them pay the FROZEN price via
+# `_mark_to_frozen`, never the live feed.
+#
+# `expire_due_trades()` further down is the machinery that used to turn a past
 # `closes_at` into a settled trade. It is retained, unchanged, and gated behind
 # `config.AUTO_SETTLE_ON_EXPIRE`, which defaults to OFF. With the flag off it
 # returns an empty list and touches nothing at all, so all three of its call
 # sites (the background loop and both read endpoints) are inert by construction
 # rather than by each caller remembering to skip it. Turning the flag back on
-# reinstates settle-on-expiry, which prices through the identical `_mark_to_market`
-# a manual close uses — the clock would decide WHEN, never WHAT.
+# reinstates settle-on-expiry — and it would still price through `_mark_to_market`
+# on top of the freeze, so the clock would decide WHEN, never WHAT.
 #
 # WHY THE MACHINERY IS KEPT RATHER THAN DELETED
 # It is correct code and it is one env var away. Deleting it would make
 # reinstate-on-expiry a rewrite instead of a switch, and would take the
 # exactly-once locking and the SQLite sweep lock with it.
-#
-# WHY IT WAS SAFE TO CALL FREQUENTLY, FROM ANYWHERE (still true when re-enabled)
-# Every write goes through the same two guards as the manual paths:
-#
-#   * the position row is locked, and its status re-read under that lock, so a
-#     trade that is no longer OPEN is skipped rather than paid again;
-#   * all of a user's positions are settled in ONE commit, and the balance is
-#     credited once for that whole batch, so a failure part-way through cannot
-#     leave some settled and others not;
-#   * `_expiry_sweep_lock` keeps two sweeps in this process from interleaving on
-#     a database without row locks (SQLite).
-#
-# So the caller may run it on a timer, on a read, or both, and run it as often
-# as it likes: the worst a redundant call can do is find nothing due.
 
-def due_trades_query(db: Session, now: datetime):
-    """The OPEN positions whose duration has already elapsed, oldest deadline
-    first. One place, so the timer and the read paths can never disagree about
-    which positions are due."""
+
+def unfrozen_due_query(db: Session, now: datetime):
+    """The OPEN positions whose duration has elapsed and that have no frozen
+    price yet, oldest deadline first. One place, so the background loop and the
+    read paths can never disagree about which positions still need freezing."""
     return (
         db.query(models.Trade)
         .filter(
             models.Trade.status == models.TradeStatus.OPEN,
             models.Trade.closes_at <= now,
+            models.Trade.frozen_exit_price.is_(None),
         )
         .order_by(models.Trade.closes_at.asc(), models.Trade.id.asc())
     )
+
+
+def freeze_due_trades(db: Session, now: datetime | None = None, limit: int = 500) -> list[models.Trade]:
+    """Freeze the result of every OPEN position whose `closes_at` has passed and
+    which has not been frozen yet. Returns those positions.
+
+    THIS MOVES NO MONEY. It writes `frozen_exit_price`, `frozen_profit` and
+    `frozen_at`, and nothing else — no balance, no `status`, no `profit`, no
+    `settled_at`, no `close_reason`. The position is still OPEN, still holds the
+    balance reserved for it, and is still absent from the top PROFIT / LOSS cards
+    and from closed history.
+
+    Safe to call from anywhere, as often as you like:
+      * a position is locked and re-checked under that lock, so one that has
+        already been frozen — or already settled — is skipped, not re-priced;
+      * `frozen_exit_price IS NOT NULL` is a permanent guard, so the promise
+        cannot be revised by a later, different price;
+      * all freezes land in ONE commit, so a failure part-way through leaves
+        every position either frozen or untouched, never half-written.
+
+    Unlike settlement this is deliberately allowed to run on a timer. Recording
+    a price that nobody has been charged for cannot lose anybody money, and
+    running it promptly is what makes the frozen figure the one the user sees
+    the instant their countdown reaches 00:00."""
+    now = now or datetime.utcnow()
+    candidates = unfrozen_due_query(db, now).limit(limit).all()
+    if not candidates:
+        return []
+
+    frozen: list[models.Trade] = []
+    for candidate in candidates:
+        # LOCK ORDER: the position row, before any balance row. The freeze never
+        # takes a balance lock at all, but it uses the same _lock_trade() so a
+        # position cannot be frozen and settled in the same instant by two
+        # racing writers.
+        live = _lock_trade(db, candidate.user_id, candidate.id)
+        if not live:
+            continue
+        if _freeze_row(db, live):
+            frozen.append(live)
+
+    if not frozen:
+        db.rollback()
+        return []
+    db.commit()
+    for live in frozen:
+        db.refresh(live)
+    return frozen
 
 
 def expire_due_trades(db: Session, now: datetime | None = None, limit: int = 500) -> list[models.Trade]:

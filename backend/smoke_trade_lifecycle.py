@@ -1,17 +1,23 @@
 """End-to-end verification of the trade LIFECYCLE and its accounting.
 
 Runs against a throwaway SQLite file. Asserts, in order:
-   1. expiry is the SERVER's decision, and it never forfeits a stake
-   2. a position that has passed `closes_at` is closed by the sweep
-   3. settlement is SERVER-AUTHORITATIVE - a client-supplied value is ignored,
-      so a $10 position cannot claim $99,999
-   4. a close is IDEMPOTENT - closing twice pays once
-   5. settlement is DIRECTION-AWARE - a SELL is the mirror of a BUY
-   6. Close All closes the whole book in one transaction and pays the sum
-   7. Close All is idempotent - a second press pays nothing
-   8. Close All can be scoped to a single instrument
-   9. one account can never close another account's position
-  10. realized PROFIT / LOSS still split without netting
+    1. expiry is the SERVER's decision, and it never forfeits a stake
+    2. a position that has passed `closes_at` is FROZEN at the 00:00 price —
+       priced, not forfeited, and not settled
+    3. settlement is SERVER-AUTHORITATIVE - a client-supplied value is ignored,
+       so a $10 position cannot claim $99,999
+    4. a close is IDEMPOTENT - closing twice pays once
+    5. settlement is DIRECTION-AWARE - a SELL is the mirror of a BUY
+    6. Close All collects the whole FINISHED book in one transaction, and
+       ignores positions that are still counting down
+    7. Close All is idempotent - a second press pays nothing
+    8. Close All can be scoped to a single instrument
+    9. one account can never close another account's position
+   10. realized PROFIT / LOSS still split without netting
+
+The rule these encode: 00:00 fixes the PRICE, and the user fixes the TIMING of
+the payment. The two are deliberately separate — nothing the server does on a
+timer may move the user's balance.
 
 The dedicated timing tests - that a 1-minute trade really is 60 seconds, that
 the sweep is exactly-once, and that expiry never books a flat total loss -
@@ -120,8 +126,8 @@ check("expire_due_trades present", hasattr(trading_service, "expire_due_trades")
 check("auto-settle on expiry is OFF by default", config.AUTO_SETTLE_ON_EXPIRE, False)
 
 # Backdate the position's closes_at far into the past — the exact state the bug
-# used to exploit — and confirm the sweep now does nothing at all: the trade
-# stays open, unpriced, unpaid and unrecorded.
+# used to exploit — and confirm the SWEEP now does nothing at all: the trade
+# stays open, unpaid and unrecorded.
 stale = t.id
 db.query(models.Trade).filter_by(id=t.id).update({"closes_at": datetime.utcnow() - timedelta(days=7)})
 db.commit()
@@ -136,31 +142,48 @@ check("it has no close reason", untouched.close_reason, None)
 check("its ledger timestamp is untouched", untouched.settled_at, None)
 check("the balance was not paid", balance(user.id), after_open)
 
-# Only the user pressing CLOSE books it, and then at the server's price.
+# --- the freeze: 00:00 is a price, not a payment ---------------------------
+# Reaching the deadline has exactly one effect: the server records the price
+# the user is guaranteed. It is NOT a settlement, so it must not touch the
+# balance, the status, or the realized summary. If it did, the user's money
+# would move without them pressing anything.
+frozen = trading_service.freeze_due_trades(db)
+check("the deadline froze the position", len(frozen), 1)
+f = db.query(models.Trade).filter_by(id=stale).one()
+approx("it froze at the 00:00 price of $0.04", f.frozen_exit_price, 0.04)
+approx("its frozen P/L is +$10", f.frozen_profit, 10.0)
+check("a frozen_at was stamped", isinstance(f.frozen_at, datetime), True)
+check("but it is STILL OPEN — freezing is not settling", f.status, models.TradeStatus.OPEN)
+check("no realized profit was written", f.profit, None)
+check("no exit_price was written", f.exit_price, None)
+check("no settled_at was written", f.settled_at, None)
+check("no close_reason was written", f.close_reason, None)
+check("the balance still has not been paid", balance(user.id), after_open)
+check("it is not in the realized summary yet", trading_service.realized_split(db, user.id)["count"], 0)
+
+# The whole promise of the feature is the next line: the market can now do
+# whatever it likes, and the figure the user is guaranteed cannot change. So
+# move the market, then collect, and the payout must be the FROZEN one.
+PRICE["now"] = 0.006  # -70%. Collecting now would have been a $7 loss.
 closed = trading_service.close_trade(db, user.id, stale)
-approx("the manual close is priced, not forfeited", closed.profit, 10.0)
+approx("the close pays the FROZEN price, not the live one", closed.profit, 10.0)
 check("it closed as a WIN, not a -amount loss", closed.status, models.TradeStatus.WON)
-check("balance credited at the server price", balance(user.id), 1010.0)
+approx("balance credited the frozen +$10", balance(user.id), 1010.0)
 check("reason recorded as a manual SOLD", closed.close_reason, "SOLD")
 
-# --- 2. the sweep is exactly-once -------------------------------------------
-print("\n[2] the expiry sweep pays once, however often it runs")
-after_expiry = balance(user.id)
-check("nothing is due any more", len(trading_service.expire_due_trades(db)), 0)
+# --- 2. freezing is idempotent ---------------------------------------------
+print("\n[2] freezing is idempotent — it can run every second forever")
+# The freeze sweep runs on a timer, on a read, and on a close. Re-running it
+# must never move the number, because the number is a promise.
+check("nothing is due any more", len(trading_service.freeze_due_trades(db)), 0)
 check("still no open positions",
       db.query(models.Trade).filter_by(status=models.TradeStatus.OPEN).count(), 0)
-
-# Repeated sweeps — the equivalent of the per-second background loop, a read
-# sweep, and a client that refreshes ten times — must move no more money.
-for _ in range(10):
-    trading_service.expire_due_trades(db)
-approx("ten more sweeps paid nothing", balance(user.id), after_expiry)
 
 # And a manual CLOSE on the already-closed position is an idempotent replay,
 # not a second payout.
 replay = trading_service.close_trade(db, user.id, stale)
 approx("replay returns the recorded result", replay.profit, 10.0)
-check("replay did not re-credit", balance(user.id), after_expiry)
+check("replay did not re-credit", balance(user.id), 1010.0)
 check("replay did not rewrite the reason", replay.close_reason, "SOLD")
 
 # --- 3. settlement is server-authoritative ---------------------------------
@@ -207,38 +230,58 @@ check("SELL is a loss", down_c.status, models.TradeStatus.LOST)
 check("BUY is a win", up_c.status, models.TradeStatus.WON)
 
 # --- 6/7/8. Close All ------------------------------------------------------
-print("\n[6] Close All closes the whole book and pays the sum")
+print("\n[6] Close All collects the whole finished book and pays the sum")
 PRICE["now"] = 0.02
 base = balance(user.id)
 a = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
 b = trading_service.open_trade(db, user.id, "UP", 20.0, 60, "GOLF")
 c = trading_service.open_trade(db, user.id, "UP", 30.0, 60, "GOLF")
 check("balance after three opens", balance(user.id), base - 60.0)
-PRICE["now"] = 0.02  # flat market: each stake returns exactly what it cost
+
+# They are all still counting down, so CLOSE ALL must leave them alone. This
+# is the guarantee the user relies on while a position is live.
+early = trading_service.close_all_trades(db, user.id)
+check("CLOSE ALL collects nothing while positions are running", len(early), 0)
+check("...and the balance is untouched", balance(user.id), base - 60.0)
+check("...and all three are still OPEN", [status_of(x.id) for x in (a, b, c)],
+      [models.TradeStatus.OPEN] * 3)
+
+# Let the deadline pass, then move the market before collecting.
+PRICE["now"] = 0.024  # +20% at the instant of 00:00
+trading_service.freeze_due_trades(db, now=max(a.closes_at, b.closes_at, c.closes_at))
+PRICE["now"] = 0.006  # -70% by the time the user gets round to pressing the button
 
 allc = trading_service.close_all_trades(db, user.id)
-check("three positions closed", len(allc), 3)
-approx("whole stake returned", balance(user.id), base)
+check("three positions collected", len(allc), 3)
+approx("whole stake plus the frozen +20% returned", balance(user.id), base * 0.0 + (base - 60.0) + 72.0)
 check("all three settled", sorted(str(x.status) for x in allc),
       sorted([str(models.TradeStatus.WON)] * 3))
 check("none left open", db.query(models.Trade).filter_by(
     user_id=user.id, status=models.TradeStatus.OPEN).count(), 0)
+check("each was paid its FROZEN price, not the live one",
+      sorted(x.exit_price for x in allc), [0.024, 0.024, 0.024])
 
 print("\n[7] Close All is idempotent")
 after_all = balance(user.id)
 again = trading_service.close_all_trades(db, user.id)
-check("nothing left to close", len(again), 0)
+check("nothing left to collect", len(again), 0)
 check("second press pays nothing", balance(user.id), after_all)
 
 print("\n[8] Close All can be scoped to one instrument")
 PRICE["now"] = 0.02
 g1 = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
 n1 = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "NOVA")
+# Only GOLF is finished, so only GOLF may be collected — the scope filter and
+# the finished filter have to hold at the same time.
+trading_service.freeze_due_trades(db, now=g1.closes_at)
 scoped = trading_service.close_all_trades(db, user.id, "GOLF")
-check("only GOLF closed", [x.symbol for x in scoped], ["GOLF"])
+check("only GOLF collected", [x.symbol for x in scoped], ["GOLF"])
 check("NOVA still open", status_of(n1.id), models.TradeStatus.OPEN)
-check("GOLF closed", status_of(g1.id), models.TradeStatus.WON)
-trading_service.close_all_trades(db, user.id)  # tidy up
+check("GOLF settled", status_of(g1.id), models.TradeStatus.WON)
+# NOVA is finished now too, and is collected on the next unscoped press.
+trading_service.freeze_due_trades(db, now=n1.closes_at)
+check("NOVA collected on the next press",
+      [x.symbol for x in trading_service.close_all_trades(db, user.id)], ["NOVA"])
 
 # --- 9. ownership ---------------------------------------------------------
 print("\n[9] one account can never close another's position")
@@ -253,7 +296,7 @@ check("victim balance untouched", balance(user.id), victim_balance)
 check("other user close-all is a no-op", len(trading_service.close_all_trades(db, other.id)), 0)
 check("victim position still open", status_of(victim.id), models.TradeStatus.OPEN)
 check("victim balance still untouched", balance(user.id), victim_balance)
-trading_service.close_all_trades(db, user.id)
+trading_service.close_trade(db, user.id, victim.id)  # tidy up
 
 # --- 10. the profit / loss split still works over the new closes ----------
 print("\n[10] realized PROFIT and LOSS stay separate, never netted")

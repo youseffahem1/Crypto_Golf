@@ -140,16 +140,39 @@ class Trade(Base):
     opened_at = Column(DateTime, default=datetime.utcnow)
     # The moment this position's duration runs out. It is written once, at
     # open, as `opened_at + duration_seconds`, and it is the ONE deadline the
-    # server acts on: expire_due_trades() settles every OPEN position whose
-    # closes_at has passed, and the frontend draws its countdown straight from
-    # this timestamp. Both sides therefore measure the same instant from the
-    # same value, so the client clock can never disagree with the server about
-    # when a trade is over.
+    # server acts on. The frontend draws its countdown straight from this
+    # timestamp, so the client clock can never disagree with the server about
+    # when a trade is over. Passing it does NOT settle the position — see the
+    # frozen_* columns below.
     closes_at = Column(DateTime, nullable=False)
     settled_at = Column(DateTime, nullable=True)
+    # =====================================================================
+    # The FROZEN result — the guarantee behind 00:00
+    # =====================================================================
+    # When a position's duration ends, the server records the market price at
+    # that instant and STOPS. The number it writes here is the number the user
+    # is guaranteed to be paid, whenever they choose to collect it — which is
+    # the whole point: the figure on screen at 00:00 cannot drift afterwards,
+    # and a user who walks away and comes back tomorrow gets the same money.
+    #
+    # These are deliberately SEPARATE from `exit_price` / `profit` / `status`:
+    #   * `profit` and `status` are the REALIZED record. They are read by
+    #     realized_split() to paint the top PROFIT and LOSS cards, so writing a
+    #     frozen result into them would move the cards and credit the P/L at
+    #     00:00 — the exact bug this design exists to prevent.
+    #   * A frozen position is still OPEN, still holds the balance reserved for
+    #     it, and is still absent from closed history.
+    #
+    # `frozen_exit_price` NULL means "this position has not reached its deadline
+    # yet". Once set it is never recomputed, which is what makes it a promise.
+    frozen_exit_price = Column(Float, nullable=True)
+    # The signed profit implied by the frozen price. Also never realized.
+    frozen_profit = Column(Float, nullable=True)
+    # When the server recorded the freeze (a diagnostic, not a deadline).
+    frozen_at = Column(DateTime, nullable=True)
     # Why a position left the OPEN state: "SOLD" (the user closed it early) or
-    # "EXPIRED" (its duration elapsed and the server settled it). NULL on a
-    # position that is still open. Purely descriptive — status is the
+    # "EXPIRED" (legacy, only reachable with AUTO_SETTLE_ON_EXPIRE on). NULL on
+    # a position that is still open. Purely descriptive — status is the
     # authority, and this exists so a client and an operator can tell the two
     # apart instead of seeing one undifferentiated CLOSED.
     close_reason = Column(String, nullable=True)

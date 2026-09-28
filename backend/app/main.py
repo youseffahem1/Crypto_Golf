@@ -175,6 +175,18 @@ def _migrate():
         # remains the authority for whether a position is settled, so adding
         # the column changes no existing behaviour whatsoever.
         ("trades", "close_reason", "VARCHAR(20)"),
+        # The FROZEN result of a position whose duration ended: the price the
+        # server recorded at 00:00 and the profit that price implies. All three
+        # are nullable and start NULL, which correctly reads as "this position
+        # has not reached its deadline yet". Deliberately separate from
+        # exit_price / profit / status: those are the REALIZED record and are
+        # what paint the top PROFIT and LOSS cards, so freezing must never
+        # write them. NULL on every pre-existing trade is also correct — those
+        # rows predate the promise, and a trade that was already closed has
+        # nothing left to freeze.
+        ("trades", "frozen_exit_price", "FLOAT"),
+        ("trades", "frozen_profit", "FLOAT"),
+        ("trades", "frozen_at", "DATETIME"),
     ]:
         _add_column(table, column, decl)
 
@@ -209,27 +221,34 @@ def health():
 
 # =============================================================================
 # Background loops — the things that must keep running independent of any
-# single HTTP request: the authoritative demo market tick, trade expiry,
+# single HTTP request: the authoritative demo market tick, the trade freeze,
 # deposit monitoring, and the CoinGecko price table. Each loop swallows its own
 # exceptions so one bad iteration can never kill the whole background task.
 #
-# NO TIMER SETTLES A TRADE. `_trade_expiry_loop` is not started at all unless
-# `AUTO_SETTLE_ON_EXPIRE` is on, which it is not by default. This is the rule it
-# used to break:
+# NO TIMER SETTLES A TRADE. What a timer may do is FREEZE, which is a different
+# act entirely:
 #
-#     00:00  ->  the duration is finished. That is ALL it means.
-#     CLOSE  ->  the user prices it, and that is what books a result.
+#     00:00  ->  the duration is finished, and the server records the price.
+#                Nothing is paid, booked, credited or filed.
+#     CLOSE  ->  the user collects it, and that is what books a result.
 #
-# A position whose `closes_at` has passed stays OPEN, its P/L stays UNREALIZED,
-# and no balance moves until the user closes it. So the loop below is not
-# scheduled, the trade read endpoints' sweep is inert, and a 1-minute trade is a
-# 60-second trade that the user then settles at their own chosen moment, at the
-# server's own price, exactly as a manual SELL settles it.
+# So a position whose `closes_at` has passed stays OPEN, holds the balance
+# reserved for it, is absent from the top PROFIT / LOSS cards, and is absent
+# from closed history — but its result is LOCKED, and the locked figure is what
+# the user sees from 00:00 and what they are ultimately paid.
 #
-# The machinery is retained rather than deleted so settle-on-expiry stays a
-# config change: with the flag on, this loop plus `expire_due_trades()` prices
-# each elapsed position through the identical `_mark_to_market` a manual close
-# uses, so the clock would decide WHEN, never WHAT.
+# WHY THE FREEZE IS ALLOWED ON A TIMER WHEN SETTLEMENT IS NOT
+# A freeze writes a price nobody has been charged for. It cannot lose a user
+# money, it cannot move a card, and it cannot close a position — so running it
+# promptly is safe. And it has to run promptly: the promise is that the figure
+# at 00:00 is the figure paid, which only holds if the price is captured near
+# the deadline rather than whenever the user next happened to reload. The read
+# endpoints run the same sweep, so a position is frozen even if this loop is
+# behind — a close can never find an unpriced finished position, because
+# close_trade() freezes one itself if it has to.
+#
+# `_trade_expiry_loop` — the settlement loop, kept only for the
+# AUTO_SETTLE_ON_EXPIRE opt-in — is not started at all unless that flag is on.
 # =============================================================================
 
 async def _market_tick_loop():
@@ -242,6 +261,24 @@ async def _market_tick_loop():
         finally:
             db.close()
         await asyncio.sleep(MARKET_TICK_INTERVAL_SECONDS)
+
+
+async def _trade_freeze_loop():
+    """Always started. Records the price of every position whose duration has
+    ended, and nothing else.
+
+    The try/except is kept: a failing sweep must never kill the loop or take
+    down the process with it. A position missed by one iteration is picked up
+    by the next one, and by the read endpoints, and by close_trade() itself."""
+    while True:
+        db = SessionLocal()
+        try:
+            trading_service.freeze_due_trades(db)
+        except Exception as e:
+            logging.error(f"[trade_freeze_loop] {e}")
+        finally:
+            db.close()
+        await asyncio.sleep(TRADE_EXPIRY_SWEEP_SECONDS)
 
 
 async def _trade_expiry_loop():
@@ -289,6 +326,10 @@ async def start_background_loops():
     asyncio.create_task(_market_tick_loop())
     asyncio.create_task(_deposit_poll_loop())
     asyncio.create_task(_coin_price_refresh_loop())
+    # Always on, and always safe: this records the price of a finished position
+    # and moves no money. It is what makes the figure shown at 00:00 the figure
+    # that is later paid.
+    asyncio.create_task(_trade_freeze_loop())
     # Opt-in only. Off by default, and that is the point: a trade's duration
     # ending settles nothing. With this line absent, no background task in this
     # process can turn a past `closes_at` into a closed trade — the user

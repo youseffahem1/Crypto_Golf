@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 from .database import Base, engine, SessionLocal
-from . import models, market_service, deposit_monitor, trading_service
+from . import models, market_service, deposit_monitor
 from .routes import (
     auth_routes, wallet_routes, trade_routes, swap_routes, golf_routes,
     market_routes, transfer_routes, message_routes, users_routes, admin_routes,
@@ -198,10 +198,18 @@ def health():
 
 
 # =============================================================================
-# Background loops — the three things that must keep running independent of
-# any single HTTP request: the authoritative demo market tick, trade
-# settlement, and deposit monitoring. Each loop swallows its own exceptions
-# so one bad iteration can never kill the whole background task.
+# Background loops — the things that must keep running independent of any
+# single HTTP request: the authoritative demo market tick, deposit monitoring,
+# and the CoinGecko price table. Each loop swallows its own exceptions so one
+# bad iteration can never kill the whole background task.
+#
+# There is deliberately NO trade-settlement loop. A previous version ran
+# `settle_due_trades()` every two seconds, which force-settled any position
+# whose `closes_at` had passed into a total loss (profit = -amount) — so a
+# position was destroyed by the clock and its stake forfeited without the user
+# ever doing anything. Positions now stay open until they are explicitly
+# closed, so there is nothing for such a loop to do. Closing is a user action
+# and happens in trading_service.close_trade() / close_all_trades().
 # =============================================================================
 
 async def _market_tick_loop():
@@ -214,18 +222,6 @@ async def _market_tick_loop():
         finally:
             db.close()
         await asyncio.sleep(MARKET_TICK_INTERVAL_SECONDS)
-
-
-async def _trade_settlement_loop():
-    while True:
-        db = SessionLocal()
-        try:
-            trading_service.settle_due_trades(db)
-        except Exception as e:
-            logging.error(f"[trade_settlement_loop] {e}")
-        finally:
-            db.close()
-        await asyncio.sleep(2)
 
 
 async def _deposit_poll_loop():
@@ -254,6 +250,5 @@ async def _coin_price_refresh_loop():
 @app.on_event("startup")
 async def start_background_loops():
     asyncio.create_task(_market_tick_loop())
-    asyncio.create_task(_trade_settlement_loop())
     asyncio.create_task(_deposit_poll_loop())
     asyncio.create_task(_coin_price_refresh_loop())

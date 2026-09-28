@@ -68,11 +68,20 @@ class TradeOpenRequest(BaseModel):
 
 class TradeCloseRequest(BaseModel):
     trade_id: str
-    # Optional live value at the moment of the early exit. When supplied, the
-    # server settles at exactly this figure (the same mark-to-market number the
-    # UI has been showing) so display, wallet credit, P&L and history always
-    # agree. It is still validated/clamped server-side — never trusted blindly.
+    # DEPRECATED AND IGNORED. Older clients sent the live value they were
+    # displaying; the server accepted it within a wide sanity window, which
+    # meant a client could name the figure it got paid. Settlement now reads
+    # the server's own price feed and the trade's own direction, so the
+    # credited value is entirely server-decided. The field is kept (and still
+    # accepted) so an older client does not start failing with a 422 — it is
+    # simply never read.
     value: Optional[float] = Field(default=None, gt=0)
+
+
+class TradeCloseAllRequest(BaseModel):
+    # Omit `symbol` to close the account's entire book; supply it to close
+    # only that instrument. Either way the result is one atomic transaction.
+    symbol: Optional[str] = Field(default=None, max_length=20)
 
 
 class TradeOut(BaseModel):

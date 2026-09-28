@@ -4623,10 +4623,20 @@ async function createTrade(direction) {
    value = stake * (2 − currentPrice / entryPrice) for a SELL —
    and credits that value straight back to the balance. Selling
    while the price moves in your direction banks the gain; while
-   it moves against you it salvages what's left. If the timer
-   reaches zero first, the whole stake is lost (see
-   vantaSettleDemoTrades / server settle_due_trades).
-========================================================= */
+   it moves against you it salvages what's left.
+
+   The result is the SERVER's, not this file's: the request sends
+   no value, the server prices it from its own feed, and the profit
+   that comes back is what the balance, the ledger and the cards all
+   use. closeValueFor() below is the matching live DISPLAY, so the
+   number on screen and the number credited agree.
+
+   A position is never closed by the clock. endTime is the duration
+   the user picked, drawn on the chart and nothing more — there is no
+   timer that settles a position or forfeits its stake. Positions
+   leave the open list only via SELL or CLOSE ALL.
+   ========================================================= */
+
 
 /* LIVE VALUE — fully driven by the real chart line, never an independent
    random walk. Every tick the trade value is recomputed from the current
@@ -4739,14 +4749,100 @@ function sellOpenPositionById(id) {
     closePositions(list);
 }
 
-function sellOpenPositions() {
+/* CLOSE ALL goes to the server's single /api/trade/close-all endpoint rather
+   than looping single closes. One atomic transaction means the whole book is
+   settled and the balance credited together, so it cannot fail half-way with
+   some positions closed and others not, and pressing it twice pays once.
+
+   Scoped to the coin on screen to match what the button promises ("Close all
+   open positions on this market"); omitting the symbol would close every
+   instrument the account holds. */
+async function sellOpenPositions() {
     const sym = window.vantaActiveCoin || "GOLF";
+    if (accountMode === "demo") {
+        const list = trades.filter(t => (t.symbol || "GOLF") === sym && !t.result && !__vantaClosing.has(t.id));
+        if (!list.length) {
+            showToast("No open position to sell");
+            return;
+        }
+        return closePositions(list);
+    }
+
     const list = trades.filter(t => (t.symbol || "GOLF") === sym && !t.result && !__vantaClosing.has(t.id));
     if (!list.length) {
         showToast("No open position to sell");
         return;
     }
-    closePositions(list);
+    list.forEach(t => __vantaClosing.add(t.id));
+
+    let sold = [];
+    try {
+        sold = await vantaApi("/api/trade/close-all", {
+            method: "POST",
+            body: JSON.stringify({ symbol: sym })
+        });
+    } catch (e) {
+        list.forEach(t => __vantaClosing.delete(t.id));
+        showToast(e.message || "Could not close positions");
+        return;
+    }
+    list.forEach(t => __vantaClosing.delete(t.id));
+
+    sold = Array.isArray(sold) ? sold : [];
+    if (!sold.length) {
+        showToast("No open position to sell");
+        refreshBalance();
+        return;
+    }
+
+    /* The server is the authority on every result, exactly as in the single
+       close path: the profit banked into the realized ledger, the figures in
+       the Position card and the balance are all read back from its response. */
+    const byId = new Map(sold.map(s => [String(s.id), s]));
+    let anyLoss = false;
+    sold.forEach(s => {
+        const profit = Number(s.profit || 0);
+        if (profit < 0) anyLoss = true;
+        vantaNoteRealizedTrade({ id: s.id, sym: s.symbol || "GOLF", profit });
+        if (historySeen) historySeen.add(s.id);
+        vantaForgetPeak(s.id);
+    });
+
+    if (!__vantaSuppressLast) {
+        const first = sold[0];
+        const totalProfit = sold.reduce((a, s) => a + Number(s.profit || 0), 0);
+        const totalAmount = sold.reduce((a, s) => a + Number(s.amount || 0), 0);
+        vantaSetLastSettled({
+            symbol: first.symbol || "GOLF",
+            direction: first.direction,
+            entryPrice: Number(first.entry_price) || 0,
+            peak: 0,
+            peakValue: 0,
+            invested: totalAmount,
+            value: totalAmount + totalProfit,
+            profit: totalProfit,
+            pct: totalAmount ? (totalProfit / totalAmount) * 100 : 0,
+            won: !anyLoss,
+            reason: "SOLD"
+        });
+    }
+
+    sold.forEach(s => {
+        const t = trades.find(x => String(x.id) === String(s.id));
+        if (t) removeTradeMarker(t);
+    });
+    const closedIds = new Set(sold.map(s => String(s.id)));
+    trades = trades.filter(x => !closedIds.has(String(x.id)));
+
+    renderOpenTrades();
+    positionAllTrades();
+    showResultToast(!anyLoss, sold.reduce((a, s) => a + Number(s.profit || 0), 0), sold[0].direction);
+
+    refreshBalance();
+    const refreshCards = (typeof window.vantaRefreshInfoCards === 'function')
+        ? window.vantaRefreshInfoCards
+        : (typeof refreshInfoCards === 'function' ? refreshInfoCards : null);
+    if (refreshCards) refreshCards();
 }
 
 const __vantaClosing = new Set();
@@ -4754,7 +4850,8 @@ const __vantaClosing = new Set();
 /* The last settled trade, kept on screen so the profit you banked does not
    vanish the moment the position closes. The Position card keeps showing it
    (Invested / Value / P/L / %) until you press Clear or the next trade
-   replaces it. reason: "SOLD" (manual sell) | "EXPIRED" (timer hit zero). */
+   replaces it. reason is always "SOLD": positions are only ever closed
+   explicitly, so there is no expiry outcome left to represent. */
 var __vantaLastSettled = null;
 var __vantaSuppressLast = false;
 
@@ -4829,9 +4926,15 @@ async function closePositions(list) {
         __vantaClosing.add(t.id);
         let sold;
         try {
+            /* NO `value` IS SENT. The credited figure is decided by the
+               server from its own price feed and this trade's direction, so a
+               tampered client cannot name what it is paid. The number this UI
+               was showing (closeValueFor) is display only; the server's
+               `profit` is what the toast, the ledger and the balance all use,
+               so they can never disagree. */
             sold = await vantaApi("/api/trade/close", {
                 method: "POST",
-                body: JSON.stringify({ trade_id: t.id, value: closeValueFor(t) })
+                body: JSON.stringify({ trade_id: t.id })
             });
         } catch (e) {
             __vantaClosing.delete(t.id);
@@ -4870,7 +4973,14 @@ async function closePositions(list) {
 
     renderOpenTrades();
     positionAllTrades();
+    /* Re-read BOTH the balance and the realized PROFIT / LOSS totals from the
+       server, so the cards show the ledger the close just wrote rather than
+       waiting for the next poll. This is the only source of those numbers. */
     refreshBalance();
+    var __refreshCards = (typeof window.vantaRefreshInfoCards === 'function')
+        ? window.vantaRefreshInfoCards
+        : (typeof refreshInfoCards === 'function' ? refreshInfoCards : null);
+    if (__refreshCards) __refreshCards();
 }
 
 
@@ -5285,24 +5395,34 @@ async function vantaSyncTrades() {
     }));
 
     if (settled.length) {
-        const histById = new Map(hist.map(h => [h.id, h]));
+        const histById = new Map(hist.map(h => [String(h.id), h]));
         settled.forEach(rt => {
             const amt = Number(rt.amount) || 0;
-            const h = histById.get(rt.id);
-            const profit = h ? Number(h.profit || 0) : -amt;
-            const won = h ? h.status === "WON" : profit >= 0;
+            const h = histById.get(String(rt.id));
+            /* A position only ever leaves the open list because it was
+               CLOSED - by this tab, another tab, or CLOSE ALL. Nothing expires
+               any more, so there is no such thing as a missing history row, and
+               the old "-amount" fallback (which quietly booked a total loss for
+               a position nobody had closed) is gone. If the row genuinely is
+               not in history, the server has nothing to report for it, so we
+               clean the marker up and stay silent rather than invent a result. */
+            if (!h) {
+                vantaForgetPeak(rt.id);
+                return;
+            }
+            const profit = Number(h.profit || 0);
         vantaSetLastSettled({
-            symbol: rt.symbol || "GOLF",
-            direction: rt.direction,
-            entryPrice: Number(rt.entryPrice != null ? rt.entryPrice : rt.entry_price) || 0,
+            symbol: h.symbol || rt.symbol || "GOLF",
+            direction: h.direction || rt.direction,
+            entryPrice: Number((h.entry_price != null ? h.entry_price : rt.entryPrice)) || 0,
             peak: vantaPeakBest(rt),
             peakValue: vantaPeakValue(rt),
             invested: amt,
-            value: h ? (amt + profit) : 0,
+            value: amt + profit,
             profit,
             pct: amt ? (profit / amt) * 100 : 0,
-            won,
-            reason: "EXPIRED"
+            won: h.status === "WON",
+            reason: "SOLD"
         });
             vantaForgetPeak(rt.id);
         });
@@ -5448,54 +5568,17 @@ function vantaSwitchAccountMode(mode) {
     }
 }
 
-function vantaSettleDemoTrades() {
-    if (accountMode !== "demo") return;
-    const now = Date.now();
-    const due = trades.filter(t => t.demo && !t.result && now >= t.endTime);
-    if (!due.length) return;
+/* PRACTICE POSITIONS DO NOT EXPIRE EITHER.
 
-    due.forEach(t => {
-        /* At expiry there is NO payout — if you didn't SELL early, the
-           whole stake is gone. Selling is the only way to collect value
-           (see closePositions). */
-        const profit = -t.amount;
-        vantaSaveDemoBalance();
+   This used to run every second and book any practice position whose timer
+   elapsed as a total loss (profit = -amount), which is exactly the rule the
+   live server no longer has. Practice has to teach the same rule as live, or
+   people learn to panic-close a position that was never going to expire — so
+   the sweep is gone.
 
-    vantaSetLastSettled({
-        symbol: t.symbol || "GOLF",
-        direction: t.direction,
-        entryPrice: Number(t.entryPrice) || 0,
-        peak: vantaPeakBest(t),
-        peakValue: vantaPeakValue(t),
-        invested: Number(t.amount),
-        value: 0,
-        profit,
-        pct: -100,
-        won: false,
-        reason: "EXPIRED"
-    });
-
-    vantaForgetPeak(t.id);
-
-        history.unshift({
-            id: t.id, symbol: t.symbol || "GOLF", direction: t.direction, amount: t.amount,
-            profit, result: "LOSS"
-        });
-        if (history.length > 5) history.pop();
-        /* An expiry realises the full stake as a loss: it belongs in the
-           account's Loss total, not in its Profit. */
-        vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit });
-
-        trades = trades.filter(x => x.id !== t.id);
-        removeTradeMarker(t);
-        showResultToast(false, profit, t.direction);
-    });
-
-    updateBalance();
-    vantaRenderAccountPanel();
-    renderOpenTrades();
-    renderHistory();
-}
+   A practice position now leaves the open list only through closePositions(),
+   the same explicit SELL / CLOSE ALL the live account uses, where it settles
+   at closeValueFor() and its result is booked honestly as profit or loss. */
 
 (function initAccountPanel() {
     const panel = document.getElementById("vantaAccountPanel");
@@ -6253,7 +6336,6 @@ async function vantaEnterApp() {
     setInterval(vantaResyncCandles, 5000);
     setInterval(vantaSyncTrades, 2500);
     setInterval(refreshGolfStats, 20000);
-    setInterval(vantaSettleDemoTrades, 1000);
 }
 
 async function vantaHandleEntry() {
@@ -14517,7 +14599,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         +vtHead([['sym','Instrument'],['side','Side'],['vol','Volume'],['price','Price'],['pl','Profit'],['time','Time']])
         +'<div id="vtaPosDeals"></div></div></div>'
         /* ---- footnote ---- */
-        +'<div class="vta-pos-note" id="vtaPosNote">Buy while the candle is green, then SELL before the timer runs out to collect the live value. If the timer hits zero, the stake is gone.</div>';
+        +'<div class="vta-pos-note" id="vtaPosNote">Your positions stay open until you close them. The timer is the duration you chose, not a deadline - nothing is closed and no stake is lost if you wait.</div>';
       const openSection=q('.open-section');
       if(openSection && openSection.parentNode) openSection.parentNode.insertBefore(pos, openSection);
       else mainEl.appendChild(pos);
@@ -14714,9 +14796,14 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         resBox.hidden=true;
         resBox.innerHTML='';
       } else {
-        const sold=ls0.reason==='SOLD';
-        const tag=sold?vtSide(ls0.direction):'EXPIRED';
-        const cls=sold?vtSideCls(ls0.direction):'exp';
+        const sold=ls0.reason!=='EXPIRED';
+        /* Positions are only ever closed explicitly now, so the tag is the
+           trade's own side. It used to fall back to a hardcoded 'EXPIRED'
+           label, which is gone — nothing sets that reason any more, and a
+           position that was never closed must never be labelled as if it
+           had been forfeited. */
+        const tag=sold?vtSide(ls0.direction):'CLOSED';
+        const cls=sold?vtSideCls(ls0.direction):'flat';
         const entry=Number(ls0.entryPrice!=null?ls0.entryPrice:ls0.entry)||0;
         const exit=Number(ls0.value)||0;
         /* The high-water mark, carried over from the position into the closed
@@ -14725,7 +14812,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         const pk=Number(ls0.peak)||0;
         const pkVal=Number(ls0.peakValue)||0;
         const pkGain=pkVal-Number(ls0.invested||0);
-        const pkWord=(ls0.reason==='SOLD'&&vtSide(ls0.direction)==='SELL')?'lowest reached':'peak reached';
+        const pkWord=(vtSide(ls0.direction)==='SELL')?'lowest reached':'peak reached';
         const pctTxt=Number(ls0.pct||0)!==0
           ? (sr.net>=0?'+':'−')+Math.abs(Number(ls0.pct||0)).toFixed(2)+'%' : '—';
         resBox.hidden=false;
@@ -14735,7 +14822,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           +'<span class="vta-res-inst"><b>'+esc(ls0.symbol||'GOLF')+'</b>'
           +'<span class="vta-res-tag '+cls+'">'+tag+'</span></span>'
           +'<span class="vta-res-out">'
-          +'<span class="vta-res-out-l">'+(sold?'SELL CLOSED':'EXPIRED')+'</span>'
+          +'<span class="vta-res-out-l">'+tag+' CLOSED</span>'
           +'<span class="vta-res-out-v '+vtPlCls(sr.net)+'">'
           +(sr.net>0?'+':sr.net<0?'−':'')+money(Math.abs(sr.net))+'</span>'
           +'</span></div>'
@@ -14804,17 +14891,26 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       if(!all.length){
         vtSetRows(ordBox,'<div class="vta-empty">No working orders.</div>');
       } else {
-        const fmtLeft=(typeof formatTime==='function')?formatTime:null;
+        /* The CHOSEN DURATION, not a countdown. A position has no deadline any
+           more, so ticking down to "0s" under a "closes in" tooltip promised
+           something the server will not do — and invited a panic cancel of a
+           position that was perfectly safe to leave. */
+        const durTxt=(t)=>{
+          const s=Number(t&&t.duration)||0;
+          if(!s) return '—';
+          if(s%3600===0) return (s/3600)+'h';
+          if(s%60===0)   return (s/60)+'m';
+          return s+'s';
+        };
         vtSetRows(ordBox, all.map(t=>{
-          const left=t.endTime?Number(t.endTime)-Date.now():0;
-          const leftTxt=left>0?(fmtLeft?fmtLeft(left/1000):Math.round(left/1000)+'s'):'0s';
+          const dTxt=durTxt(t);
           return '<div class="vta-tr">'
             +'<div class="vta-tc vt-sym">'+esc(t.symbol||'GOLF')+'<span class="vt-id">'+esc(String(t.id))+'</span></div>'
             +'<div class="vta-tc vt-side '+vtSideCls(t.direction)+'">'+vtSide(t.direction)+'</div>'
             +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(t.amount)+'</div>'
             +'<div class="vta-tc vt-price" data-l="PRICE">'+coinFmt(t.entryPrice)+'</div>'
             +'<div class="vta-tc vt-status" data-l="STATUS">OPEN</div>'
-            +'<div class="vta-tc vt-time" data-l="T−" title="closes in '+leftTxt+'">'+leftTxt+'</div>'
+            +'<div class="vta-tc vt-time" data-l="DUR" title="Chosen duration — this position stays open until you cancel it">'+dTxt+'</div>'
             +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(t.id))+'">CANCEL</button></div>'
             +'</div>';
         }).join(''));
@@ -14846,12 +14942,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 
     const note=$('vtaPosNote');
     if(note) note.textContent=rows.length
-      ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL to bank it before the timer ends; if the timer hits zero the stake is gone.'
+      ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL banks it at the server\'s own price. Your position stays open until you close it; there is no deadline and no stake is lost while you wait.'
       : (__vantaLastSettled
-        ? (__vantaLastSettled.reason==='EXPIRED'
-           ? 'This trade hit the timer and the stake was lost. Open a new trade to keep going — or press Clear to dismiss this result.'
-           : 'This result is saved with its profit banked in your balance — it stays until you press Clear or open a new trade.')
-        : 'Buy while the candle is green, then SELL before the timer runs out to collect the live value. If the timer hits zero, the stake is gone.');
+        ? 'This result is saved with its profit banked in your balance — it stays until you press Clear or open a new trade.'
+        : 'Buy while the candle is green, then SELL to collect the live value. A position stays open until you close it, so you can take as long as you like.');
   }
 
   /* ---------- Wallet: per-coin deposit/withdraw (real config or Not Provided Yet) ---------- */

@@ -14146,6 +14146,12 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vt-pl.up{color:var(--up)}
 .vt-pl.down{color:var(--down)}
 .vt-pl.flat{color:var(--muted)}
+/* A finished position's P/L cell: deliberately empty and collapsed. It is not
+   a zero, and it is not a frozen reading — there is no live figure to show, so
+   the column collapses rather than leaving a hole where a number used to be. */
+.vt-pl.done:empty{grid-area:auto;width:0;min-width:0;padding:0;margin:0;border:0;overflow:hidden}
+.vta-tr.is-done{opacity:.72}
+.vta-tr.is-done .vt-status{color:var(--muted2)}
 .vt-time{color:var(--muted2);font-size:9.5px}
 .vt-status{font-size:9px;font-weight:800;letter-spacing:.07em;color:var(--gold)}
 .vt-act{display:flex;justify-content:flex-end}
@@ -15230,6 +15236,27 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   function vtPlCell(pl,label,sub){
     return '<div class="vta-tc vt-pl '+vtPlCls(pl)+'" data-l="'+(label||'P/L')+'">'+vtSigned(pl)+(sub?'<i class="vt-pk" title="best price this trade reached">'+sub+'</i>':'')+'</div>';
   }
+  /* The P/L of a position whose duration is over. It is NOT drawn.
+     A live position's P/L is recomputed from the market on every tick, which is
+     the whole point while it runs. Once the clock reaches 00:00 that number
+     stops meaning anything: the trade is finished, it is waiting to be
+     collected, and the amount the user will be paid is fixed by the server. So
+     this cell stays empty rather than showing a figure that either drifts or
+     sits frozen looking like a live reading. The finished amount is shown once,
+     in the result block, when the user collects it. */
+  function vtPlCellDone(label){
+    return '<div class="vta-tc vt-pl done" data-l="'+(label||'P/L')+'" title="finished — collected with CLOSE"></div>';
+  }
+  /* True once a position's duration is over, whether the server has delivered
+     the frozen figure yet or not. The narrow window between the two must not
+     fall back to a live reading either. */
+  function vtTradeDone(t){
+    if(!t) return false;
+    if(typeof vantaIsFrozen==='function' && vantaIsFrozen(t)) return true;
+    if(t.expired) return true;
+    if(typeof vantaIsExpired==='function' && vantaIsExpired(t)) return true;
+    return false;
+  }
   function vtTimeCell(at,label,tip){
     return '<div class="vta-tc vt-time" data-l="'+(label||'TIME')+'" title="'+esc(tip||'')+'">'+vtStamp(at)+'</div>';
   }
@@ -15384,6 +15411,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       swap+=Number(t.swap||0); comm+=Number(t.commission||0);
       const pk=vantaPeakBest(t);
       rows.push({dir:vtSide(t.direction), id:t.id, sym:t.symbol||'GOLF', entry, amt, pnl, val,
+                 done:vtTradeDone(t),
                  start:t.startTime, end:t.endTime,
                  pk:pk, pkLabel:vtSide(t.direction)==='SELL'?'low':'peak', pkGain:vantaPeakValue(t)-amt});
     });
@@ -15570,14 +15598,14 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         out+='<div class="vta-empty">No open position on '+esc(sym)+'. Use BUY to stake and SELL to collect the live value.</div>';
       } else {
         out+=rows.map(r=>
-          '<div class="vta-tr">'
+          '<div class="vta-tr'+(r.done?' is-done':'')+'">'
           +'<div class="vta-tc vt-sym">'+esc(r.sym)+'<span class="vt-id">'+esc(String(r.id))+'</span></div>'
           +'<div class="vta-tc vt-side '+vtSideCls(r.dir)+'">'+r.dir+'</div>'
           +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(r.amt)+'</div>'
           +'<div class="vta-tc vt-ep" data-l="OPEN">'+coinFmt(r.entry)+'</div>'
           +'<div class="vta-tc vt-ar">&rarr;</div>'
-          +'<div class="vta-tc vt-cur" data-l="PRICE">'+coinFmt(price||r.entry)+'</div>'
-          +vtPlCell(r.pnl, null, r.pk>0 ? r.pkLabel+' '+coinFmt(r.pk)+' ('+vtSigned(r.pkGain)+')' : '')
+          +'<div class="vta-tc vt-cur" data-l="PRICE">'+(r.done?coinFmt(r.entry):coinFmt(price||r.entry))+'</div>'
+          +(r.done?vtPlCellDone():vtPlCell(r.pnl, null, r.pk>0 ? r.pkLabel+' '+coinFmt(r.pk)+' ('+vtSigned(r.pkGain)+')' : ''))
           +vtTimeCell(r.start,'TIME','opened '+vtStamp(r.start))
           +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(r.id))+'">SELL</button></div>'
           +'</div>'
@@ -15613,13 +15641,14 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
         };
         vtSetRows(ordBox, all.map(t=>{
           const dTxt=durTxt(t);
-          return '<div class="vta-tr">'
+          const done=vtTradeDone(t);
+          return '<div class="vta-tr'+(done?' is-done':'')+'">'
             +'<div class="vta-tc vt-sym">'+esc(t.symbol||'GOLF')+'<span class="vt-id">'+esc(String(t.id))+'</span></div>'
             +'<div class="vta-tc vt-side '+vtSideCls(t.direction)+'">'+vtSide(t.direction)+'</div>'
             +'<div class="vta-tc vt-vol" data-l="VOL">'+vtVol(t.amount)+'</div>'
             +'<div class="vta-tc vt-price" data-l="PRICE">'+coinFmt(t.entryPrice)+'</div>'
-            +'<div class="vta-tc vt-status" data-l="STATUS">OPEN</div>'
-            +'<div class="vta-tc vt-time" data-l="LEFT" title="Time left — at 00:00 the server closes this position at its own price">'+leftTxt(t)+' <span style="opacity:.5">of '+dTxt+'</span></div>'
+            +'<div class="vta-tc vt-status" data-l="STATUS">'+(done?'FINISHED':'OPEN')+'</div>'
+            +'<div class="vta-tc vt-time" data-l="LEFT" title="'+(done?'Finished — the server recorded the price at 00:00. Press CLOSE to collect it.':'Time left — at 00:00 the server records this position\'s price')+'">'+(done?'00:00':leftTxt(t))+' <span style="opacity:.5">of '+dTxt+'</span></div>'
             +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(t.id))+'">CLOSE</button></div>'
             +'</div>';
         }).join(''));
@@ -15651,10 +15680,10 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 
     const note=$('vtaPosNote');
     if(note) note.textContent=rows.length
-      ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL banks it at the server\'s own price, and so does the end of the timer: when a position\'s duration runs out the server closes it at that same price, so a position that is up banks its gain rather than being lost.'
+      ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL banks it at the server\'s own price. When a position\'s duration runs out the clock stops and its P/L is no longer shown here: the server records the price at that moment, and the row stays listed with a CLOSE button so you can collect exactly that figure whenever you choose.'
       : (__vantaLastSettled
         ? 'This result is saved with its profit banked in your balance — it stays until you press Clear or open a new trade.'
-        : 'Buy while the candle is green, then SELL to collect the live value — or let the timer run out, and the server closes it for you at the live value.');
+        : 'Buy while the candle is green, then SELL to collect the live value — or let the timer run out, and the server records the price at 00:00 for you to collect with CLOSE.');
   }
 
   /* ---------- Wallet: per-coin deposit/withdraw (real config or Not Provided Yet) ---------- */

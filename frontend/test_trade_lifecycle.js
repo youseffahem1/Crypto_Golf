@@ -386,6 +386,36 @@ ok('a trade the server already froze gets NO chart marker',
   /vantaIsFrozen\(trade\)[\s\S]{0,200}createMarker|createMarker[\s\S]{0,120}!vantaIsFrozen/.test(sync || ''));
 ok('a freshly opened trade is not frozen', /frozenProfit:\s*null/.test(src));
 
+console.log('\n[8c] a FINISHED position shows NO P/L at all');
+/* "Stop moving" and "show nothing" are different guarantees, and the user asked
+   for the second one. A frozen number sitting in a column of live numbers is
+   still a number the user has to read and trust; the honest thing is for the
+   cell to be gone, with the amount appearing once, in the result block, when
+   they actually collect it. */
+const plCell = fnBody('vtPlCell') || '';
+ok('there is a separate cell for a finished position', !!fnBody('vtPlCellDone'));
+const plDone = fnBody('vtPlCellDone') || '';
+ok('...and it renders no figure at all',
+  !!plDone && /vt-pl done/.test(plDone) && !/vtSigned/.test(plDone));
+ok('...it is empty, not zero',
+  !!plDone && /done"><\/div>|done"[^>]*><\/div>/.test(plDone.replace(/\s+/g, ' ')));
+ok('the live cell is untouched for a running position',
+  !!plCell && /vtSigned\(pl\)/.test(plCell));
+ok('the positions row picks between them on finished state',
+  /r\.done\?vtPlCellDone\(\):vtPlCell\(/.test(src));
+ok('a finished row is dimmed so it cannot read as live', /vta-tr\.is-done\{/.test(src));
+ok('the empty cell collapses instead of leaving a hole',
+  /\.vt-pl\.done:empty\{/.test(src));
+/* "Finished" must be decided by the CLOCK, not only by the server having
+   answered. The gap between the countdown hitting 00:00 and the frozen figure
+   arriving is real, and in that gap the row must not fall back to a live
+   reading — that is exactly the drift the user complained about. */
+ok('finished is decided by the clock too, not just the server',
+  /function vtTradeDone/.test(src) && /vantaIsExpired\(t\)/.test(src));
+ok('...and counts a frozen position as done', /vantaIsFrozen\(t\)/.test(src));
+ok('the working-orders row stops its countdown and says FINISHED',
+  /'FINISHED':'OPEN'/.test(src) && /\(done\?'00:00':leftTxt\(t\)\)/.test(src));
+
 console.log('\n[9] the countdown is read from the server timestamp');
 const endMs = fnBody('vantaTradeEndMs');
 ok('vantaTradeEndMs exists', !!endMs);
@@ -415,8 +445,14 @@ const promisesLoss = [
   /no deadline/i,
 ];
 promisesLoss.forEach((re, n) => ok('no forfeiture copy #' + (n + 1) + ' ' + re, !re.test(src)));
+/* The note under the table is the user's instruction for what the button does,
+   so it has to describe the real rule. The old copy said the server closes a
+   position when its timer runs out — which is the auto-settlement that was
+   removed, and would tell the user their money moves without them. */
 ok('the positions note explains the real rule',
-  /banks its gain rather than being lost/.test(src));
+  /no longer shown here/.test(src) && /records the price at that moment/.test(src));
+ok('the note does not promise the server auto-closes anything',
+  !/server closes it (at that same price|for you at the live value)/.test(src));
 ok('orders show the time left', /data-l="LEFT"/.test(src));
 
 console.log('\n[11] one PIN, checked by the server, with no Swap prerequisite');
@@ -661,6 +697,56 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
     'before ' + before.toFixed(2) + ', after ' + after.toFixed(2));
   eq('a live position is not flagged frozen', sandbox.isFrozen(live), false);
   eq('a live position has no frozen profit', sandbox.frozenProfit(live), null);
+
+  /* ---- and the finished position is not given a P/L to keep watching ----
+     Rendered, not asserted about: the cell a finished position would have had
+     is built and checked to be empty, so there is no number on screen that
+     could be misread as live. */
+  /* vtPlCls is a const arrow, not a function declaration, so it cannot be
+     lifted with fnSrc — it is written out here from the page's own source. */
+  /* vtPlCls and vtSigned are const arrows, not function declarations, so they
+     cannot be lifted with fnSrc. vtSigned also closes over money(), which is
+     replaced here by a faithful restatement so the cell can be rendered. */
+  const plClsSrc = (src.match(/const\s+vtPlCls\s*=\s*[^\n;]+;/) || [''])[0];
+  const plSignedSrc = (src.match(/const\s+vtSigned\s*=\s*[^\n;]+;/) || [''])[0];
+  ok('the page still defines vtPlCls', !!plClsSrc);
+  ok('the page still defines vtSigned', !!plSignedSrc);
+  const plSrc = [
+    'function money(n){ return "$" + Number(n||0).toFixed(2); }',
+    plClsSrc, plSignedSrc, fnSrc('vtPlCell'), fnSrc('vtPlCellDone'), fnSrc('vtTradeDone'),
+  ].join('\n');
+  let cells;
+  try {
+    /* eslint-disable no-new-func */
+    cells = new Function(plSrc +
+      'return { live: vtPlCell, done: vtPlCellDone, isDone: vtTradeDone };')();
+    ok('the P/L cell builders run', true);
+  } catch (e) {
+    ok('the P/L cell builders run: ' + e.message, false);
+    cells = null;
+  }
+  if (cells) {
+    /* The finished cell must be decided by the page's own helper, so the check
+       is that the SHIPPED code says it is empty — not that this file's regex
+       happens to match. Render it, then count the numbers actually in it. */
+    const live = t;
+    const done = { id: 'live1', symbol: 'GOLF', direction: 'UP', amount: STAKE,
+                   entryPrice: 0.02, expired: true, frozenProfit: 7 };
+    const liveCell = cells.live(12.5, null, 'peak 0.04 (+100.00)');
+    const doneCell = cells.done();
+    ok('a running position still shows its P/L', /vt-pl up/.test(liveCell) && /\+/.test(liveCell));
+    ok('a finished position shows NO P/L', /vt-pl done/.test(doneCell));
+    ok('...no signed number in it', !/[-+]?\$?\d[\d.]*/.test(doneCell.replace(/done/g, '')));
+    ok('...and no peak sub-line either', !/vt-pk/.test(doneCell));
+    ok('a position whose clock has run out counts as done', cells.isDone(done), true);
+    ok('a position still counting down does not', cells.isDone(live), false);
+    /* The decisive one: the finished cell must not change no matter what the
+       market does, because it is the same empty string every time. */
+    const before = doneCell;
+    MARKET.now = 0.50; MARKET.now = 0.01; MARKET.now = 5.00;
+    ok('...and it is byte-identical after the market thrashes',
+      cells.done() === before);
+  }
 
   /* ---- now the user presses CLOSE: the result appears, once ---- */
   const serverProfit = 50.00;   // the frozen figure, paid by the server

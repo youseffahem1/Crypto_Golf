@@ -29,21 +29,61 @@ from . import models, tron_service
 from .config import TRON_REQUIRED_CONFIRMATIONS
 
 
-def poll_all_deposit_addresses(db: Session):
-    addresses = db.query(models.DepositAddress).all()
-    for addr_row in addresses:
+def poll_all_deposit_addresses():
+    """Poll every deposit address, holding a database connection only while
+    there is database work to do.
+
+    The previous shape took a single `db` and did everything inside it: read the
+    address list, then for EACH address make blocking TronGrid calls (15s
+    timeout each) and query/insert alongside them. That held ONE pooled
+    connection for the entire sweep — minutes, once real users exist — and
+    because the sweep ran directly on the event loop it also froze every
+    in-flight HTTP request for that whole time, which is what made Log in appear
+    to hang.
+
+    Now the connection is held only around actual queries:
+
+        read addresses  ->  CLOSE
+        per address:     ->  fetch from TronGrid  (no connection held)
+                       ->  CLOSE
+        open             ->  record/confirm/credit  ->  CLOSE
+
+    A slow or unreachable TronGrid therefore costs zero database connections
+    instead of one for its full timeout. The per-transfer logic below is
+    unchanged: the same rows are looked up, the same commits happen in the same
+    order, and crediting is untouched.
+    """
+    from .database import session_scope
+
+    with session_scope() as db:
+        addresses = db.query(models.DepositAddress).all()
+        # Detach plain values, not ORM instances: a row must not be carried
+        # across the network call while its session is closed.
+        targets = [(row.id, row.user_id, row.address) for row in addresses]
+
+    for address_id, user_id, address in targets:
         try:
-            _poll_one_address(db, addr_row)
+            # Network I/O with NO session open.
+            transfers = tron_service.fetch_trc20_transfers_to(address)
+            if not transfers:
+                continue
+
+            with session_scope() as db:
+                row = db.query(models.DepositAddress).get(address_id)
+                if row is None:
+                    continue
+                _poll_one_address(db, row, transfers)
         except tron_service.TronServiceError as e:
             # A single address's poll failing (e.g. transient TronGrid
             # error) must never stop the others from being checked.
-            print(f"[deposit_monitor] poll failed for {addr_row.address}: {e}")
+            print(f"[deposit_monitor] poll failed for {address}: {e}")
         except Exception as e:
-            print(f"[deposit_monitor] unexpected error for {addr_row.address}: {e}")
+            print(f"[deposit_monitor] unexpected error for {address}: {e}")
 
 
-def _poll_one_address(db: Session, addr_row: models.DepositAddress):
-    transfers = tron_service.fetch_trc20_transfers_to(addr_row.address)
+def _poll_one_address(db: Session, addr_row: models.DepositAddress, transfers=None):
+    if transfers is None:
+        transfers = tron_service.fetch_trc20_transfers_to(addr_row.address)
     if not transfers:
         return
 

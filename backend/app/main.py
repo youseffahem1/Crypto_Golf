@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
-from .database import Base, engine, SessionLocal
+from .database import Base, engine, SessionLocal, session_scope
 from . import models, market_service, deposit_monitor, trading_service
 from .routes import (
     auth_routes, wallet_routes, trade_routes, swap_routes, golf_routes,
@@ -296,15 +296,83 @@ def health():
 # AUTO_SETTLE_ON_EXPIRE opt-in — is not started at all unless that flag is on.
 # =============================================================================
 
+async def _run_loop_work(name: str, work, guard: asyncio.Semaphore):
+    """Run one iteration of a background loop without ever blocking the loop.
+
+    Two failures are being fixed here, and they are different failures.
+
+    1. BLOCKING THE EVENT LOOP. These sweeps are synchronous: SQLAlchemy calls
+       and, in the deposit loop, blocking HTTPS calls to TronGrid with a 15s
+       timeout each. Running them directly inside `async def` means the single
+       event loop thread is *stuck inside* them, and uvicorn cannot accept or
+       serve a single request while that lasts. A user pressing Log in during a
+       poll sees the button spin and nothing come back — which is exactly the
+       "login stuck loading" symptom, and it is not a login bug at all. The work
+       is pushed onto a worker thread so the event loop stays free to serve
+       requests the whole time.
+
+    2. HOLDING A CONNECTION TOO LONG. The work opens a session for its whole
+       duration. A session is a pooled connection held until it is closed, so
+       the longer a sweep runs, the longer it occupies one of a small, fixed
+       number of connections. It is released by `session_scope`, which closes on
+       every exit path.
+
+    The semaphore is the guard against the third failure: overlapping DB work.
+    A loop whose body outlives its own interval — or a slow sweep stacked on a
+    slow sweep — would otherwise open as many concurrent sessions as it can
+    reach, and drain the pool faster than requests can be served. Capping the
+    loops at `_MAX_BACKGROUND_DB_TASKS` keeps their combined footprint small and
+    fixed, leaving the pool's capacity for actual user requests. If an iteration
+    is still running when the next is due, the iteration is SKIPPED, never
+    queued: a stale sweep is worth less than a fresh one, and a queue is how
+    overlapping work accumulates.
+    """
+    if guard.locked():
+        logging.info(f"[{name}] previous iteration still running, skipping this tick")
+        return
+    async with guard:
+        try:
+            await asyncio.to_thread(work)
+        except Exception as e:
+            # A failing sweep must never kill the loop. The work releases its
+            # own session on the way out via session_scope.
+            logging.error(f"[{name}] {e}")
+
+
+# How many background sweeps may hold a database connection at the same time.
+# Kept deliberately small: these are housekeeping, and a user request must never
+# queue behind one. There is no value in raising it — the loops are I/O bound,
+# not throughput bound, so more of them just means more connections held for
+# longer.
+_MAX_BACKGROUND_DB_TASKS = 2
+
+_deposit_guard = asyncio.Semaphore(_MAX_BACKGROUND_DB_TASKS)
+_freeze_guard = asyncio.Semaphore(_MAX_BACKGROUND_DB_TASKS)
+_market_guard = asyncio.Semaphore(1)
+
+
+def _market_tick_once():
+    with session_scope() as db:
+        market_service.tick(db)
+
+
+def _trade_freeze_once():
+    with session_scope() as db:
+        trading_service.freeze_due_trades(db)
+
+
+def _trade_expiry_once():
+    with session_scope() as db:
+        trading_service.expire_due_trades(db)
+
+
+def _deposit_poll_once():
+    deposit_monitor.poll_all_deposit_addresses()
+
+
 async def _market_tick_loop():
     while True:
-        db = SessionLocal()
-        try:
-            market_service.tick(db)
-        except Exception as e:
-            logging.error(f"[market_tick_loop] {e}")
-        finally:
-            db.close()
+        await _run_loop_work("market_tick_loop", _market_tick_once, _market_guard)
         await asyncio.sleep(MARKET_TICK_INTERVAL_SECONDS)
 
 
@@ -316,13 +384,7 @@ async def _trade_freeze_loop():
     down the process with it. A position missed by one iteration is picked up
     by the next one, and by the read endpoints, and by close_trade() itself."""
     while True:
-        db = SessionLocal()
-        try:
-            trading_service.freeze_due_trades(db)
-        except Exception as e:
-            logging.error(f"[trade_freeze_loop] {e}")
-        finally:
-            db.close()
+        await _run_loop_work("trade_freeze_loop", _trade_freeze_once, _freeze_guard)
         await asyncio.sleep(TRADE_EXPIRY_SWEEP_SECONDS)
 
 
@@ -333,51 +395,81 @@ async def _trade_expiry_loop():
     down the process with it, because a half-settled batch is not retried.
     """
     while True:
-        db = SessionLocal()
-        try:
-            trading_service.expire_due_trades(db)
-        except Exception as e:
-            logging.error(f"[trade_expiry_loop] {e}")
-        finally:
-            db.close()
+        await _run_loop_work("trade_expiry_loop", _trade_expiry_once, _freeze_guard)
         await asyncio.sleep(TRADE_EXPIRY_SWEEP_SECONDS)
 
 
 async def _deposit_poll_loop():
     while True:
-        db = SessionLocal()
-        try:
-            deposit_monitor.poll_all_deposit_addresses(db)
-        except Exception as e:
-            logging.error(f"[deposit_poll_loop] {e}")
-        finally:
-            db.close()
+        await _run_loop_work("deposit_poll_loop", _deposit_poll_once, _deposit_guard)
         await asyncio.sleep(DEPOSIT_POLL_INTERVAL_SECONDS)
 
 
 async def _coin_price_refresh_loop():
     """Keeps the multi-coin USD price table fresh from CoinGecko. Never
-    raises; the refresh function itself falls back to last-known prices."""
+    raises; the refresh function itself falls back to last-known prices.
+
+    It takes no session and touches no database: it is a pure network refresh of
+    an in-memory table, so it can never contribute to pool pressure."""
     while True:
         try:
-            market_service.refresh_prices_from_coingecko()
+            await asyncio.to_thread(market_service.refresh_prices_from_coingecko)
         except Exception as e:
             logging.error(f"[coin_price_loop] {e}")
         await asyncio.sleep(COIN_PRICE_REFRESH_SECONDS)
 
 
+# Strong references to the started tasks.
+#
+# `asyncio.create_task` only keeps a *weak* reference to the task it creates: the
+# event loop holds the running task, but nothing holds the task object, so a
+# garbage collection between iterations can collect a live loop mid-`sleep` and
+# silently stop it. A background loop that dies without logging is the hardest
+# kind of outage to notice. Keeping the handles here makes the tasks reachable
+# for the life of the process, and makes shutdown explicit.
+_background_tasks: list[asyncio.Task] = []
+
+
 @app.on_event("startup")
 async def start_background_loops():
-    asyncio.create_task(_market_tick_loop())
-    asyncio.create_task(_deposit_poll_loop())
-    asyncio.create_task(_coin_price_refresh_loop())
+    # Idempotent: uvicorn reloads and a re-entered startup event must not end
+    # up running two copies of every sweep, which would double the connections
+    # held and re-introduce exactly the exhaustion this guards against.
+    if _background_tasks:
+        logging.info("[startup] background loops already running, not starting duplicates")
+        return
+
     # Always on, and always safe: this records the price of a finished position
     # and moves no money. It is what makes the figure shown at 00:00 the figure
     # that is later paid.
-    asyncio.create_task(_trade_freeze_loop())
+    _background_tasks.extend([
+        asyncio.create_task(_market_tick_loop(), name="market_tick_loop"),
+        asyncio.create_task(_deposit_poll_loop(), name="deposit_poll_loop"),
+        asyncio.create_task(_coin_price_refresh_loop(), name="coin_price_refresh_loop"),
+        asyncio.create_task(_trade_freeze_loop(), name="trade_freeze_loop"),
+    ])
+
     # Opt-in only. Off by default, and that is the point: a trade's duration
     # ending settles nothing. With this line absent, no background task in this
     # process can turn a past `closes_at` into a closed trade — the user
     # closing the position is the only event that books a result.
     if AUTO_SETTLE_ON_EXPIRE:
-        asyncio.create_task(_trade_expiry_loop())
+        _background_tasks.append(asyncio.create_task(_trade_expiry_loop(), name="trade_expiry_loop"))
+
+    logging.info(f"[startup] {len(_background_tasks)} background loop(s) started")
+
+
+@app.on_event("shutdown")
+async def stop_background_loops():
+    """Cancel the sweeps and let them release their sessions.
+
+    Each loop is suspended inside `asyncio.sleep`, so cancellation raises at the
+    await point. The `finally` in `session_scope` still runs if an iteration is
+    in flight inside its worker thread, and the thread is joined before this
+    returns, so no connection outlives the shutdown.
+    """
+    for task in _background_tasks:
+        task.cancel()
+    if _background_tasks:
+        await asyncio.gather(*_background_tasks, return_exceptions=True)
+    _background_tasks.clear()

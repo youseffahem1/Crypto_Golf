@@ -700,9 +700,22 @@ check("the 'running out of time is not a settlement' rule is documented",
       "RUNNING OUT OF TIME IS NOT A SETTLEMENT" in module_src, True)
 
 main_src = open(os.path.join(os.path.dirname(__file__), "app", "main.py"), encoding="utf-8").read()
-check("the background loop is not started unconditionally",
-      re.search(r"asyncio\.create_task\(_trade_expiry_loop\(\)\)", main_src) is not None
-      and "if AUTO_SETTLE_ON_EXPIRE:" in main_src, True)
+# The settlement loop must exist in the source, but may only ever be created
+# inside the AUTO_SETTLE_ON_EXPIRE guard. Matching on the create_task call
+# alone is not enough (it could be hoisted out of the guard), and matching the
+# guard alone is not enough either (the call could be gone entirely) — so this
+# pins both, and pins that there is exactly one such call.
+_expiry_creations = re.findall(r"asyncio\.create_task\(\s*_trade_expiry_loop\(\)", main_src)
+check("the settlement loop is created exactly once in the source",
+      len(_expiry_creations), 1)
+_guard = re.search(r"if AUTO_SETTLE_ON_EXPIRE:(.*?)(?:\n\n\n|\Z)", main_src, re.S)
+check("...and only inside the AUTO_SETTLE_ON_EXPIRE guard",
+      bool(_guard) and bool(re.search(r"asyncio\.create_task\(\s*_trade_expiry_loop\(\)", _guard.group(1))),
+      True)
+check("AUTO_SETTLE_ON_EXPIRE defaults to off",
+      re.search(r'AUTO_SETTLE_ON_EXPIRE\s*=\s*os\.environ\.get\(\s*"AUTO_SETTLE_ON_EXPIRE"\s*,\s*"0"',
+                open(os.path.join(os.path.dirname(__file__), "app", "config.py"), encoding="utf-8").read()) is not None,
+      True)
 check("main.py documents that no timer settles a trade",
       "NO TIMER SETTLES A TRADE" in main_src, True)
 

@@ -8206,25 +8206,36 @@ async function vantaHandleEntry() {
     render();
   }
 
-  /* ---------- Prices ---------- */
+  /* ---------- Prices ----------
+     CoinGecko is fetched from OUR backend, never from the browser.
+
+     api.coingecko.com sends no Access-Control-Allow-Origin, so a direct
+     browser call from the Vercel origin is always refused by the browser. The
+     only ways to "fix" that in the client are to disable security or bolt on a
+     third-party proxy, so the request moved to the server instead — which
+     already performs the identical call on a timer and caches the result.
+
+     This is fire-and-forget and MUST stay that way: nothing here is awaited
+     before anything else runs, and the catch degrades to the last known prices
+     rather than surfacing an error. Auth must never wait on a price feed. */
   var cgTimer=null;
   function vwdRefreshPrices(){
     if(!grid || document.hidden && !pageEl.classList.contains('vw-active')) return;
-    var ids=[],map={}; VWD_ORDER.forEach(function(s){ var id=VWD_CG[s]; if(id){ ids.push(id); map[id]=s; } });
-    var url='https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd&include_24hr_change=true&t='+Date.now();
-    fetch(url).then(function(res){ return res.json(); }).then(function(data){
-      var np={}, prev={};
-      for(var id in map){ if(data&&data[id]!=null){
-        var sym=map[id]; var p=Number(data[id].usd)||0; var ch=Number(data[id].usd_24h_change);
-        if(p>0) np[sym]=p;
-        prev[sym]= (typeof ch==='number'&&!isNaN(ch))?ch:null;
-      }}
-      if(Object.keys(np).length){ state.prices=np; }
-      state.prev=Object.assign(state.prev,prev);
+    fetch('/api/market/external-prices',{headers:{'Accept':'application/json'}})
+      .then(function(res){ return res.ok?res.json():null; })
+      .then(function(data){
+      if(!data||!data.prices) return;
+      var prev=state.prev;
+      for(var sym in data.prices){
+        var p=Number(data.prices[sym])||0;
+        if(p>0) state.prices[sym]=p;
+      }
+      state.prev=Object.assign(prev,prev);
       var lu=$('vwLastUpdate'); if(lu){ lu.textContent='Live \u00B7 '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); lu.hidden=false; }
       render(); if(!modal.hidden) syncModal();
     }).catch(function(){
-      render();
+      /* CoinGecko unreachable: keep the last known prices and carry on.
+         Never propagates, so it can never delay or block login. */
     });
   }
   window.vantaWalletPrices = function(){ vwdRefreshPrices(); };

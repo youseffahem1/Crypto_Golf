@@ -61,6 +61,42 @@ def _add_column(table, column, decl):
     logging.info(f"[migrate] added {table}.{column}")
 
 
+def _timestamp_decl():
+    """A timestamp column declaration that is legal on every backend.
+
+    `DATETIME` is not a PostgreSQL type -- it is a MySQL type that SQLite also
+    happens to accept through its loose type affinity. Emitting it in an ALTER
+    TABLE therefore crashes startup on Render's PostgreSQL with
+
+        psycopg.errors.UndefinedObject: type "datetime" does not exist
+
+    and because a failed statement poisons the surrounding transaction, it takes
+    the rest of the migration batch down with it, so a database can be left
+    half-migrated.
+
+    The type chosen here is TIMESTAMP WITHOUT TIME ZONE, which is not just
+    "a timestamp that works": it is precisely what SQLAlchemy's DateTime
+    renders to on PostgreSQL, and precisely what this codebase stores. Every
+    timestamp in the schema is a NAIVE UTC value from datetime.utcnow()
+    (created_at, opened_at, closes_at, settled_at ...). Declaring this column
+    WITH TIME ZONE would make it the single column in `trades` that hands the
+    ORM a timezone-aware datetime, and the first naive comparison against it
+    -- e.g. `trade.closes_at <= datetime.utcnow()` -- would raise TypeError
+    instead of returning a bool. Matching the model mapping is the point, not a
+    detail: the column and the ORM attribute have to agree.
+
+    MySQL/MariaDB keep DATETIME because there it is the native spelling, and
+    because MySQL's own TIMESTAMP is a 1970-2038 range-limited type that
+    converts out of the session time zone -- both of which we do not want.
+    """
+    dialect = engine.dialect.name
+    if dialect in ("mysql", "mariadb"):
+        return "DATETIME"
+    # TIMESTAMP is the SQL standard spelling; PostgreSQL reads it as WITHOUT
+    # TIME ZONE, and SQLite accepts it with the same affinity DATETIME had.
+    return "TIMESTAMP WITHOUT TIME ZONE"
+
+
 # Dialects that can change an existing column's type constraints in place.
 # SQLite (the local/dev default) has no boolean type and no ALTER COLUMN at
 # all, so on a SQLite database the broken `DEFAULT 0` is already the correct
@@ -186,7 +222,16 @@ def _migrate():
         # nothing left to freeze.
         ("trades", "frozen_exit_price", "FLOAT"),
         ("trades", "frozen_profit", "FLOAT"),
-        ("trades", "frozen_at", "DATETIME"),
+        # A TIMESTAMP, not a bare DATETIME: PostgreSQL has no DATETIME type, so
+        # that declaration aborted startup on Render with
+        #   psycopg.errors.UndefinedObject: type "datetime" does not exist
+        # and a failed ALTER poisons its transaction, taking the rest of this
+        # batch with it. Resolved through the dialect so the column is legal on
+        # every backend and the type still matches the model, which maps this
+        # to SQLAlchemy DateTime (i.e. TIMESTAMP WITHOUT TIME ZONE on
+        # PostgreSQL) holding a naive UTC datetime.utcnow() like every other
+        # timestamp in the schema.
+        ("trades", "frozen_at", _timestamp_decl()),
     ]:
         _add_column(table, column, decl)
 

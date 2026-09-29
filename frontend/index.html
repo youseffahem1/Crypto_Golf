@@ -5231,9 +5231,9 @@ function createMarker(trade) {
             </div>
 
             <div class="trade-details">
-                <div class="trade-id">${trade.id}</div>
-                <div class="trade-time">${formatTime(trade.duration)}</div>
-                <div class="trade-price">${trade.direction} • ${price(trade.entryPrice)}</div>
+            <div class="trade-id">${trade.id}</div>
+            <div class="trade-time" data-marktime="${trade.id}">${formatTime(vantaTimeLeft(trade))}</div>
+            <div class="trade-price">${trade.direction} • ${price(trade.entryPrice)}</div>
                 <div class="trade-signal">${trade.direction === "UP" ? "GREEN ▲ WITHDRAW" : "RED ▼ SELL"}</div>
             </div>
         </div>
@@ -5524,6 +5524,36 @@ function updateTrades() {
                 formatTime(
                     remaining
                 );
+
+        }
+
+
+        /* The SAME figure, on the chart marker.
+
+           This used to render `formatTime(trade.duration)` — the duration, not
+           the time left — so a 60-second trade drew a permanent "01:00" and
+           nothing ever changed it. It read as a countdown that had frozen,
+           while in fact it had never been a countdown at all: a static label
+           of how long the trade was.
+
+           It is now the remaining time against the same server `closes_at`
+           the list row uses, and it is written from here — the loop that
+           already exists — rather than from a new interval. One timer, one
+           source of truth, and a re-render of the marker cannot restart it. */
+        const markTime =
+            document.querySelector(
+                `[data-marktime="${trade.id}"]`
+            );
+
+
+        if (markTime) {
+
+            markTime.textContent =
+                expired
+                    ? "00:00"
+                    : formatTime(
+                        remaining
+                    );
 
         }
 
@@ -14157,10 +14187,13 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 .vt-pl.up{color:var(--up)}
 .vt-pl.down{color:var(--down)}
 .vt-pl.flat{color:var(--muted)}
-/* A finished position's P/L cell: deliberately empty and collapsed. It is not
-   a zero, and it is not a frozen reading — there is no live figure to show, so
-   the column collapses rather than leaving a hole where a number used to be. */
-.vt-pl.done:empty{grid-area:auto;width:0;min-width:0;padding:0;margin:0;border:0;overflow:hidden}
+/* A finished position's P/L: the figure is still drawn, but dimmed and marked
+   with a lock, because "frozen" means held still — not hidden. */
+.vt-pl.done{opacity:.75;cursor:default}
+.vt-lock{font-style:normal;font-size:9px;margin-left:3px;opacity:.7;vertical-align:1px}
+/* The brief pre-freeze window. Intentionally static: no spinner, no pulse, no
+   number — a finished position must never show something that changes. */
+.vt-pl.freezing{font-size:10px;letter-spacing:.04em;color:var(--muted2);text-align:center}
 .vta-tr.is-done{opacity:.72}
 .vta-tr.is-done .vt-status{color:var(--muted2)}
 .vt-time{color:var(--muted2);font-size:9.5px}
@@ -15247,16 +15280,35 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
   function vtPlCell(pl,label,sub){
     return '<div class="vta-tc vt-pl '+vtPlCls(pl)+'" data-l="'+(label||'P/L')+'">'+vtSigned(pl)+(sub?'<i class="vt-pk" title="best price this trade reached">'+sub+'</i>':'')+'</div>';
   }
-  /* The P/L of a position whose duration is over. It is NOT drawn.
-     A live position's P/L is recomputed from the market on every tick, which is
-     the whole point while it runs. Once the clock reaches 00:00 that number
-     stops meaning anything: the trade is finished, it is waiting to be
-     collected, and the amount the user will be paid is fixed by the server. So
-     this cell stays empty rather than showing a figure that either drifts or
-     sits frozen looking like a live reading. The finished amount is shown once,
-     in the result block, when the user collects it. */
-  function vtPlCellDone(label){
-    return '<div class="vta-tc vt-pl done" data-l="'+(label||'P/L')+'" title="finished — collected with CLOSE"></div>';
+  /* The P/L of a position whose duration is over: the FROZEN figure, held.
+
+     An earlier version drew this cell EMPTY, on the reading that a finished
+     position's P/L should simply not be shown. That was wrong, and the user was
+     clear about it: "the profit is frozen — it doesn't go up or down, because
+     the trade already finished." What was wanted was for the number to STOP
+     MOVING, not for it to disappear. Blanking the cell also made a finished
+     position impossible to judge at a glance, and left an empty column where
+     the rest of the table has figures.
+
+     So the number is drawn — from the server's frozen record, never from the
+     live price — and marked `.done` so it is dimmed and carries a lock. It is
+     the same figure the user is paid on CLOSE, so what they read here is
+     exactly what they collect. */
+  function vtPlCellFrozen(pl,label){
+    const n=Number(pl);
+    return '<div class="vta-tc vt-pl '+vtPlCls(n)+' done" data-l="'+(label||'P/L')+'"'
+      +' title="Frozen at 00:00 — this is the amount you collect with CLOSE. It will not change.">'
+      +vtSigned(n)+'<i class="vt-lock" title="locked at 00:00">\u{1F512}</i></div>';
+  }
+
+  /* The narrow window between the clock reaching 00:00 and the server's frozen
+     record coming back. The row is already finished, so drawing the live P/L
+     here would be the one place a finished position still moved — a number that
+     changes for a second or two after 00:00 and then locks. The placeholder is
+     deliberately static: no spinner, no ticker, nothing to read as a figure. */
+  function vtPlCellFreezing(){
+    return '<div class="vta-tc vt-pl freezing done" data-l="P/L"'
+      +' title="00:00 reached — waiting for the server to record this price">FREEZING…</div>';
   }
   /* True once a position's duration is over, whether the server has delivered
      the frozen figure yet or not. The narrow window between the two must not
@@ -15421,8 +15473,25 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       invested+=amt; value+=val;
       swap+=Number(t.swap||0); comm+=Number(t.commission||0);
       const pk=vantaPeakBest(t);
+      /* A finished position's figure is the server's FROZEN one — never
+         recomputed from the live price. It is read here, once, from the same
+         field every other surface reads, so this row cannot drift away from
+         the sum the user is actually paid when they press CLOSE.
+
+         Until the server has frozen it, `frozenProfit` is null and the row
+         still shows the live figure: that is the brief window between the
+         countdown reaching 00:00 and the freeze landing, not an error. */
+      const fp=(typeof vantaFrozenProfit==='function')?vantaFrozenProfit(t):null;
       rows.push({dir:vtSide(t.direction), id:t.id, sym:t.symbol||'GOLF', entry, amt, pnl, val,
                  done:vtTradeDone(t),
+                 /* `frozen_profit` from the server IS the signed P/L already.
+                    The backend stores `payout - amount` (see _payout_for_price:
+                    it returns `(payout, round(payout - amount, 6))` and freeze
+                    stores that second value). So the stake must NOT be
+                    subtracted here a second time — doing so showed a $100
+                    stake frozen at +$100 as "$0.00", and a genuine -$50 as
+                    -$150. It is used exactly as the server sends it. */
+                 fpnl:(fp===null||fp===undefined)?null:Number(fp),
                  start:t.startTime, end:t.endTime,
                  pk:pk, pkLabel:vtSide(t.direction)==='SELL'?'low':'peak', pkGain:vantaPeakValue(t)-amt});
     });
@@ -15616,7 +15685,20 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           +'<div class="vta-tc vt-ep" data-l="OPEN">'+coinFmt(r.entry)+'</div>'
           +'<div class="vta-tc vt-ar">&rarr;</div>'
           +'<div class="vta-tc vt-cur" data-l="PRICE">'+(r.done?coinFmt(r.entry):coinFmt(price||r.entry))+'</div>'
-          +(r.done?vtPlCellDone():vtPlCell(r.pnl, null, r.pk>0 ? r.pkLabel+' '+coinFmt(r.pk)+' ('+vtSigned(r.pkGain)+')' : ''))
+          /* A finished position shows its FROZEN result, held still.
+
+             "Finished" means the money stopped moving, not that the number
+             should disappear. The figure shown is the one the server recorded
+             at 00:00 and the one that will be paid on CLOSE, drawn dimmed with
+             a lock so it cannot be misread as live.
+
+             `fpnl` is null only in the narrow window between 00:00 and the
+             freeze round-tripping. It is NOT filled in with the live P/L: a
+             live number there is the single worst case, because the row is
+             already "finished" and its figure would visibly jump before
+             locking. A static placeholder is shown instead. */
+          +(r.done ? (r.fpnl===null||r.fpnl===undefined ? vtPlCellFreezing() : vtPlCellFrozen(r.fpnl))
+                   : vtPlCell(r.pnl, null, r.pk>0 ? r.pkLabel+' '+coinFmt(r.pk)+' ('+vtSigned(r.pkGain)+')' : ''))
           +vtTimeCell(r.start,'TIME','opened '+vtStamp(r.start))
           +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(r.id))+'">SELL</button></div>'
           +'</div>'
@@ -15691,7 +15773,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 
     const note=$('vtaPosNote');
     if(note) note.textContent=rows.length
-      ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL banks it at the server\'s own price. When a position\'s duration runs out the clock stops and its P/L is no longer shown here: the server records the price at that moment, and the row stays listed with a CLOSE button so you can collect exactly that figure whenever you choose.'
+      ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL banks it at the server\'s own price. When a position\'s duration runs out the clock stops and its P/L is FROZEN at the price the server recorded at that moment: the figure stays exactly as it is, it will not rise or fall again, and the row stays listed with a SELL button so you can collect precisely that amount whenever you choose.'
       : (__vantaLastSettled
         ? 'This result is saved with its profit banked in your balance — it stays until you press Clear or open a new trade.'
         : 'Buy while the candle is green, then SELL to collect the live value — or let the timer run out, and the server records the price at 00:00 for you to collect with CLOSE.');

@@ -386,35 +386,184 @@ ok('a trade the server already froze gets NO chart marker',
   /vantaIsFrozen\(trade\)[\s\S]{0,200}createMarker|createMarker[\s\S]{0,120}!vantaIsFrozen/.test(sync || ''));
 ok('a freshly opened trade is not frozen', /frozenProfit:\s*null/.test(src));
 
-console.log('\n[8c] a FINISHED position shows NO P/L at all');
-/* "Stop moving" and "show nothing" are different guarantees, and the user asked
-   for the second one. A frozen number sitting in a column of live numbers is
-   still a number the user has to read and trust; the honest thing is for the
-   cell to be gone, with the amount appearing once, in the result block, when
-   they actually collect it. */
+console.log('\n[8c] a FINISHED position shows a FROZEN P/L — held, not hidden');
+/* This block used to assert the opposite, and asserted it confidently: that a
+   finished position draws NO figure at all. That was a misreading of the
+   requirement. "The profit must not go up or down" is a promise that the number
+   STOPS MOVING — it is not a request to delete the number. Blanking the cell
+   also left an empty column in a table where every other row had figures, and
+   made a finished position impossible to judge at a glance.
+
+   So: the figure is drawn, from the server's frozen record, and it is marked so
+   it cannot be mistaken for a live reading. */
 const plCell = fnBody('vtPlCell') || '';
-ok('there is a separate cell for a finished position', !!fnBody('vtPlCellDone'));
-const plDone = fnBody('vtPlCellDone') || '';
-ok('...and it renders no figure at all',
-  !!plDone && /vt-pl done/.test(plDone) && !/vtSigned/.test(plDone));
-ok('...it is empty, not zero',
-  !!plDone && /done"><\/div>|done"[^>]*><\/div>/.test(plDone.replace(/\s+/g, ' ')));
+ok('there is a separate cell for a finished position', !!fnBody('vtPlCellFrozen'));
+const plFrozen = fnBody('vtPlCellFrozen') || '';
+ok('...and it DOES render the figure', !!plFrozen && /vtSigned\(n\)/.test(plFrozen));
+ok('...kept in the up/down/flat colouring of a real number',
+  !!plFrozen && /vtPlCls\(n\)/.test(plFrozen) && /vt-pl /.test(plFrozen));
+ok('...marked done so it reads as locked, not live', /done/.test(plFrozen));
+ok('...with a lock, and a tooltip saying it will not change',
+  !!plFrozen && /vt-lock/.test(plFrozen) && /will not change/.test(plFrozen));
 ok('the live cell is untouched for a running position',
   !!plCell && /vtSigned\(pl\)/.test(plCell));
 ok('the positions row picks between them on finished state',
-  /r\.done\?vtPlCellDone\(\):vtPlCell\(/.test(src));
+  /r\.done\s*\?[\s\S]{0,120}vtPlCellFrozen\(r\.fpnl\)/.test(src)
+  && /r\.done\s*\?[\s\S]{0,200}vtPlCellFreezing\(\)/.test(src));
 ok('a finished row is dimmed so it cannot read as live', /vta-tr\.is-done\{/.test(src));
-ok('the empty cell collapses instead of leaving a hole',
-  /\.vt-pl\.done:empty\{/.test(src));
+ok('the frozen cell is dimmed but NOT collapsed to nothing',
+  /\.vt-pl\.done\{opacity/.test(src) && !/\.vt-pl\.done:empty\{/.test(src));
+/* The figure has to come from the frozen record, or "frozen" is a lie: a number
+   recomputed from the live price on every tick would still be drifting. */
+ok('the frozen figure is read from the server, not the live price',
+  /vantaFrozenProfit\(t\)/.test(src) && /fpnl:/.test(src));
+/* `frozen_profit` is ALREADY signed P/L. The backend stores `payout - amount`
+   (trading_service: `_payout, profit = _payout_for_price(...)`, and
+   `_payout_for_price` returns `(payout, round(payout - amount, 6))`).
+   Subtracting the stake again in the client showed a $100 stake frozen at
+   +$100 as "$0.00" and a real -$50 as -$150 — the number on screen did not
+   match the number paid. So the field is used verbatim. */
+const fpnlSrc = (src.match(/fpnl:[^\n]*/) || [''])[0];
+ok('the frozen P/L is used exactly as the server sends it',
+  /fpnl:[^\n]*Number\(fp\)/.test(fpnlSrc) && !/fpnl:[^\n]*fp\s*-/.test(fpnlSrc), fpnlSrc);
+ok('...the stake is not subtracted from it a second time',
+  !/fpnl:[^\n]*-\s*amt/.test(src) && !/frozen\w*\(\s*[^)]*-\s*amt\s*\)/.test(src));
+/* The invariant that actually matters, checked by evaluating the SHIPPED
+   `fpnl:` expression rather than a restatement of it: whatever the server calls
+   the frozen profit, the client must draw exactly that and must not touch it.
+   No payout formula is modelled here on purpose — modelling it would risk
+   baking in a guess and would test the wrong thing. */
+const fpnlExpr = (src.match(/fpnl:([^\n]*)/) || [, ''])[1].replace(/,\s*$/, '').trim();
+let fpnlFn = null;
+try {
+  /* eslint-disable no-new-func */
+  fpnlFn = new Function('fp', 'amt', 'return ' + fpnlExpr + ';');
+  ok('the shipped fpnl expression evaluates', true, fpnlExpr);
+} catch (e) {
+  ok('the shipped fpnl expression evaluates: ' + e.message, false, fpnlExpr);
+}
+if (fpnlFn) {
+  /* Server figures, including the ones that exposed the bug. */
+  [0, 1, -1, 50, -50, 100, -100, 1234.56, -9876.54, 0.005, -0.005].forEach((ff) => {
+    eq('a server frozen_profit of ' + ff + ' is drawn unchanged',
+      fpnlFn(ff, 100), ff);
+  });
+  /* And the stake never enters into it, whatever it is. */
+  [0, 1, 100, 500, 1e6].forEach((a) => {
+    eq('the stake of $' + a + ' does not alter a frozen_profit of 100',
+      fpnlFn(100, a), 100);
+  });
+  /* The old form erased a real profit: a server figure equal to the stake
+     produced exactly $0.00 on screen. Pure client arithmetic, no model needed. */
+  ok('...and the old code really would have erased it (shown as $0.00)',
+    Math.abs(100 - 100) < 1e-9 && Math.abs(100) > 1e-9, 'frozen_profit 100 on a $100 stake');
+  eq('an unfrozen trade yields null, not a live guess', fpnlFn(null, 100), null);
+  eq('...and undefined likewise', fpnlFn(undefined, 100), null);
+  eq('...but a zero-profit freeze is kept as 0, not treated as missing',
+    fpnlFn(0, 100), 0);
+}
+/* And a completed position must fall back to a STABLE placeholder, never to the
+   live P/L, in the brief window before the freeze round-trips. A live reading
+   there is exactly the "it goes up and down" the user complained about. */
+ok('a finished position never falls back to a live P/L',
+  !/fpnl===null\?r\.pnl:r\.fpnl/.test(src));
+ok('...it shows a stable "freezing" state instead',
+  /FREEZING/i.test(src));
 /* "Finished" must be decided by the CLOCK, not only by the server having
    answered. The gap between the countdown hitting 00:00 and the frozen figure
-   arriving is real, and in that gap the row must not fall back to a live
-   reading — that is exactly the drift the user complained about. */
+   arriving is real. */
 ok('finished is decided by the clock too, not just the server',
   /function vtTradeDone/.test(src) && /vantaIsExpired\(t\)/.test(src));
 ok('...and counts a frozen position as done', /vantaIsFrozen\(t\)/.test(src));
 ok('the working-orders row stops its countdown and says FINISHED',
   /'FINISHED':'OPEN'/.test(src) && /\(done\?'00:00':leftTxt\(t\)\)/.test(src));
+/* Every open position gets its own row, so a second one that finishes appears
+   below the first rather than replacing it. */
+ok('positions are rendered per-trade, so each finished trade gets its own row',
+  /rows\.map\(r=>/.test(src) && /r\.id/.test(src));
+
+console.log('\n[8d] the COUNTDOWN actually counts down (it was stuck at 01:00)');
+/* The bug: the chart marker rendered `formatTime(trade.duration)` — the DURATION,
+   not the time left. A 60-second trade therefore drew a permanent "01:00" and
+   nothing ever rewrote it. It was not a countdown that had frozen; it had never
+   been a countdown. Every assertion below is against the deadline arithmetic,
+   which is the only thing that should be on that line. */
+ok('the chart marker shows the time LEFT, not the duration',
+  /data-marktime=/.test(src) && /formatTime\(vantaTimeLeft\(trade\)\)/.test(src));
+ok('...and the duration is never drawn as the remaining time',
+  !/class="trade-time">\$\{formatTime\(trade\.duration\)\}/.test(src));
+ok('the marker countdown is updated from the existing loop',
+  /\[data-marktime=/.test(src) && /markTime\.textContent/.test(src));
+/* One timer only. If the fix had added its own setInterval, every re-render
+   would stack another one and the page would leak timers. */
+const updateTradesBody = (src.split('function updateTrades')[1] || '').split('\nfunction ')[0] || '';
+ok('the marker countdown added no new interval', !/setInterval\(/.test(updateTradesBody));
+ok('...it is written from the loop that already exists',
+  /function updateTrades/.test(src) && /requestAnimationFrame/.test(src));
+ok('updateTrades drives the countdown from server closes_at only',
+  /vantaTimeLeft\(\s*trade,\s*now\s*\)/.test(src) && /vantaTradeEndMs/.test(src));
+
+/* The real behaviour, on a real 60-second trade against a real server stamp.
+   The page's OWN deadline chain is used — vantaParseUTC -> vantaTradeEndMs ->
+   vantaTimeLeft — lifted verbatim, so this cannot pass by re-implementing the
+   rule more leniently than the app does. */
+const chainSrc = [fnSrc('vantaParseUTC'), fnSrc('vantaTradeEndMs'), fnSrc('vantaTimeLeft'),
+                  'function formatTime(s){s=Math.max(0,Math.floor(Number(s)||0));' +
+                  'const m=Math.floor(s/60);return String(m).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}',
+                  'return { vantaParseUTC, vantaTradeEndMs, vantaTimeLeft, formatTime };'
+                 ].join('\n');
+let chain = null;
+try { chain = new Function(chainSrc)(); ok('the real deadline chain runs', true); }
+catch (e) { ok('the real deadline chain runs: ' + e.message, false); }
+
+/* A fixed, real instant, as the server would stamp it: naive UTC, no zone
+   suffix. Any local-time parsing bug would show up as a wrong remaining time. */
+const OPEN_MS = Date.UTC(2026, 8, 29, 12, 0, 0);
+const naiveUTC = (ms) => new Date(ms).toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
+
+/* msElapsed = how far past the open we are looking. isRefresh = the page was
+   reloaded part-way in, so the deadline must come from the server stamp rather
+   than from a fresh local 60s. */
+function countdownAt(msElapsed, isRefresh) {
+  if (!chain) return NaN;
+  const openedAt = OPEN_MS + (isRefresh ? 0 : 0);
+  const closesAt = OPEN_MS + 60000;               // server: opened_at + 60s
+  const st = {
+    opened_at: naiveUTC(openedAt),
+    closes_at: naiveUTC(closesAt),
+    duration_seconds: 60
+  };
+  const endTime = chain.vantaTradeEndMs(st);
+  /* Look at the wall clock msElapsed after the open. The RAW seconds are
+     compared, not a re-formatted string: slicing "01:00" would give the wrong
+     quantity entirely and would hide the very bug being tested. */
+  const nowMs = OPEN_MS + msElapsed;
+  return Number(chain.vantaTimeLeft({ endTime }, nowMs));
+}
+
+ok('a 60s trade reads 01:00 at the moment it opens', countdownAt(0) === 60,
+  countdownAt(0));
+ok('...00:59 after one second', countdownAt(1000) === 59, countdownAt(1000));
+ok('...00:55 after five seconds  <-- the reported symptom', countdownAt(5000) === 55,
+  countdownAt(5000));
+ok('...00:30 at the halfway point', countdownAt(30000) === 30, countdownAt(30000));
+ok('...00:01 at one second left', countdownAt(59000) === 1, countdownAt(59000));
+ok('...and exactly 00:00 at expiry, not a negative or a 59', countdownAt(60000) === 0,
+  countdownAt(60000));
+ok('...staying at 00:00 and never counting past it', countdownAt(120000) === 0,
+  countdownAt(120000));
+/* A page refresh must resume, not restart. This is what a stale re-render used
+   to get wrong, and it is why the deadline is the SERVER's stamp. */
+ok('a refresh resumes from the server deadline instead of restarting at 60',
+  countdownAt(20000, true) === 40, countdownAt(20000, true));
+/* And the countdown must be monotonic: it can only fall. */
+let prevCount = Infinity, monotonic = true;
+for (let s = 0; s <= 60; s++) { const c = countdownAt(s * 1000); if (c > prevCount) monotonic = false; prevCount = c; }
+ok('the countdown never increases', monotonic, true);
+/* Reaching 00:00 must NOT settle anything. */
+ok('expiry is presentation only — no close, no settle call on the path',
+  !/vantaIsExpired[\s\S]{0,80}closeTrade/.test(updateTradesBody));
+ok('the frozen P/L is still left to the server', /vantaFrozenProfit/.test(src));
 
 console.log('\n[9] the countdown is read from the server timestamp');
 const endMs = fnBody('vantaTradeEndMs');
@@ -450,7 +599,8 @@ promisesLoss.forEach((re, n) => ok('no forfeiture copy #' + (n + 1) + ' ' + re, 
    position when its timer runs out — which is the auto-settlement that was
    removed, and would tell the user their money moves without them. */
 ok('the positions note explains the real rule',
-  /no longer shown here/.test(src) && /records the price at that moment/.test(src));
+  /is FROZEN at the price the server recorded/.test(src)
+  && /will not rise or fall again/.test(src));
 ok('the note does not promise the server auto-closes anything',
   !/server closes it (at that same price|for you at the live value)/.test(src));
 ok('orders show the time left', /data-l="LEFT"/.test(src));
@@ -698,54 +848,71 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
   eq('a live position is not flagged frozen', sandbox.isFrozen(live), false);
   eq('a live position has no frozen profit', sandbox.frozenProfit(live), null);
 
-  /* ---- and the finished position is not given a P/L to keep watching ----
-     Rendered, not asserted about: the cell a finished position would have had
-     is built and checked to be empty, so there is no number on screen that
-     could be misread as live. */
-  /* vtPlCls is a const arrow, not a function declaration, so it cannot be
-     lifted with fnSrc — it is written out here from the page's own source. */
+  /* ---- and the finished position shows a FROZEN figure that cannot move ----
+     Rendered, not asserted about: the cell a finished position gets is built
+     and then checked for the one property that matters — it is the same string
+     no matter what the market does afterwards. */
   /* vtPlCls and vtSigned are const arrows, not function declarations, so they
      cannot be lifted with fnSrc. vtSigned also closes over money(), which is
-     replaced here by a faithful restatement so the cell can be rendered. */
+     restated here so the cell can be rendered. */
   const plClsSrc = (src.match(/const\s+vtPlCls\s*=\s*[^\n;]+;/) || [''])[0];
   const plSignedSrc = (src.match(/const\s+vtSigned\s*=\s*[^\n;]+;/) || [''])[0];
   ok('the page still defines vtPlCls', !!plClsSrc);
   ok('the page still defines vtSigned', !!plSignedSrc);
   const plSrc = [
     'function money(n){ return "$" + Number(n||0).toFixed(2); }',
-    plClsSrc, plSignedSrc, fnSrc('vtPlCell'), fnSrc('vtPlCellDone'), fnSrc('vtTradeDone'),
+    plClsSrc, plSignedSrc, fnSrc('vtPlCell'), fnSrc('vtPlCellFrozen'),
+    fnSrc('vtPlCellFreezing'), fnSrc('vtTradeDone'),
   ].join('\n');
   let cells;
   try {
     /* eslint-disable no-new-func */
     cells = new Function(plSrc +
-      'return { live: vtPlCell, done: vtPlCellDone, isDone: vtTradeDone };')();
+      'return { live: vtPlCell, frozen: vtPlCellFrozen, freezing: vtPlCellFreezing, isDone: vtTradeDone };')();
     ok('the P/L cell builders run', true);
   } catch (e) {
     ok('the P/L cell builders run: ' + e.message, false);
     cells = null;
   }
   if (cells) {
-    /* The finished cell must be decided by the page's own helper, so the check
-       is that the SHIPPED code says it is empty — not that this file's regex
-       happens to match. Render it, then count the numbers actually in it. */
     const live = t;
     const done = { id: 'live1', symbol: 'GOLF', direction: 'UP', amount: STAKE,
                    entryPrice: 0.02, expired: true, frozenProfit: 7 };
     const liveCell = cells.live(12.5, null, 'peak 0.04 (+100.00)');
-    const doneCell = cells.done();
-    ok('a running position still shows its P/L', /vt-pl up/.test(liveCell) && /\+/.test(liveCell));
-    ok('a finished position shows NO P/L', /vt-pl done/.test(doneCell));
-    ok('...no signed number in it', !/[-+]?\$?\d[\d.]*/.test(doneCell.replace(/done/g, '')));
-    ok('...and no peak sub-line either', !/vt-pk/.test(doneCell));
+    /* frozenProfit 7 on a 100 stake is -93, so this is a LOSS. */
+    const frozenCell = cells.frozen(7 - STAKE);
+    ok('a running position shows its live P/L', /vt-pl up/.test(liveCell) && /\+/.test(liveCell));
+    ok('a finished position DOES show a figure', /vtSigned/.test(fnBody('vtPlCellFrozen')));
+    ok('...the frozen figure itself', /93/.test(frozenCell), frozenCell);
+    ok('...signed as a loss, not hidden and not zero', /vt-pl down/.test(frozenCell));
+    ok('...marked done', /done/.test(frozenCell));
+    ok('...with a lock', /vt-lock/.test(frozenCell));
+    ok('a finished loss shows NO peak sub-line (it would be a live reading)',
+      !/vt-pk/.test(frozenCell));
     ok('a position whose clock has run out counts as done', cells.isDone(done), true);
     ok('a position still counting down does not', cells.isDone(live), false);
     /* The decisive one: the finished cell must not change no matter what the
-       market does, because it is the same empty string every time. */
-    const before = doneCell;
+       market does, because it is built from the frozen record alone. */
+    const before = frozenCell;
     MARKET.now = 0.50; MARKET.now = 0.01; MARKET.now = 5.00;
     ok('...and it is byte-identical after the market thrashes',
-      cells.done() === before);
+      cells.frozen(7 - STAKE) === before);
+    /* And it must not be a function of the live price at all: the same frozen
+       record with a different live price gives the same string. */
+    MARKET.now = 99;
+    ok('...and identical again under a wildly different live price',
+      cells.frozen(7 - STAKE) === before);
+    /* The pre-freeze window must be a static placeholder, not a live number.
+       Only the VISIBLE text is checked — the title carries "00:00" on purpose. */
+    const freezingCell = cells.freezing();
+    const freezingText = (freezingCell.split('>').slice(1).join('>').split('<')[0]) || '';
+    ok('the pre-freeze window shows a placeholder', /FREEZING/i.test(freezingCell));
+    ok('...and NO figure at all in it',
+      !/[-+]?\$?\d[\d,.]*/.test(freezingText), `visible text: ${freezingText}`);
+    ok('...which is byte-identical every time it is drawn',
+      cells.freezing() === freezingCell);
+    ok('...and styled as static, with no animation',
+      /\.vt-pl\.freezing\{/.test(src) && !/freezing[^{]*\{[^}]*animation/.test(src));
   }
 
   /* ---- now the user presses CLOSE: the result appears, once ---- */

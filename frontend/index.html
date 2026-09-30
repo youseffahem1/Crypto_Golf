@@ -5010,6 +5010,33 @@ function sellOpenPositionById(id) {
     closePositions(list);
 }
 
+/* WHAT THE RED SELL BUTTON DOES. Sells the BUY position, opens nothing.
+
+   Scoped to the coin on screen, like CLOSE ALL, because the button sits on one
+   market and a buy position on a different coin is not what the user is looking
+   at. Direction is matched on UP/BUY, so it can only ever pick up a buy
+   position: there is no branch anywhere below that turns this into opening a
+   SELL trade, and none that closes the sell side or the whole account.
+
+   Positions already being closed are skipped, so pressing the button twice
+   quickly cannot pay the same position twice. */
+function sellOpenBuyPosition() {
+    const sym = window.vantaActiveCoin || "GOLF";
+    const list = trades.filter(t =>
+        (t.symbol || "GOLF") === sym &&
+        (t.direction === "UP" || t.direction === "BUY") &&
+        !t.result &&
+        !__vantaClosing.has(t.id)
+    );
+
+    if (!list.length) {
+        showToast("There is no trade to sell");
+        return;
+    }
+
+    return closePositions(list);
+}
+
 /* CLOSE ALL goes to the server's single /api/trade/close-all endpoint rather
    than looping single closes. One atomic transaction means the whole book is
    settled and the balance credited together, so it cannot fail half-way with
@@ -5303,22 +5330,25 @@ document.getElementById("upBtn")
     );
 
 
-/* SELL OPENS A SELL TRADE.
+/* THE RED SELL BUTTON SELLS THE OPEN BUY POSITION, AND DOES NOTHING ELSE.
 
-   This button used to EXIT the open position instead of opening anything, which
-   made it the exact opposite of what it says on the button and turned the whole
-   SELL side of the market into a shortcut for closing. It is now the mirror of
-   BUY: same path, same stake, same timer, same live pricing, in the opposite
-   direction.
+   It is not a second way to open a trade. Pressing it never opens a SELL/DOWN
+   trade: it looks for the open BUY position on the market on screen and closes
+   that one, through the same closePositions() path the per-position "Close
+   Trade" button uses, so the payout, the history row, the balance credit and the
+   realized ledger are booked by code that already exists and is already tested.
 
-   The two things it must never be confused with, and how they are kept apart:
-     - the per-position "Close Trade" button, which closes ONE existing trade;
-     - the CLOSE ALL button on the Position card, which closes every open trade.
-   Both are still wired, in their own handlers below and on the card. */
+   When there is no open BUY position it says "There is no trade to sell" and
+   stops. It never falls back to opening something, because a button that
+   quietly does a different thing from the one it is labelled with is worse than
+   one that refuses.
+
+   It is also not CLOSE ALL: that button on the Position card is its own
+   endpoint, and this one is deliberately kept off it. */
 document.getElementById("downBtn")
     .addEventListener(
         "click",
-        () => createTrade("DOWN")
+        () => sellOpenBuyPosition()
     );
 
 /* "Close Trade" on a single position inside the Open Trades list. It closes

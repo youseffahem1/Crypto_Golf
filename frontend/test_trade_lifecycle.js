@@ -968,20 +968,37 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
    went, what it was entered at, what it came out at, what was staked, the
    result, and when. These are asserted against the source so they cannot drift
    back into a shorter row. */
-console.log('\n[B] BUY, SELL and CLOSE ALL are three different actions');
+console.log('\n[B] BUY opens, SELL sells the buy, CLOSE ALL closes all');
 (function () {
     const noComments = s => String(s || '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
     const code = noComments(src);
 
-    /* SELL opens a short. */
-    ok('the main SELL button OPENS a SELL trade', /downBtn[\s\S]{0,200}createTrade\(\s*"DOWN"\s*\)/.test(code));
-    ok('the main SELL button no longer closes positions',
-        !/downBtn[\s\S]{0,200}sellOpenPositions\(\)/.test(code));
-    ok('BUY still opens a BUY trade', /upBtn[\s\S]{0,200}createTrade\(\s*"UP"\s*\)/.test(code));
+    /* BUY opens a buy trade. */
+    ok('BUY opens a BUY trade', /upBtn[\s\S]{0,200}createTrade\(\s*"UP"\s*\)/.test(code));
 
-    /* SELL is mirrored, not freehand: same function, opposite argument. */
-    const sellArg = (code.match(/downBtn[\s\S]{0,200}?createTrade\(\s*"([A-Z]+)"\s*\)/) || [])[1];
-    eq('the SELL button passes the opposite direction to BUY', sellArg, 'DOWN');
+    /* SELL sells the open BUY position. It opens nothing, in either direction,
+       and it is not CLOSE ALL -- it is one action, with one meaning. */
+    ok('the main SELL button does NOT open a DOWN trade',
+        !/downBtn[\s\S]{0,200}createTrade\(/.test(code));
+    ok('the main SELL button sells the BUY position',
+        /downBtn[\s\S]{0,200}sellOpenBuyPosition\(\)/.test(code));
+    ok('the main SELL button is not CLOSE ALL',
+        !/downBtn[\s\S]{0,200}sellOpenPositions\(\)/.test(code));
+
+    /* The helper can only ever pick up a buy position. */
+    const sellBuy = fnBody('sellOpenBuyPosition') || '';
+    ok('sellOpenBuyPosition exists', !!sellBuy);
+    ok('it only selects UP/BUY positions',
+        /direction\s*===\s*"UP"/.test(sellBuy) && /direction\s*===\s*"BUY"/.test(sellBuy));
+    ok('it never touches the DOWN side', !/DOWN/.test(sellBuy));
+    ok('it never opens a trade', !/createTrade\(/.test(sellBuy));
+    ok('it closes through the shared close path', /closePositions\(\s*list\s*\)/.test(sellBuy));
+    ok('it skips positions already being closed', /__vantaClosing/.test(sellBuy));
+    ok('it is scoped to the market on screen', /vantaActiveCoin/.test(sellBuy));
+    ok('it says in English that there is nothing to sell',
+        /showToast\(\s*"There is no trade to sell"\s*\)/.test(sellBuy));
+    ok('with nothing to sell it refuses instead of opening something',
+        /if\s*\(\s*!list\.length\s*\)[\s\S]{0,200}return;[\s\S]{0,200}closePositions\(/.test(sellBuy));
 
     /* The per-position button says what it does, and closes only that trade. */
     const renderOpen = fnBody('renderOpenTrades') || '';

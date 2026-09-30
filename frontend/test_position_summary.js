@@ -88,20 +88,27 @@ function summaryFor(ledgerSeed, floatingPl) {
 }
 const D = (id, profit) => ({ id, sym: 'GOLF', profit });
 
-console.log('[0] the real page binds Profit / Loss to realized + the open book, by sign');
-/* The two rows add the closed-trade totals AND the live P/L of open positions, so
-   the summary follows the chart while a trade runs and settles when it closes.
-   The open half must be the figure the open book already computes (vtOpenNetAll)
-   — not a second calculation — and it must go in by SIGN, so the two halves can
-   never net out and hide a result inside one signed number. The single last
-   trade's `sp` must still never be a source.
+console.log('[0] the real page binds Profit / Loss to the OPEN book only, by sign');
+/* The two rows are the result of the trades the user has NOT closed, and
+   nothing else. They must NOT fold in the closed-trade ledger: with $300 of
+   settled history and a single $10 trade open, adding the two made the block
+   report $310 against a live position worth $10, and no row on the screen could
+   account for the other $300. The lifetime figures live in the top cards and
+   the per-trade history in DEALS.
 
-   And within the open half the sign is each POSITION's own, so a winning trade
-   open beside a losing one is visible as both. */
-  check('Profit row is the realized total plus the open gain',
-    /const totalProfit=zeroed\?0:acct\.profit\+openGain;/.test(rowsSrc), true);
-  check('Loss row is the realized total plus the open drop',
-    /const totalLoss=zeroed\?0:acct\.loss\+openDrop;/.test(rowsSrc), true);
+   The open half must be the figure the open book already computes
+   (vtOpenNetAll) — not a second calculation — and it must go in by SIGN, so the
+   two halves can never net out and hide a result inside one signed number. The
+   single last trade's `sp` must still never be a source. */
+  check('Profit row is the open gain and nothing else',
+    /const totalProfit=zeroed\?0:openGain;/.test(rowsSrc), true);
+  check('Loss row is the open drop and nothing else',
+    /const totalLoss=zeroed\?0:openDrop;/.test(rowsSrc), true);
+  check("the account's whole history is NOT folded into either row",
+    !/totalProfit=zeroed\?0:acct\.profit/.test(rowsSrc)
+    && !/totalLoss=zeroed\?0:acct\.loss/.test(rowsSrc)
+    && !/acct\.profit\+openGain/.test(rowsSrc)
+    && !/acct\.loss\+openDrop/.test(rowsSrc), true);
   check('the open gain is the sum of the positions that are up',
     /const openGain=openAll\.gain;/.test(rowsSrc)
     && /if\(pl>0\)\{ gain\+=pl; wins\+\+; \}/.test(openSrc), true);

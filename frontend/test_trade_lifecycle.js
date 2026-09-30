@@ -1058,8 +1058,10 @@ console.log('\n[S0b] one settle button, two names: CLOSE ALL and COLLECT ALL');
         !!paint && /const mode=rows\.length>0\?'close':\(settling\?'collect':''\)/.test(paint));
     ok('an open position always wins over a pending result',
         !!paint && paint.indexOf("rows.length>0?'close'") < paint.indexOf("settling?'collect'"));
-    ok('the pending result is read off the figures the block actually prints',
-        !!paint && /const settling=\(totalProfit>0\|\|totalLoss<0\);/.test(paint));
+    ok('the pending result is read off the SETTLED ledger, not the open-book rows',
+        !!paint && /const settling=\(acct\.profit>0\|\|acct\.loss<0\);/.test(paint));
+    ok('it is NOT read off the open-book rows, which would make it unreachable',
+        !!paint && !/const settling=\(totalProfit>0\|\|totalLoss<0\);/.test(paint));
     ok('it is named COLLECT ALL in that mode',
         !!paint && /closeAll\.textContent=mode==='collect'\?'COLLECT ALL':'CLOSE ALL'/.test(paint));
     ok('it is named CLOSE ALL whenever there is a position to close',

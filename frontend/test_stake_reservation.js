@@ -102,12 +102,23 @@ if (posCard) {
     !/balEl\.className\s*=\s*'vta-acct-v '\s*\+\s*\(\s*openAll/.test(posCard));
 }
 
-console.log('\n[4] the account Profit/Loss is built from CLOSED records only');
+console.log('\n[4] the account Profit/Loss is built from the OPEN book only');
 if (posCard) {
   ok('the totals come from the realized ledger', /const acct=vtRealizedTotals\(\)/.test(posCard));
   ok('the realized ledger is fed from closed deals', /vtDeals\(\)\.forEach\(vtNoteRealized\)/.test(posCard));
-  ok('the headline Profit is the realized profit plus the open gain', /const totalProfit=zeroed\?0:acct\.profit\+openGain;/.test(posCard));
-  ok('the headline Loss is the realized loss plus the open drop', /const totalLoss=zeroed\?0:acct\.loss\+openDrop;/.test(posCard));
+  ok('the headline Profit is the OPEN book\'s gain only', /const totalProfit=zeroed\?0:openGain;/.test(posCard));
+  ok('the headline Loss is the OPEN book\'s drop only', /const totalLoss=zeroed\?0:openDrop;/.test(posCard));
+  /* The whole-account history must not be folded into these two rows: with
+     $300 settled and a $10 trade open, `acct.profit + openGain` reported $310
+     against a position worth $10, and nothing on screen accounted for the
+     other $300. The lifetime figures belong to the top cards; the per-trade
+     history belongs to DEALS. */
+  ok("the account's whole-history profit is NOT added to the row",
+    !/totalProfit=zeroed\?0:acct\.profit/.test(posCard)
+    && !/acct\.profit\+openGain/.test(posCard));
+  ok("the account's whole-history loss is NOT added to the row",
+    !/totalLoss=zeroed\?0:acct\.loss/.test(posCard)
+    && !/acct\.loss\+openDrop/.test(posCard));
 }
 const split = fnBody('vtRealizedTotals');
 ok('vtRealizedTotals exists', !!split);

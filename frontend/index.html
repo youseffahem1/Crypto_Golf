@@ -15939,10 +15939,18 @@ function vtNoteRealized(row){
     };
 
     /* ---- account summary ----------------------------------------------------
-       Profit and Loss here are built from two things: the closed trade records
-       (merged below and keyed by trade id, so re-reading the same deal can never
-       double-count it) AND the live P/L of every OPEN position, so the summary
-       moves with the chart while a trade is running and settles when it closes.
+       Profit and Loss here describe ONE thing only: the trades that have not
+       been closed. They are the live P/L of every OPEN position, split per
+       position by its own sign, so the two rows move with the chart while a
+       trade runs and read exactly the figures in the P/L column of the table
+       right underneath.
+
+       The account's whole history is deliberately NOT folded in. It used to be,
+       and that made these rows mean two things at once: with $300 of settled
+       history and a single $10 trade open, the block reported $310 against a
+       position worth $10, and nothing else on the screen could account for the
+       other $300. The lifetime figures live in the top PROFIT / LOSS cards and
+       the per-trade history in DEALS; this block is the live open book only.
 
        The open half is the SAME figure already computed for the open book below
        (vtOpenNetAll) -- the exact one the sub-line and the per-position rows
@@ -15951,8 +15959,8 @@ function vtNoteRealized(row){
 
        It goes in by SIGN, never netted, so a result can never hide inside a
        single signed number and the two halves can never cancel:
-         open +$40 and closed -$60  ->  Profit +$40   Loss -$60    (not -$20)
-         open -$40 and closed +$20  ->  Profit +$20   Loss -$40    (not -$20)
+         open +$40 and open -$60  ->  Profit +$40   Loss -$60    (not -$20)
+         open -$40 and open +$20  ->  Profit +$20   Loss -$40    (not -$20)
        Each half therefore stays single-signed, which is what the rows above and
        the top cards assume.
 
@@ -15986,17 +15994,38 @@ function vtNoteRealized(row){
     /* Each open position is already filed under its own sign by vtOpenNetAll,
        so these are the two halves of the OPEN book read straight off, not the
        net re-split by sign: openGain is the sum of the positions that are up,
-       openDrop is the sum of the positions that are down. They are added to
-       the two realized halves and never to each other, so a winning position
-       can always be seen for what it is even while a losing one is open at
-       the same moment. Nothing here is gated on a close: these are the trades
-       still running, and they are counted for exactly as long as they are
-       open. */
+       openDrop is the sum of the positions that are down. They never go into
+       each other, so a winning position can always be seen for what it is even
+       while a losing one is open at the same moment. Nothing here is gated on a
+       close: these are the trades still running, and they are counted for
+       exactly as long as they are open. */
     const openGain=openAll.gain;
     const openDrop=openAll.drop;
 
-    const totalProfit=zeroed?0:acct.profit+openGain;
-    const totalLoss=zeroed?0:acct.loss+openDrop;
+    /* THE ACCOUNT'S WHOLE-HISTORY PROFIT AND LOSS ARE NOT IN THIS BLOCK.
+
+       These two rows are the result of the trades the user has NOT closed,
+       and nothing else. They used to be `acct.profit + openGain` and
+       `acct.loss + openDrop`, which folded the entire closed-trade ledger —
+       every settled result the account has ever had — into the same two
+       figures that the sub-line and the POSITIONS table were describing as
+       "the positions you are holding right now". Those are two different
+       questions, and adding them made the second unanswerable: with $300 of
+       history behind it and a single $10 trade open, the block reported $310
+       against a live position worth $10, and no row anywhere on the screen
+       could account for the other $300.
+
+       So the closed ledger is dropped from these rows rather than added to
+       them. The whole-account figures were never lost — they live in the top
+       PROFIT / LOSS cards on the dashboard, which is where a lifetime total
+       belongs, and the per-trade history stays in DEALS. This block is the
+       live book, and it now says so and nothing more.
+
+       The closed-trade count is still read below, so the block can still say
+       how much history is sitting behind it without adding that history into
+       the numbers. */
+    const totalProfit=zeroed?0:openGain;
+    const totalLoss=zeroed?0:openDrop;
 
     setN('vtaPProfit',totalProfit>0?'+'+money(totalProfit):money(0));
     const profitEl=$('vtaPProfit');
@@ -16045,7 +16074,12 @@ function vtNoteRealized(row){
          live positions one by one instead of describing a single netted
          figure, and it is read off the same split the two rows above print. */
       if(open) parts.push(openAll.wins+' winning, '+openAll.loses+' losing');
-      if(open||shut) parts.push('won '+money(totalProfit)+' · lost '+money(Math.abs(totalLoss)));
+      /* Only ever about the open book. This line used to print whenever there
+         was a closed trade OR an open one, which made "won $0.00 · lost $0.00"
+         appear under a block of settled history — two zeros describing trades
+         that were not running, sitting next to figures the user would read as
+         live. */
+      if(open) parts.push('won '+money(totalProfit)+' · lost '+money(Math.abs(totalLoss)));
       sub.textContent=parts.length?parts.join(' · '):'No trades yet';
       /* A position whose price has not arrived is left out of the per-position
          rows, so it says so rather than passing off a short figure as if it
@@ -16110,11 +16144,10 @@ function vtNoteRealized(row){
        The button's meaning is "settle this account", and there are only two
        things to settle, so it never changes shape -- only its name:
 
-         rows in #vtaPosRows      -> CLOSE ALL  (there are positions to close)
-         no rows, but Profit or
-         Loss on screen in this
-         block                   -> COLLECT ALL (nothing is running, but a
-                                    result is still sitting here to settle)
+         rows in #vtaPosRows      -> CLOSE ALL   (positions to close)
+         no rows, but a settled
+         result on the account   -> COLLECT ALL (nothing is running, but a
+                                    closed result is still waiting)
          neither                 -> greyed out, nothing to settle
 
        CLOSE ALL wins when both are true: an open position is the more urgent
@@ -16126,13 +16159,16 @@ function vtNoteRealized(row){
        though it closed no position -- which is the whole point of the name,
        since there is no open book for it to empty.
 
-       Armed off the figures actually printed in this block (totalProfit /
-       totalLoss), not off a second tally, so the button can never offer to
-       collect something the rows above it do not show -- including right after
-       a settle, when the clamp has taken them back to zero. */
+       Read off `acct` — the closed-trade ledger — and NOT off totalProfit /
+       totalLoss. Those two rows now describe the open book only, so testing
+       them would make COLLECT ALL unreachable: a position that is open is
+       already CLOSE ALL, and with no position open both rows are zero by
+       definition. The settled ledger is the other half of "there is something
+       here to settle", and reading it is also what stops the button offering
+       to collect a second time -- the settle takes the ledger down with it. */
     const closeAll=$('vtaCloseTrade');
     if(closeAll){
-      const settling=(totalProfit>0||totalLoss<0);
+      const settling=(acct.profit>0||acct.loss<0);
       const mode=rows.length>0?'close':(settling?'collect':'');
       const armed=mode!=='';
       closeAll.disabled=!armed;

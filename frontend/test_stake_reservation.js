@@ -233,15 +233,49 @@ if (noteRealized) {
       so the demo path has to report a count too — it forwards here directly. */
    ok('reports how many positions it closed', /return list\.length;/.test(closePositions));
  }
- const sellAll = fnBody('sellOpenPositions');
- ok('close-all exists', !!sellAll);
+  const sellAll = fnBody('sellOpenPositions');
+  ok('close-all exists', !!sellAll);
  if (sellAll) {
    ok('books each trade the server settled', /vantaOnTradeClosed/.test(sellAll));
    ok('guards positions while in flight', /__vantaClosing/.test(sellAll));
    ok('refreshes the balance', /refreshBalance\(\)/.test(sellAll));
    ok('reports how many positions it closed', /return sold\.length;/.test(sellAll));
    ok('closes nothing when nothing is open', /return 0;/.test(sellAll));
- }
+  }
+
+
+console.log('\n[9b] the account block starts counting a position the moment it opens');
+/* The block reported Profit $0.00 / Loss $0.00 for the entire life of every
+   position opened after the first settle. The CLOSE ALL / COLLECT ALL clamp is a
+   LATCH, and the only thing that lifted it was a close — so it survived the whole
+   next trade, whose clock the user was watching, and said nothing for all of it.
+   Opening is as much a new fact about the account as closing was. */
+const lift = fnBody('vantaLiftAcctReset');
+ok('the lift helper exists', !!lift);
+if (lift) {
+  ok('it clears the settle latch', /window\.__vantaAcctZeroed = false;/.test(lift));
+  ok('it repaints at once, not on the next 2s loop',
+    /window\.vantaSyncPosCard/.test(lift));
+}
+const openTrade = fnBody('createTrade');
+ok('createTrade exists', !!openTrade);
+if (openTrade) {
+  ok('OPENING lifts it too, not just closing',
+    /trades\.push\(trade\);[\s\S]{0,300}vantaLiftAcctReset\(\);/.test(openTrade));
+  /* Both paths: practice opens locally, live opens from the server's response,
+     and a fix on only one of them leaves the other silent. */
+  ok('practice opens lift it as well', (openTrade.match(/vantaLiftAcctReset\(\)/g) || []).length >= 2);
+  ok('the lift happens on the way IN, before the chart is drawn',
+    /vantaLiftAcctReset\(\);[\s\S]{0,120}renderOpenTrades\(\)/.test(openTrade));
+}
+ok('a close still lifts it from the other side',
+  /window\.__vantaAcctZeroed = false;/.test(fnBody('vantaOnTradeClosed')));
+/* With nothing open and nothing settled the button is dead, so there is no way
+   back into a clamped block — the clamp cannot outlive every trade. */
+ok('a dead settle button is never armed again by the clamp',
+  /const mode=rows\.length>0\?'close':\(settling\?'collect':''\)/.test(posCard)
+  && /closeAll\.disabled=!armed;/.test(posCard));
+
 
 
 console.log('\n[10] the wallet ledger is never touched by trading');

@@ -4688,6 +4688,9 @@ async function createTrade(direction) {
         vantaSaveDemoBalance();
 
         trades.push(trade);
+        /* A new position is a new fact: the account block starts counting it
+           from this instant instead of staying clamped at zero. */
+        vantaLiftAcctReset();
         createMarker(trade);
         renderOpenTrades();
         positionAllTrades();
@@ -4773,6 +4776,10 @@ async function createTrade(direction) {
     vantaRenderAccountPanel();
 
     trades.push(trade);
+
+    /* A new position is a new fact: the account block starts counting it from
+       this instant instead of staying clamped at zero after an earlier settle. */
+    vantaLiftAcctReset();
 
     createMarker(trade);
     renderOpenTrades();
@@ -5197,6 +5204,31 @@ function vantaOnTradeClosed(row) {
         window.__vantaAcctZeroed = false;
         vantaNoteRealizedTrade(row);
     } catch (e) { /* summary falls back to the deal records */ }
+}
+
+/* OPENING A POSITION IS ALSO A NEW FACT ABOUT THE ACCOUNT.
+
+   The CLOSE ALL / COLLECT ALL settle takes the whole account block back to zero
+   and leaves a latch (`__vantaAcctZeroed`) holding it there. That latch used to
+   be lifted only by a close, which left it stuck for the whole of the next
+   position: the user opened a trade, watched its clock run, and the block
+   reported Profit $0.00 / Loss $0.00 the entire time — the one moment the block
+   exists for, and it said nothing. Opening is exactly as much a change in the
+   account as closing was, so it lifts the latch the same way and from the same
+   reason: the block has a live position in it now and must show it.
+
+   Pairs with vantaOnTradeClosed, which lifts it from the other side. A settle
+   with nothing open and nothing to collect leaves the button greyed, so there
+   is no path back into a silent block. */
+function vantaLiftAcctReset() {
+    try {
+        window.__vantaAcctZeroed = false;
+    } catch (e) { /* the block just stays clamped */ }
+    /* Repaint at once. The card's own loop runs every 2s, and a fresh position
+       is exactly the moment the block must not lag behind the chart. */
+    if (typeof window.vantaSyncPosCard === "function") {
+        try { window.vantaSyncPosCard(); } catch (e) { /* the loop will get it */ }
+    }
 }
 
 async function closePositions(list) {

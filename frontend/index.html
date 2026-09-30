@@ -14443,36 +14443,9 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
   .vta-acct-row.is-total{grid-area:4/1/auto/span 2;margin-top:4px;padding-top:6px;align-self:end}
 }
 
-/* ---------- Last-trade result block ----------
-   A terminal-style readout of the most recent closed trade. Every part sits in
-   normal flow (flex/grid only, no absolute positioning) so nothing can overlap
-   or escape its row, and it reflows on narrow screens on its own. */
-.vta-result{padding:9px 12px 10px;border-bottom:1px solid var(--line);background:#080b11}
-.vta-result[hidden]{display:none}
-.vta-res-head{display:flex;align-items:center;gap:8px;min-width:0;padding-bottom:7px;border-bottom:1px solid var(--vt-hair)}
-.vta-res-inst{display:flex;align-items:center;gap:6px;min-width:0}
-.vta-res-inst b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:800;letter-spacing:.02em}
-.vta-res-tag{flex:0 0 auto;padding:1px 5px;border-radius:2px;font-size:9px;font-weight:900;letter-spacing:.08em;white-space:nowrap}
-.vta-res-tag.buy{background:rgba(38,166,118,.14);color:var(--up)}
-.vta-res-tag.sell{background:rgba(246,70,93,.14);color:var(--down)}
-.vta-res-tag.exp{background:rgba(255,255,255,.07);color:var(--muted2)}
-.vta-res-out{margin-left:auto;flex:0 0 auto;min-width:0;text-align:right}
-.vta-res-out-l{display:block;font-size:9px;font-weight:800;letter-spacing:.1em;color:var(--muted2);text-transform:uppercase;line-height:1.3}
-.vta-res-out-v{display:block;font-size:15px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.25}
-.vta-res-out-v.up{color:var(--up)}
-.vta-res-out-v.down{color:var(--down)}
-.vta-res-out-v.flat{color:var(--muted)}
-.vta-res-px{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px 0 0;font-size:11px;color:var(--muted);line-height:1.4;font-variant-numeric:tabular-nums}
-.vta-res-px b{color:var(--text);font-weight:800}
-.vta-res-peak{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid var(--vt-hair);font-size:11px;color:var(--muted);line-height:1.4;font-variant-numeric:tabular-nums}
-.vta-res-peak b{color:var(--text);font-weight:800}
-.vta-res-arrow{color:var(--muted2)}
-.vta-res-pl{margin-top:8px;padding-top:7px;border-top:1px solid var(--vt-hair)}
-.vta-res-acts{margin-top:9px}
-@media (max-width:420px){
-  .vta-res-out-v{font-size:14px}
-  .vta-res-px{gap:6px;font-size:10.5px}
-}
+/* The last-trade result panel (.vta-result / .vta-res-*) was removed with the
+   panel itself: the account summary above is the only place a result is drawn,
+   so its styles are gone too rather than left behind as dead rules. */
 
 /* ---------- Panes / data rows ---------- */
 .vta-panes{background:#06080d}
@@ -15679,9 +15652,11 @@ function vtNoteRealized(row){
         +'<span class="vta-tmeta" id="vtaPosMeta"><i class="vta-dot"></i>—</span>'
         +'<button type="button" class="vta-close-trade" id="vtaCloseTrade" title="Close all open positions on this market">CLOSE ALL</button>'
         +'</div></div>'
-        /* ---- last closed trade result (own block, own rows) ---- */
-        +'<div class="vta-result" id="vtaResult" hidden></div>'
-        /* ---- account summary (dotted leaders) ---- */
+        /* ---- account summary (dotted leaders) ----
+           This is the ONE place a result is reported. There is no separate
+           "last trade" panel: a closed trade lands in the Profit / Loss rows
+           below and nowhere else, so the same number is never on screen twice
+           in two places that can disagree. */
         +'<div class="vta-acct-sub" id="vtaAcctSub">No closed trades yet</div>'
         +'<div class="vta-acct">'
         +'<div class="vta-acct-row" data-acc="profit"><span class="vta-acct-l">Profit</span><span class="vta-acct-dots"></span><b class="vta-acct-v flat" id="vtaPProfit">$0.00</b></div>'
@@ -15749,8 +15724,6 @@ function vtNoteRealized(row){
           });
           return;
         }
-        const clr=ev.target.closest('[data-clear-last]');
-        if(clr){ ev.stopPropagation(); if(typeof vantaClearLastSettled==='function') vantaClearLastSettled(); updatePosCard(); return; }
         const btn=ev.target.closest('[data-exit]');
         if(!btn||typeof sellOpenPositionById!=='function') return;
         ev.stopPropagation();
@@ -15848,14 +15821,13 @@ function vtNoteRealized(row){
        split into a non-negative profit and a non-positive loss, so:
          win   -> Profit +$25.00   Loss $0.00
          loss  -> Profit  $0.00    Loss -$60.00
-       vtSplit() is the single mapping used by the summary, the result block and
-       the tables so they can never disagree. */
+       vtSplit() is the single mapping used by the account summary and the tables
+       so they can never disagree. It used to have a third caller, the last-trade
+       result panel, which no longer exists. */
     const vtSplit=net=>{
       const n=Number(net)||0;
       return { profit:n>0?n:0, loss:n<0?n:0, net:n };
     };
-    const ls0=__vantaLastSettled||null;
-    const sr=ls0?vtSplit(ls0.profit):null;
 
     /* ---- account summary ----------------------------------------------------
        Profit and Loss here are built from two things: the closed trade records
@@ -15957,80 +15929,15 @@ function vtNoteRealized(row){
     setN('vtaCnt-orders',String(all.length));
     setN('vtaCnt-deals',String(vtDeals().length));
 
-    /* ---- last closed trade: its own block, above the account summary ----
-       This used to be squeezed into a grid row inside the POSITIONS table,
-       where 8 cells fought for 7 tracks and Profit / Loss / Expired / P&L /
-       CLEAR landed on top of each other. */
-    const resBox=$('vtaResult');
-    if(resBox){
-      if(!ls0){
-        resBox.hidden=true;
-        resBox.innerHTML='';
-      } else {
-        const sold=ls0.reason!=='EXPIRED';
-        /* Which of the two ended the position. The server is the authority on
-           that (close_reason on the trade), so the tag can finally say so:
-           a position that ran out of time reads EXPIRED, and one the user sold
-           reads its own side. It used to fall back to a hardcoded 'EXPIRED'
-           label, which was wrong for every manual sell. */
-        const tag=sold?vtSide(ls0.direction):'EXPIRED';
-        const cls=sold?vtSideCls(ls0.direction):'flat';
-        const entry=Number(ls0.entryPrice!=null?ls0.entryPrice:ls0.entry)||0;
-        const exit=Number(ls0.value)||0;
-        /* The high-water mark, carried over from the position into the closed
-           record, so the peak is still on screen after the price fell back —
-           "this was as high as it ever went". */
-        const pk=Number(ls0.peak)||0;
-        const pkVal=Number(ls0.peakValue)||0;
-        const pkGain=pkVal-Number(ls0.invested||0);
-        const pkWord=(vtSide(ls0.direction)==='SELL')?'lowest reached':'peak reached';
-        const pctTxt=Number(ls0.pct||0)!==0
-          ? (sr.net>=0?'+':'−')+Math.abs(Number(ls0.pct||0)).toFixed(2)+'%' : '—';
-        resBox.hidden=false;
-        resBox.innerHTML=
-          /* Instrument / Status ......... Result */
-          '<div class="vta-res-head">'
-          +'<span class="vta-res-inst"><b>'+esc(ls0.symbol||'GOLF')+'</b>'
-          +'<span class="vta-res-tag '+cls+'">'+tag+'</span></span>'
-          +'<span class="vta-res-out">'
-          +'<span class="vta-res-out-l">'+tag+' CLOSED</span>'
-          +'<span class="vta-res-out-v '+vtPlCls(sr.net)+'">'
-          +(sr.net>0?'+':sr.net<0?'−':'')+money(Math.abs(sr.net))+'</span>'
-          +'</span></div>'
-          /* Entry price -> Exit price */
-          +'<div class="vta-res-px">'
-          +'<span>Entry <b>'+(entry>0?coinFmt(entry):'—')+'</b></span>'
-          +'<span class="vta-res-arrow">&rarr;</span>'
-          +'<span>Exit <b>'+(exit>0?coinFmt(exit):'—')+'</b></span>'
-          +'<span class="vta-res-arrow">&middot;</span>'
-          +'<span>Stake <b>'+money(ls0.invested)+'</b></span>'
-          +'<span class="vta-res-arrow">&middot;</span>'
-          +'<span>Return <b>'+pctTxt+'</b></span>'
-          +'</div>'
-          /* Peak reached — stays put no matter where the price went after */
-          +(pk>0
-            ? '<div class="vta-res-peak">'
-              +'<span>'+pkWord+' <b>'+coinFmt(pk)+'</b></span>'
-              +'<span class="vta-res-arrow">&middot;</span>'
-              +'<span>best value <b>'+money(pkVal)+'</b></span>'
-              +'<span class="vta-res-arrow">&middot;</span>'
-              +'<span>best P/L <b class="'+vtPlCls(pkGain)+'">'+vtSigned(pkGain)+'</b></span>'
-              +'</div>'
-            : '')
-          /* Profit / Loss, never mixed */
-          +'<div class="vta-res-pl">'
-          +'<div class="vta-acct-row"><span class="vta-acct-l">Profit:</span><span class="vta-acct-dots"></span>'
-          +'<b class="vta-acct-v '+(sr.profit>0?'up':'zero')+'" id="vtaResProfit">'
-          +(sr.profit>0?'+'+money(sr.profit):money(0))+'</b></div>'
-          +'<div class="vta-acct-row"><span class="vta-acct-l">Loss:</span><span class="vta-acct-dots"></span>'
-          +'<b class="vta-acct-v '+(sr.loss<0?'down':'zero')+'" id="vtaResLoss">'
-          +(sr.loss<0?'−'+money(Math.abs(sr.loss)):money(0))+'</b></div>'
-          +'</div>'
-          +'<div class="vta-res-acts">'
-          +'<button type="button" class="vta-x ghost" data-clear-last>CLEAR</button>'
-          +'</div>';
-      }
-    }
+    /* The "last closed trade" panel that used to be rendered here is GONE, and it
+       is not coming back. A closed trade is reported in exactly two places: the
+       Profit / Loss rows of the account block above, and the DEALS table. It used
+       to be painted a third time in its own panel, with its own Profit / Loss
+       pair and its own CLEAR button, which meant the same result could be read
+       off two different numbers on one screen.
+
+       `__vantaLastSettled` is still recorded on every close — the footnote under
+       the POSITIONS table reads it to word itself — but nothing renders it. */
 
     /* ---- POSITIONS: live open positions on the active market ---- */
     const rowsBox=$('vtaPosRows');
@@ -16137,7 +16044,7 @@ function vtNoteRealized(row){
     if(note) note.textContent=rows.length
       ? 'Live value from the real server price — it goes green when you\'re up and red when you\'re down. SELL banks it at the server\'s own price. When a position\'s duration runs out the clock stops and its P/L is FROZEN at the price the server recorded at that moment: the figure stays exactly as it is, it will not rise or fall again, and the row stays listed with a SELL button so you can collect precisely that amount whenever you choose.'
       : (__vantaLastSettled
-        ? 'This result is saved with its profit banked in your balance — it stays until you press Clear or open a new trade.'
+        ? 'That result is banked in your balance. It stays in the Profit and Loss rows of the account block above, and in DEALS, until you trade again.'
         : 'Buy while the candle is green, then SELL to collect the live value — or let the timer run out, and the server records the price at 00:00 for you to collect with CLOSE.');
   }
 

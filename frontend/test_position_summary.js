@@ -22,8 +22,10 @@ function slice(fromMarker, toMarker) {
 /* The ledger, exactly as the page defines it. */
 const ledgerSrc = slice('let vtRealized=[];', 'window.vantaRealizedTotals=vtRealizedTotals;');
 
-/* The summary's own split helper, exactly as updatePosCard defines it. */
-const splitSrc = slice('const vtSplit=net=>{', 'const ls0=__vantaLastSettled');
+/* The summary's own split helper, exactly as updatePosCard defines it. The end
+   marker used to be the `ls0` line of the last-trade result panel; that panel
+   is gone, so the slice runs on to the next thing in the function. */
+const splitSrc = slice('const vtSplit=net=>{', 'vtDeals().forEach(vtNoteRealized);');
 
 /* The lines that read the deal records, compute the totals, write the two
    account rows and then the Balance row. */

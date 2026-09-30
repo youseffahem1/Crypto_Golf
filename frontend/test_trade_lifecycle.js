@@ -318,10 +318,25 @@ ok('the close path is not gated on expiry, so a finished trade is closable',
 const sellById = fnBody('sellOpenPositionById');
 ok('the per-position close button is not gated on expiry either',
   !!sellById && !/vantaIsExpired/.test(sellById) && /closePositions\(list\)/.test(sellById));
-/* The Live Value box must include finished positions: they are still worth
-   exactly what they are worth, and dropping them under-reports the account. */
-const liveBox = /const lv = trades\.filter\(t => \(t\.symbol \|\| "GOLF"\) === lvSym\);/;
+/* The Live Value box must include finished positions: their stake is still
+   staked, they are still the user's, and dropping them under-reports what was
+   paid. It is the PAID total, so it is summed from `t.amount` and never from
+   the live sell value — a figure that cannot rise and fall on its own. */
+const liveBox = /const lv = \(typeof trades !== "undefined" && Array\.isArray\(trades\)\)\s*\?\s*\n?\s*trades\.filter\(t => \(t\.symbol \|\| "GOLF"\) === lvSym\)\s*\n?\s*: \[\];/;
 ok('the Live Value box still counts a finished position', liveBox.test(src));
+ok('it is not filtered by expiry', !/filter\(t\s*=>\s*!vantaIsExpired/.test(src));
+const stakePaint = fnBody('vantaPaintStakeLive');
+ok('it shows the money PAID (the stake), not the live sell value',
+  !!stakePaint && /lv\.reduce\(\(s, t\) => s \+ Number\(t\.amount \|\| 0\), 0\)/.test(stakePaint)
+  && !/closeValueFor/.test(stakePaint));
+ok('it is painted from updateTrades so it cannot go stale',
+  /vantaPaintStakeLive\(\)/.test(fnBody('updateTrades')));
+ok('typing in the amount field does NOT overwrite it',
+  !/potentialReturn\.textContent/.test(fnBody('updateProfit')));
+ok('with no open position it reads zero, not the typed stake',
+  !!stakePaint && !/getAmount\(\)/.test(stakePaint));
+ok('it is never coloured green or red',
+  !!stakePaint && /liveValEl\.style\.color = ""/.test(stakePaint));
 const markExpired = fnBody('vantaMarkExpired');
 /* A finished trade LEAVES THE CHART. Not greyed, not labelled, not left with a
    stopped clock: removed. Everything on the marker — arrow, entry price,

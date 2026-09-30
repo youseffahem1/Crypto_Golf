@@ -179,6 +179,21 @@ class Trade(Base):
 
     user = relationship("User", back_populates="trades")
 
+    @property
+    def payout_multiplier(self) -> float:
+        """The payout rule this position is priced with, so a client can mark it
+        to market using the SAME arithmetic the server settles it with.
+
+        A property rather than a column on purpose: it is a rule of the platform,
+        not a fact about this particular position, and reading it from config
+        means changing it never requires a migration or a backfill of rows that
+        were already opened. A trade always reflects the rule in force when it is
+        priced, which is the rule that priced it.
+        """
+        from .config import TRADE_PAYOUT_MULTIPLIER
+
+        return float(TRADE_PAYOUT_MULTIPLIER or 1.0)
+
 
 class SwapTx(Base):
     """Virtual swap between demo balances — never creates a real blockchain

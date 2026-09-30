@@ -62,7 +62,7 @@ os.close(fd)
 os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH}"
 
 from app import models, market_service, trading_service  # noqa: E402
-from app.config import AUTO_SETTLE_ON_EXPIRE  # noqa: E402
+from app.config import AUTO_SETTLE_ON_EXPIRE, TRADE_PAYOUT_MULTIPLIER  # noqa: E402
 from app.database import SessionLocal, engine, Base  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
@@ -153,15 +153,21 @@ def shows(duration_seconds, seconds_in):
     return fmt_time(max(0, (closes_at_ms - now_ms) / 1000.0))
 
 
-def payout_for(direction, entry, exit_px, amount):
+def payout_for(direction, entry, exit_px, amount, multiplier=None):
     """trading_service._exit_value, restated here so the expected numbers are
     derived from the shipped formula rather than hand-copied:
-      BUY  -> amount * (exit / entry)
-      SELL -> amount * (2 - exit / entry), floored at 1% of the stake."""
-    ratio = exit_px / entry
-    v = amount * (2.0 - ratio) if direction == "DOWN" else amount * ratio
-    if direction == "DOWN" and v < amount * 0.01:
-        v = amount * 0.01
+      move  = (exit / entry - 1) * multiplier
+      BUY   -> amount * (1 + move)
+      SELL -> amount * (1 - move)
+    floored at 1% of the stake in BOTH directions, so a losing trade can never
+    settle below 1% of what it staked. `multiplier` defaults to the value the
+    server is actually configured with, so this stays true when it changes."""
+    if multiplier is None:
+        multiplier = float(TRADE_PAYOUT_MULTIPLIER or 1.0)
+    move = (exit_px / entry - 1.0) * float(multiplier)
+    v = amount * (1.0 - move if direction == "DOWN" else 1.0 + move)
+    floor = amount * 0.01
+    v = v if v > floor else floor
     return round(v - amount, 6)
 
 
@@ -244,13 +250,13 @@ approx("realized loss is STILL 0.00", realized(user.id)["loss"], 0.0)
 check("still counted as an open position", open_positions(user.id), 1)
 
 # The freeze sweep, on the same position and the same year-future clock. It
-# writes a price and STOPS. A +$150 unrealized gain is sitting right there and
+# writes a price and STOPS. A +$1500 unrealized gain is sitting right there and
 # the balance must not move by a cent.
 frozen = trading_service.freeze_due_trades(db, now=far_future)
 check("the freeze sweep found the position", len(frozen), 1)
 row = trade_row(b_t.id)
 approx("it recorded the $0.05 price", row.frozen_exit_price, 0.05)
-approx("it recorded the +$150 P/L", row.frozen_profit, 150.0)
+approx("it recorded the +$1500 P/L", row.frozen_profit, 1500.0)
 check("...and nothing else", row.status, models.TradeStatus.OPEN)
 check("no realized profit", row.profit, None)
 check("no exit_price", row.exit_price, None)
@@ -269,7 +275,7 @@ for i in range(200):
     trading_service.freeze_due_trades(db, now=far_future + timedelta(seconds=i))
 row = trade_row(b_t.id)
 approx("after 200 sweeps the price has NOT moved", row.frozen_exit_price, 0.05)
-approx("nor has the frozen P/L", row.frozen_profit, 150.0)
+approx("nor has the frozen P/L", row.frozen_profit, 1500.0)
 check("after 200 sweeps it is STILL OPEN", row.status, models.TradeStatus.OPEN)
 check("after 200 sweeps still no profit", row.profit, None)
 approx("after 200 sweeps the balance is untouched", balance(user.id), stake_debited)
@@ -280,8 +286,8 @@ approx("after 200 sweeps realized loss is STILL 0.00", realized(user.id)["loss"]
 # half of "not a settlement": the user never lost the ability to act, and
 # collecting now pays the price from 200 sweeps ago.
 b_done = trading_service.close_trade(db, user.id, b_t.id)
-approx("collecting pays the frozen +$150, not the runaway price", b_done.profit, 150.0)
-approx("balance credited stake + $250", balance(user.id), stake_debited + 250.0)
+approx("collecting pays the frozen +$1500, not the runaway price", b_done.profit, 1500.0)
+approx("balance credited stake + $1600", balance(user.id), stake_debited + 1600.0)
 
 # A losing one behaves identically: a clock running out is not a loss event.
 PRICE["now"] = 0.02
@@ -294,7 +300,7 @@ approx("a finished LOSING position did not book a loss",
        realized(user.id)["loss"], 0.0)
 check("the losing position is STILL OPEN", trade_row(bl_t.id).status, models.TradeStatus.OPEN)
 approx("its stake is still held", balance(user.id), pre_bl - 100.0)
-approx("but its frozen P/L is recorded", trade_row(bl_t.id).frozen_profit, -75.0)
+approx("but its frozen P/L is recorded", trade_row(bl_t.id).frozen_profit, -99.0)
 trading_service.close_trade(db, user.id, bl_t.id)
 
 # =============================================================================
@@ -340,8 +346,8 @@ approx("the read path realized no loss", realized(user.id)["loss"], base_c_loss)
 # one. This is the field the row's P/L is rendered from, which is why its
 # absence would leave the user staring at a moving number.
 approx("the read path recorded the price", trade_row(c_t.id).frozen_exit_price, 0.04)
-approx("...and the P/L that goes with it", trade_row(c_t.id).frozen_profit, 100.0)
-check("...and hands it to the client", listed[0].frozen_profit, 100.0)
+approx("...and the P/L that goes with it", trade_row(c_t.id).frozen_profit, 1000.0)
+check("...and hands it to the client", listed[0].frozen_profit, 1000.0)
 check("...with the price too", listed[0].frozen_exit_price, 0.04)
 # A frozen position is an OPEN position, so it must not have leaked into the
 # closed history at the same time.
@@ -360,7 +366,7 @@ check("2 hours later it is STILL OPEN", trade_row(c_t.id).status, models.TradeSt
 approx("2 hours later the balance is untouched", balance(user.id), stake_c)
 approx("2 hours later the price has NOT been re-read", trade_row(c_t.id).frozen_exit_price, 0.04)
 c_done = trading_service.close_trade(db, user.id, c_t.id)
-approx("collecting pays the first recorded price", c_done.profit, 100.0)
+approx("collecting pays the first recorded price", c_done.profit, 1000.0)
 check("no longer open", open_positions(user.id), 0)
 
 # =============================================================================
@@ -379,7 +385,7 @@ db.query(models.Trade).filter_by(id=d_t.id).update(
     {"closes_at": datetime.utcnow() - timedelta(minutes=30)})
 db.commit()
 trading_service.freeze_due_trades(db)   # 00:00 happens here, at $0.04
-want_d = payout_for("UP", 0.02, 0.04, 100.0)  # +100.00
+want_d = payout_for("UP", 0.02, 0.04, 100.0)  # +1000.00
 approx("nothing is realized while it is open", realized(user.id)["profit"], base_d_profit)
 
 # The user waits. A month, in the worst case — they simply never press the
@@ -389,7 +395,7 @@ d_done = trading_service.close_trade(db, user.id, d_t.id)
 
 check("the close settled it", d_done.status, models.TradeStatus.WON)
 approx("it was priced at 00:00, not at the clock's expense", d_done.profit, want_d)
-approx("the balance was credited the frozen payout", balance(user.id), pre_d - 100.0 + 200.0)
+approx("the balance was credited the frozen payout", balance(user.id), pre_d - 100.0 + 1100.0)
 approx("and ONLY NOW is profit realized", realized(user.id)["profit"], base_d_profit + want_d)
 check("the reason records a user close, not an expiry", d_done.close_reason, "SOLD")
 check("no longer open", open_positions(user.id), 0)
@@ -410,8 +416,8 @@ PRICE["now"] = 0.10  # it would have been a huge win if priced now
 approx("still nothing realized", realized(user.id)["loss"], base_d_loss)
 d2 = trading_service.close_trade(db, user.id, d2_t.id)
 check("the losing close is a LOSS", d2.status, models.TradeStatus.LOST)
-approx("paid the frozen -$50, not the runaway +$400", d2.profit, -50.0)
-approx("and only now the loss is realized", realized(user.id)["loss"], base_d_loss - 50.0)
+approx("paid the frozen -$99, not the runaway win", d2.profit, -99.0)
+approx("and only now the loss is realized", realized(user.id)["loss"], base_d_loss - 99.0)
 approx("profit is untouched by the loss", realized(user.id)["profit"], base_d_profit + want_d)
 
 # =============================================================================
@@ -424,9 +430,9 @@ print("\n[E] P/L is UNREALIZED until the close -- the top card's own source")
 # both cards read $0.00.
 #
 # The freeze makes this harder than it looks, and that is the point. There is
-# now a NUMBER sitting on the position -- a real, recorded, guaranteed +$2000 --
+# now a NUMBER sitting on the position -- a real, recorded, guaranteed +$20000 --
 # and it is still not realized money. A frozen figure that leaked into the
-# summary would put a $2000 in the top card that the balance does not contain,
+# summary would put a $20000 in the top card that the balance does not contain,
 # with a "Move to Wallet" button under it.
 e_before_profit = realized(user.id)["profit"]
 e_before_loss = realized(user.id)["loss"]
@@ -435,9 +441,11 @@ PRICE["now"] = 0.02
 pre_e = balance(user.id)
 e_t = trading_service.open_trade(db, user.id, "UP", 500.0, 60, "GOLF")
 stake_e = balance(user.id)
-PRICE["now"] = 0.10  # a $400 unrealized gain sitting right there
+PRICE["now"] = 0.10  # a huge unrealized gain sitting right there
 approx("the stake is reserved", stake_e, pre_e - 500.0)
-approx("the unrealized gain is large and obvious", 500.0 * (0.10 / 0.02) - 500.0, 2000.0)
+# move = (0.10/0.02 - 1) * 10 = 40, so the stake is worth 500 * 41 = 20500.
+approx("the unrealized gain is large and obvious",
+       payout_for("UP", 0.02, 0.10, 500.0), 20000.0)
 # Let the deadline actually pass, so 00:00 really happens in this section.
 db.query(models.Trade).filter_by(id=e_t.id).update(
     {"closes_at": datetime.utcnow() - timedelta(minutes=1)})
@@ -447,11 +455,11 @@ listed = trade_routes.open_trades(db=db, user_id=user.id)
 trade_routes.trade_history(db=db, user_id=user.id)
 
 row_e = trade_row(e_t.id)
-approx("00:00 recorded the +$2000", row_e.frozen_profit, 2000.0)
-check("and the client can see it", [x.frozen_profit for x in listed if x.id == e_t.id], [2000.0])
-check("AT 00:00 with a recorded +$2000, top Profit is unchanged",
+approx("00:00 recorded the +$20000", row_e.frozen_profit, 20000.0)
+check("and the client can see it", [x.frozen_profit for x in listed if x.id == e_t.id], [20000.0])
+check("AT 00:00 with a recorded +$20000, top Profit is unchanged",
       realized(user.id)["profit"], e_before_profit)
-check("AT 00:00 with a recorded +$2000, top Loss is unchanged",
+check("AT 00:00 with a recorded +$20000, top Loss is unchanged",
       realized(user.id)["loss"], e_before_loss)
 approx("no loss is booked either", realized(user.id)["loss"], e_before_loss)
 approx("the balance is still just the reserved stake", balance(user.id), stake_e)
@@ -468,14 +476,14 @@ for _ in range(3):
     trade_routes.open_trades(db=db, user_id=user.id)
 approx("a -95% move leaves top Profit alone", realized(user.id)["profit"], e_before_profit)
 approx("...and the balance alone", balance(user.id), stake_e)
-approx("...and the recorded figure alone", trade_row(e_t.id).frozen_profit, 2000.0)
+approx("...and the recorded figure alone", trade_row(e_t.id).frozen_profit, 20000.0)
 
 e_done = trading_service.close_trade(db, user.id, e_t.id)
-# The payout is 500 * (0.10/0.02) = 2500, of which 500 is the stake coming back
-# and 2000 is the gain. Only the payout credits the balance.
-approx("CLOSE is what moves top Profit", realized(user.id)["profit"], e_before_profit + 2000.0)
-approx("and the balance is credited then", balance(user.id), stake_e + 2500.0)
-approx("the recorded profit is the server's own", e_done.profit, 2000.0)
+# The payout is 500 * (1 + 40) = 20500, of which 500 is the stake coming back
+# and 20000 is the gain. Only the payout credits the balance.
+approx("CLOSE is what moves top Profit", realized(user.id)["profit"], e_before_profit + 20000.0)
+approx("and the balance is credited then", balance(user.id), stake_e + 20500.0)
+approx("the recorded profit is the server's own", e_done.profit, 20000.0)
 
 # =============================================================================
 print("\n[F] EXACTLY ONCE -- replay, double close and close-all pay nothing extra")
@@ -533,8 +541,9 @@ PRICE["now"] = 0.05
 
 collected = trading_service.close_all_trades(db, user.id)
 check("CLOSE ALL collects all three", len(collected), 3)
-# $10 each at the FROZEN $0.021 = $10.50 each, not the $0.05 the market is on.
-approx("credited as one sum at each frozen price", balance(user.id), pre_g - 70.0 + 31.5)
+# $10 each at the FROZEN $0.021 = $15.00 each (move 0.05 x 10 = 0.5), not the
+# $0.05 the market is on.
+approx("credited as one sum at each frozen price", balance(user.id), pre_g - 70.0 + 45.0)
 check("each left at the frozen price, not the live one",
       sorted(t.exit_price for t in collected), [0.021, 0.021, 0.021])
 check("the 5-minute position is STILL open",
@@ -542,7 +551,7 @@ check("the 5-minute position is STILL open",
 check("and was never frozen", trade_row(still_running.id).frozen_exit_price, None)
 check("so it is the only one left open", open_positions(user.id), 1)
 check("close-all is a no-op on replay", len(trading_service.close_all_trades(db, user.id)), 0)
-approx("replay paid nothing", balance(user.id), pre_g - 70.0 + 31.5)
+approx("replay paid nothing", balance(user.id), pre_g - 70.0 + 45.0)
 trading_service.close_trade(db, user.id, still_running.id)
 
 # =============================================================================

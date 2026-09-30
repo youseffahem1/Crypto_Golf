@@ -305,8 +305,9 @@ if (renderOpen) {
   ok('the count badge counts them all, so it cannot contradict the list',
     /openCountEl\.textContent\s*=\s*activeTrades\.length/.test(renderOpen));
   ok('a finished row shows 00:00', /finished\s*\?\s*"00:00"/.test(renderOpen));
-  ok('a finished row keeps a close button',
-    /finished\s*\?\s*"CLOSE"\s*:\s*"SELL"/.test(renderOpen));
+  ok('every row says Close Trade, running or finished',
+    /class="open-sell" data-exit="\$\{trade\.id\}"[^>]*>Close Trade</.test(renderOpen)
+    && !/finished\s*\?/.test(renderOpen.match(/class="open-sell"[^>]*>[^<]*/)[0]));
   ok('the button is still a data-exit close, so the same handler closes it',
     /data-exit="\$\{trade\.id\}"/.test(renderOpen));
   ok('a finished row is dimmed, not hidden',
@@ -643,8 +644,15 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
   const isFrozenSrc = fnSrc('vantaIsFrozen');
   const freezeDemoSrc = fnSrc('vantaFreezeDemoTrade');
   const closeValueSrc = fnSrc('closeValueFor');
+  /* The payout rule lives in one place now (vantaPayoutFor) and both of the
+     functions above call it, so it is lifted with them — same as every other
+     helper they depend on. Without it the sandbox would run the real functions
+     against a missing dependency. */
+  const payoutSrc = fnSrc('vantaPayoutFor');
+  const multiplierSrc = /let\s+VANTA_PAYOUT_MULTIPLIER\s*=\s*([^;]+);/.exec(src);
   if (!timeLeftSrc || !isExpiredSrc || !markSrc || !frozenProfitSrc ||
-      !isFrozenSrc || !freezeDemoSrc || !closeValueSrc) {
+      !isFrozenSrc || !freezeDemoSrc || !closeValueSrc || !payoutSrc ||
+      !multiplierSrc) {
     ok('could not lift the expiry helpers for the runtime check', false); return;
   }
 
@@ -731,6 +739,8 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
       'function closePositions() { posted.push("closePositions"); }',
       'function showResultToast() { posted.push("toast"); }',
       'var vantaNoteRealizedTrade = __noteRealized;',
+      'var VANTA_PAYOUT_MULTIPLIER = ' + multiplierSrc[1] + ';',
+      payoutSrc,
       /* The page's real code, unmodified — including the freeze, so the
          "stops moving" assertions below are driven by shipped code rather than
          by this file. */
@@ -942,6 +952,100 @@ console.log('\n[12] RUNTIME: 00:00 books nothing, CLOSE books it once');
   eq('ticking after the close books nothing new', REALIZED.length, 2);
   eq('ticking after the close moves no money', balance.toFixed(2), '550.00');
   eq('ticking after the close makes no call', posted.length, postedBefore);
+})();
+
+/* ==========================================================================
+   SECTION 1 � TRADE HISTORY KEEPS EVERY COMPLETED TRADE
+   ==========================================================================
+   The history list used to be trimmed to the five most recent rows: the demo
+   path pushed onto an array and popped the overflow, and the live path took
+   hist.slice(0, 5) off the server. Both meant the sixth completed trade pushed
+   the oldest one off the page, so a user who closed twenty trades could read
+   five of them and had no way to see the rest. A completed trade is a record,
+   not a notification feed.
+
+   Each row also has to carry the figures that make it a record: which way it
+   went, what it was entered at, what it came out at, what was staked, the
+   result, and when. These are asserted against the source so they cannot drift
+   back into a shorter row. */
+console.log('\n[B] BUY, SELL and CLOSE ALL are three different actions');
+(function () {
+    const noComments = s => String(s || '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const code = noComments(src);
+
+    /* SELL opens a short. */
+    ok('the main SELL button OPENS a SELL trade', /downBtn[\s\S]{0,200}createTrade\(\s*"DOWN"\s*\)/.test(code));
+    ok('the main SELL button no longer closes positions',
+        !/downBtn[\s\S]{0,200}sellOpenPositions\(\)/.test(code));
+    ok('BUY still opens a BUY trade', /upBtn[\s\S]{0,200}createTrade\(\s*"UP"\s*\)/.test(code));
+
+    /* SELL is mirrored, not freehand: same function, opposite argument. */
+    const sellArg = (code.match(/downBtn[\s\S]{0,200}?createTrade\(\s*"([A-Z]+)"\s*\)/) || [])[1];
+    eq('the SELL button passes the opposite direction to BUY', sellArg, 'DOWN');
+
+    /* The per-position button says what it does, and closes only that trade. */
+    const renderOpen = fnBody('renderOpenTrades') || '';
+    ok('every open row says Close Trade, running or finished',
+        /class="open-sell" data-exit="\$\{trade\.id\}"[^>]*>Close Trade</.test(renderOpen));
+    ok('the row button carries its own trade id',
+        /data-exit="\$\{trade\.id\}"/.test(renderOpen));
+    ok('the row handler closes only that one id',
+        /data-exit[\s\S]{0,300}sellOpenPositionById\(\s*btn\.getAttribute\(\s*"data-exit"\)\s*\)/.test(code));
+    ok('no row claims to be a SELL any more',
+        !/data-exit="[^"]*"[^>]*>SELL</.test(code));
+
+    /* CLOSE ALL survives, and is still its own endpoint. */
+    ok('CLOSE ALL is still on the positions card',
+        /vtaCloseTrade[\s\S]{0,600}sellOpenPositions\(\)/.test(code));
+    ok('CLOSE ALL still uses the atomic close-all endpoint',
+        /api\/trade\/close-all/.test(code));
+})();
+
+console.log('\n[S1] trade history keeps EVERY completed trade');
+(function () {
+    const renderHistory = fnBody('renderHistory');
+    ok('renderHistory exists', !!renderHistory);
+
+    /* No trimming, in either code path. Scoped to the two real code paths, not
+       the whole file: unrelated features legitimately slice their own lists (the
+       PIN box, the deposit list, the ledger), and the prose that documents the
+       old 5-row cap quotes it verbatim -- right inside this very function. So
+       comments are stripped before the code is asserted on. */
+    const stripComments = s => String(s || '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const sync = stripComments(fnBody('vantaSyncTrades'));
+    ok('the demo path never pops an old trade off the history',
+        !/history\.length\s*>\s*\d+\s*\)\s*history\.pop\(\)/.test(stripComments(src))
+        && !/history\.pop\(\)/.test(stripComments(src)));
+    ok('the live sync never slices the history down to the newest few',
+        !/hist\.slice\(\s*0\s*,\s*\d+\s*\)/.test(sync));
+    ok('the live sync maps the whole list instead',
+        /history\s*=\s*hist\.map\(/.test(sync));
+
+    /* The figures a record needs. */
+    const needed = {
+        direction: /direction:\s*h\.direction/,
+        amount: /amount:\s*Number\(h\.amount\)/,
+        entryPrice: /entryPrice:\s*Number\(h\.entry_price\)/,
+        exitPrice: /exitPrice:\s*h\.exit_price/,
+        profit: /profit:\s*Number\(h\.profit\)/,
+        result: /result:\s*h\.status/,
+        status: /status:\s*h\.status/,
+        timing: /at:\s*h\.settled_at/,
+    };
+    for (const [k, re] of Object.entries(needed)) {
+        ok('the history record keeps ' + k, re.test(src));
+    }
+
+    /* ...and the row actually renders them. */
+    ok('the row renders the entry price', /In \$\{price\(item\.entryPrice\)\}/.test(renderHistory || src));
+    ok('the row renders the exit price', /Out \$\{item\.exitPrice/.test(renderHistory || src));
+    ok('the row renders the stake as staked', /staked/.test(renderHistory || src));
+    ok('the row renders the status in words', /history-status/.test(renderHistory || src));
+    ok('the row renders the close timestamp', /toLocaleString/.test(renderHistory || src));
+
+    /* The section scrolls rather than truncating, so 20 trades are all present. */
+    ok('the section scrolls instead of dropping rows',
+        /\.history-list[\s\S]{0,400}overflow-y:\s*auto/.test(src));
 })();
 
 console.log();

@@ -41,6 +41,11 @@ DEPOSIT_POLL_INTERVAL_SECONDS = int(os.environ.get("DEPOSIT_POLL_INTERVAL_SECOND
 
 # --- Trading (virtual balance only — never real funds) ---------------------
 TRADE_PAYOUT_RATE = float(os.environ.get("TRADE_PAYOUT_RATE", "0.93"))  # matches the existing frontend constant
+# How much of the market's move reaches the user. 1.0 = the raw price move (the
+# original behaviour). It multiplies the MOVE, not the stake, so the P/L on any
+# stake is the same percentage of that stake and grows with it. The frontend
+# reads this back so the row can never show a number the wallet will not pay.
+TRADE_PAYOUT_MULTIPLIER = float(os.environ.get("TRADE_PAYOUT_MULTIPLIER", "10"))
 MIN_TRADE_AMOUNT = float(os.environ.get("MIN_TRADE_AMOUNT", "1"))
 MAX_TRADE_AMOUNT = float(os.environ.get("MAX_TRADE_AMOUNT", "100000"))
 
@@ -58,10 +63,23 @@ COIN_PRICE_REFRESH_SECONDS = int(os.environ.get("COIN_PRICE_REFRESH_SECONDS", "1
 # (POST /api/trade/close), which is the single event that books a result, credits
 # the balance and files the trade into closed history.
 #
-# AUTO_SETTLE_ON_EXPIRE exists because the sweep machinery is still here and is
-# one env var away from being reinstated; it defaults to OFF, and with it off the
-# expiry sweep is a no-op at all (see trading_service.expire_due_trades). Nothing
-# else in the system settles a position on a timer.
+# This rule was asked about directly and confirmed, because it reads as if it
+# contradicts "when the 1-minute timer finishes the trade must be finalized" and
+# "if the trade finishes unsuccessfully, the stake must be lost". The answer was
+# to keep this rule: reaching 00:00 finalizes the COUNTDOWN and nothing else.
+# The stake is still lost when a trade is closed unsuccessfully — the loss is
+# booked and the balance is debited by the payout — but it is booked by the
+# user's Close Trade or CLOSE ALL, priced by the graded rule below, not by the
+# clock running out. An untouched trade stays open, stays priced at 00:00, and
+# stays the user's to collect whenever they get to it.
+#
+# AUTO_SETTLE_ON_EXPIRE exists because the settlement sweep machinery is still
+# here and is one env var away from being reinstated; it defaults to OFF, and
+# with it off the expiry sweep is a no-op at all (see
+# trading_service.expire_due_trades). Nothing else in the system settles a
+# position on a timer. Turning it on would price every expiry through the same
+# graded `_mark_to_market` a manual close uses, so the clock would decide WHEN
+# and never WHAT.
 AUTO_SETTLE_ON_EXPIRE = os.environ.get("AUTO_SETTLE_ON_EXPIRE", "0").strip().lower() in (
     "1", "true", "yes", "on",
 )
@@ -71,8 +89,8 @@ AUTO_SETTLE_ON_EXPIRE = os.environ.get("AUTO_SETTLE_ON_EXPIRE", "0").strip().low
 # MARKET_TICK_INTERVAL_SECONDS: the exit price of an expired position is the
 # server's live price read at expiry, so sweeping at the same rate the market
 # itself ticks keeps that price the price at the moment the duration ran out
-# rather than a stale or an over-advanced one. This is a bound on lateness, not a
-# source of truth. With the flag off — the shipped behaviour — this value is
+# rather than a stale or an over-advanced one. This is a bound on lateness, not
+# a source of truth. With the flag off — the shipped behaviour — this value is
 # unused.
 TRADE_EXPIRY_SWEEP_SECONDS = float(os.environ.get("TRADE_EXPIRY_SWEEP_SECONDS", "1"))
 

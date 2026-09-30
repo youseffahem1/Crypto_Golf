@@ -829,7 +829,7 @@ body {
 /* A position whose duration is over: still open, still closable, still showing
    a P/L that is NOT yet realized — only the clock is done. The row is dimmed so
    it cannot be read as live, its 00:00 drops the gold so a stopped timer does
-   not look like a running one, and the button is labelled CLOSE so it is
+   not look like a running one, and the button reads Close Trade so it is
    obvious that pressing it is what actually realizes the trade. */
 .open-trade.is-finished { opacity: .78; }
 .open-countdown.is-done { color: var(--down); }
@@ -867,7 +867,27 @@ body {
     font-size: 11px;
     font-weight: 900;
     cursor: pointer;
-}
+    /* Two words, and this row is a single 36px line that has to survive a 320px
+       phone. The full wording is never abbreviated -- an elided "Close..." on a
+       money button is worse than a smaller one -- so the button sheds its own
+       padding and point size as the column narrows instead of pushing the row
+       past its box and clipping the trade id off the end. */
+    padding: 7px 13px;
+    font-size: 10px;
+    white-space: nowrap;
+    }
+
+@media (max-width: 430px) {
+    .open-sell { padding: 6px 10px; font-size: 9px; }
+    }
+
+/* Narrowest phones: the fixed columns (direction, amount, clock, P/L, button)
+   plus their gaps stop fitting, so the elastic one -- the coin and trade id --
+   would be crushed to nothing and the row would still clip. The button gives up
+   the last of its padding here, which is what buys the row its last few px. */
+@media (max-width: 350px) {
+    .open-sell { padding: 6px 6px; font-size: 8px; letter-spacing: 0; }
+    }
 
 /* =========================================================
    HISTORY
@@ -880,7 +900,15 @@ body {
     display: flex;
     flex-direction: column;
     gap: 6px;
-}
+    /* The section keeps EVERY completed trade, so it has to be able to grow. It
+       is capped by height and scrolls rather than pushing the rest of the page
+       down forever: 20 trades are all present and all reachable, and the oldest
+       are one scroll away instead of being deleted. */
+    max-height: 340px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    }
 
 .history-item {
     padding: 9px;
@@ -911,7 +939,34 @@ body {
     color: var(--muted);
     font-size: 8px;
     margin-top: 2px;
-}
+    }
+
+/* The per-trade figures of a COMPLETED trade: what it was entered at, what it
+   came out at, and when. They sit under the existing line rather than replacing
+   it, so the row keeps its original shape and just carries more of the record. */
+.history-prices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 3px;
+    color: var(--muted2);
+    font-size: 8px;
+    font-variant-numeric: tabular-nums;
+    }
+
+/* The outcome word beside the direction, so a row states its status in words as
+   well as in colour and sign. */
+.history-status {
+    margin-left: 5px;
+    padding: 1px 5px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, .05);
+    color: var(--muted);
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .04em;
+    vertical-align: 1px;
+    }
 
 .win {
     color: var(--green);
@@ -4819,6 +4874,46 @@ function vantaPeakBest(trade) {
     return (d === "DOWN" || d === "SELL") ? Number(w.low) : Number(w.high);
 }
 
+/* =========================================================
+   THE PAYOUT RULE — one number, one place
+   =========================================================
+
+   How much a position is worth is decided here and NOWHERE else. It used to be
+   written out four times (peak value, practice freeze, live value, and again on
+   the server), each copy a line of arithmetic that had to be edited by hand or
+   the screen would start promising an amount the wallet does not pay.
+
+   A position mirrors the market: a BUY gains exactly what the price gained and
+   loses exactly what it lost, so the P/L on a 100 stake is always the same
+   NUMBER OF PERCENTAGE POINTS as the P/L on a 1,000 stake, and only the money
+   changes. That is the whole meaning of "everything follows the amount" — the
+   stake is a multiplier on the move, never a flat fee on top of it.
+
+   VANTA_PAYOUT_MULTIPLIER scales how much of the market's move actually reaches
+   the user, and it is set from the server's TRADE_PAYOUT_MULTIPLIER so the two
+   can never drift apart. 1 means the raw market move, which is what this file
+   has always done; anything higher makes a given price swing worth proportionally
+   more. It multiplies the MOVE, never the stake, so it scales wins and losses
+   together and a position can never be closed for less than it is worth. */
+let VANTA_PAYOUT_MULTIPLIER = 10;
+
+/* What a stake is worth at a given price, in the same currency as the stake.
+   `sell` positions move against the market, so a falling price is their gain.
+   The floor stops a losing SELL from being settled at a negative or zero
+   payout: the worst a position can be worth is 1% of what was staked. */
+function vantaPayoutFor(amount, entry, exitPrice, sell) {
+    const amt = Number(amount) || 0;
+    if (!(amt > 0)) return 0;
+    const en = Number(entry) || 0;
+    const ex = Number(exitPrice) || 0;
+    if (!(en > 0) || !(ex > 0)) return amt;
+    const mult = Number(VANTA_PAYOUT_MULTIPLIER) || 1;
+    const move = (ex / en - 1) * mult;
+    const value = amt * (sell ? 1 - move : 1 + move);
+    const floor = amt * 0.01;
+    return value > floor ? value : floor;
+}
+
 /* What the stake was worth at that peak — the gain that was on the table
    at the best moment, and the ceiling a SELL could have collected. */
 function vantaPeakValue(trade) {
@@ -4828,9 +4923,7 @@ function vantaPeakValue(trade) {
     if (!(best > 0) || !(amt > 0) || !(entry > 0)) return amt;
     const d = String((trade && trade.direction) || "").toUpperCase();
     const sell = (d === "DOWN" || d === "SELL");
-    const ratio = best / entry;
-    const v = sell ? amt * (2 - ratio) : amt * ratio;
-    return sell && v < amt * 0.01 ? amt * 0.01 : v;
+    return vantaPayoutFor(amt, entry, best, sell);
 }
 
 /* Called once the position is settled and the peak has been copied into
@@ -4882,10 +4975,8 @@ function vantaFreezeDemoTrade(trade, now) {
         : (entry || 1);
     if (!entry) return false;
     const amount = Number(trade.amount) || 0;
-    const ratio = px / entry;
     const sell = trade.direction === "DOWN" || trade.direction === "SELL";
-    let value = sell ? amount * (2 - ratio) : amount * ratio;
-    if (sell && value < amount * 0.01) value = amount * 0.01;
+    const value = vantaPayoutFor(amount, entry, px, sell);
     trade.frozenExitPrice = px;
     trade.frozenProfit = value - amount;
     return true;
@@ -4906,11 +4997,8 @@ function closeValueFor(trade) {
         ? Number(currentPrice)
         : (entry || 1);
     if (!entry) return amount;
-    const ratio = now / entry;
     const sell = trade.direction === "DOWN" || trade.direction === "SELL";
-    let value = sell ? amount * (2 - ratio) : amount * ratio;
-    if (sell && value < amount * 0.01) value = amount * 0.01;
-    return value;
+    return vantaPayoutFor(amount, entry, now, sell);
 }
 
 function sellOpenPositionById(id) {
@@ -5074,9 +5162,19 @@ async function closePositions(list) {
 
             history.unshift({
                 id: t.id, symbol: t.symbol || "GOLF", direction: t.direction,
-                amount: t.amount, profit, result: profit >= 0 ? "WIN" : "LOSS"
+                amount: t.amount, entryPrice: Number(t.entryPrice) || 0,
+                exitPrice: t.frozenExitPrice != null ? Number(t.frozenExitPrice) : Number(currentPrice) || 0,
+                profit, result: profit >= 0 ? "WIN" : "LOSS", status: profit >= 0 ? "WON" : "LOST",
+                at: Date.now(), reason: "SOLD"
             });
-            if (history.length > 5) history.pop();
+            /* EVERY completed trade is kept. This list used to be trimmed to the
+               five most recent rows, which meant the sixth close quietly pushed
+               the oldest one out of the history the user can read — a completed
+               trade simply disappeared, taking its own entry, exit and result with
+               it. Trade history is a record, not a notification feed: it grows to
+               hold every trade and the section scrolls. The cap that matters for
+               long sessions is memory, not what the user is shown, so trimming
+               happens in the server's own history query, never here. */
             /* Bank this close in the realized ledger immediately — `history`
                above is a 5-row UI preview and is NOT the account total. */
             vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit });
@@ -5168,15 +5266,27 @@ document.getElementById("upBtn")
     );
 
 
-/* SELL exits the open position(s) at the live value — it does
-   not open an opposite trade anymore. */
+/* SELL OPENS A SELL TRADE.
+
+   This button used to EXIT the open position instead of opening anything, which
+   made it the exact opposite of what it says on the button and turned the whole
+   SELL side of the market into a shortcut for closing. It is now the mirror of
+   BUY: same path, same stake, same timer, same live pricing, in the opposite
+   direction.
+
+   The two things it must never be confused with, and how they are kept apart:
+     - the per-position "Close Trade" button, which closes ONE existing trade;
+     - the CLOSE ALL button on the Position card, which closes every open trade.
+   Both are still wired, in their own handlers below and on the card. */
 document.getElementById("downBtn")
     .addEventListener(
         "click",
-        () => sellOpenPositions()
+        () => createTrade("DOWN")
     );
 
-/* Per-position SELL buttons inside the Open Trades list. */
+/* "Close Trade" on a single position inside the Open Trades list. It closes
+   ONLY the trade whose button was pressed — the id on the button is the whole
+   selector, and nothing here looks at any other position. */
 openTradesEl.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-exit]");
     if (!btn) return;
@@ -5357,6 +5467,13 @@ function vantaMarkExpired(trade, now) {
 
 function renderOpenTrades() {
 
+    /* Arm the clock before anything else here. This is the self-healing path:
+       whenever positions are drawn — at open, on a server sync, on a re-render,
+       on a coin switch — the driver is confirmed running, so the countdown
+       cannot be left sitting on the value it happened to be painted with.
+       Guarded, so calling it on every one of those is free. */
+    vantaStartClock();
+
     const activeCoin = window.vantaActiveCoin || "GOLF";
     const allTrades = trades.filter(t => (t.symbol || "GOLF") === activeCoin);
     const now = Date.now();
@@ -5396,6 +5513,18 @@ function renderOpenTrades() {
         item.className = "open-trade" + (finished ? " is-finished" : "");
         item.dataset.openTrade = trade.id;
 
+        /* ONE ROW, ONE LINE.
+
+           This used to stack amount / countdown / P/L / button in a right-hand
+           column, which forced the card to ~92px tall to show four numbers — so
+           a single open position occupied more vertical space than the chart's
+           controls. Every one of those figures is a single short value, so they
+           read fine side by side: the row is now one flex line, roughly a third
+           of the height, and still shows the same seven things — side, trade id,
+           market, entry price, stake, the clock, the P/L and the close button.
+
+           Nothing is dropped to get there. The id and entry price simply move
+           onto the second line of the main block, where they already were. */
         item.innerHTML = `
             <div class="direction-badge ${trade.direction === "UP" ? "up" : "down"}">
                 ${trade.direction === "UP" ? "↑" : "↓"}
@@ -5404,7 +5533,7 @@ function renderOpenTrades() {
             <div class="open-main">
                 <div class="open-top">
                     <span class="open-direction">${trade.direction === "UP" ? "BUY" : "SELL"}</span>
-                    <span class="open-id">${trade.id}</span>
+                    <span class="open-id" title="Trade id: ${trade.id}">${String(trade.id || "").slice(0, 8)}</span>
                 </div>
                 <div class="open-info">
                     <span>${trade.symbol || "GOLF"}</span>
@@ -5412,12 +5541,13 @@ function renderOpenTrades() {
                 </div>
             </div>
 
-            <div class="open-right">
-                <div class="open-amount">${money(trade.amount)}</div>
-                <div class="open-countdown${finished ? " is-done" : ""}" data-countdown="${trade.id}">${finished ? "00:00" : formatTime(remaining)}</div>
-                <div class="open-value${vantaIsFrozen(trade) ? " is-frozen" : ""}" data-openval="${trade.id}"${vantaIsFrozen(trade) ? ' title="Locked when the timer reached 00:00. This is the amount you get when you close."' : ""}>${rpl >= 0 ? "+" : "−"}${money(Math.abs(rpl))}</div>
-                <button type="button" class="open-sell" data-exit="${trade.id}">${finished ? "CLOSE" : "SELL"}</button>
-            </div>
+            <div class="open-amount" title="Amount staked">${money(trade.amount)}</div>
+
+            <div class="open-countdown${finished ? " is-done" : ""}" data-countdown="${trade.id}" title="Time left — at 00:00 the duration is over and the P/L stops moving">${finished ? "00:00" : formatTime(remaining)}</div>
+
+            <div class="open-value${vantaIsFrozen(trade) ? " is-frozen" : ""}" data-openval="${trade.id}"${vantaIsFrozen(trade) ? ' title="Locked when the timer reached 00:00. This is the amount you get when you close."' : ""}>${rpl >= 0 ? "+" : "−"}${money(Math.abs(rpl))}</div>
+
+            <button type="button" class="open-sell" data-exit="${trade.id}" title="Close this one trade now, at the live price">Close Trade</button>
         `;
 
         openTradesEl.appendChild(item);
@@ -5525,6 +5655,49 @@ function updateTrades() {
                     remaining
                 );
 
+        } else if (countdown && countdown.textContent !== "00:00") {
+
+            /* THE TERMINAL WRITE. This is the frame the clock is required to
+               LAND on 00:00, and it is what was missing.
+
+               The guard above deliberately stops writing the moment the position
+               is over, so that a finished row cannot be rewritten forever. But
+               "stop writing" is not the same as "write the last value": the last
+               value the guard ever wrote was the last RUNNING one, so the cell
+               was left showing 00:01 (or 00:02) and nothing ever put 00:00 in
+               it. It only reached 00:00 by accident, whenever a full re-render
+               of the list happened to come along — in practice mode, where
+               nothing re-renders, it sat on 00:01 for good. A countdown that
+               stops one second short of zero is a stuck countdown.
+
+               So the finished value is written here, explicitly, instead of
+               being left behind. It is a subtraction against the same server
+               `closes_at` as every other value in this function, so it cannot
+               restart, cannot count past zero, and cannot be reset by a
+               re-render — a re-render reads the same `endTime` and lands on the
+               same 00:00.
+
+               Comparing against what the cell already holds keeps this to a
+               single mutation: after the first 00:00 the branch is inert, so
+               00:00 is written once and then simply stays, and the row is
+               still never rewritten. */
+
+            countdown.textContent = "00:00";
+            countdown.classList.add("is-done");
+
+            /* The row is finished now, so present it as finished: the same state
+               renderOpenTrades() would have drawn. Without this the row kept its
+               running styling until the next full re-render, so a stopped
+               position still looked like a running one. It changes the LABEL and
+               the styling only — the button was already the same `data-exit`
+               close either way, and it was never gated on expiry. */
+            const finishedRow = countdown.closest(".open-trade");
+            if (finishedRow) {
+                finishedRow.classList.add("is-finished");
+                const btn = finishedRow.querySelector(".open-sell");
+                if (btn) btn.textContent = "Close Trade";
+            }
+
         }
 
 
@@ -5624,6 +5797,52 @@ function updateTrades() {
        stopped and the UI can label it. It books nothing and asks the server
        for nothing: a finished duration is not a settlement. */
     vantaExpireDueTrades();
+
+}
+
+/* =========================================================
+   THE CLOCK'S OWN DRIVER
+   ========================================================= */
+
+/* updateTrades() is what paints a position's countdown, and for a long time the
+   ONLY caller it had was animationLoop() — the chart's requestAnimationFrame
+   loop. That tied every open position's clock to the canvas happening to be
+   animating, and the two are not the same thing:
+
+     * the animation loop is started in exactly one place, app entry, and a
+       session that gets there late, or twice, or not at all leaves no loop;
+     * requestAnimationFrame is suspended whenever the page is not being
+       painted — a background tab, a hidden or minimised window, a browser that
+       throttles it — and it does not come back to repaint a clock that was
+       already sitting at 01:00.
+
+   In both cases the countdown simply stopped being repainted, so each row kept
+   whatever renderOpenTrades() drew at the moment the position opened. For a
+   one-minute trade that first value is always 01:00, so a perfectly live
+   position sat on a frozen 01:00 for its whole minute and read as a timer that
+   had stalled the instant it started.
+
+   The clock now has a driver of its own. It is deliberately NOT a second timer
+   and it re-implements nothing: it calls the SAME updateTrades(), which reads
+   the SAME server `closes_at` through the SAME vantaTimeLeft(). There is still
+   exactly one number, read from one place, painted by one function — the only
+   thing that changed is that the painter is now also asked once a second on
+   wall-clock time, instead of only when the chart happens to redraw.
+
+   requestAnimationFrame is still what makes it smooth while the page is in
+   front of you; this is the floor underneath it, so a missing or paused render
+   loop can no longer freeze a live position's clock. */
+let __vantaClockTimer = null;
+
+function vantaStartClock() {
+
+    /* One driver for the life of the page. Re-entering the app, opening a
+       position and re-rendering the list all call this, and none of them can
+       stack a second interval — so a position still has exactly one clock, and
+       a page that has been open a long time has not leaked a hundred of them. */
+    if (__vantaClockTimer !== null) return;
+
+    __vantaClockTimer = setInterval(updateTrades, 1000);
 
 }
 
@@ -5730,6 +5949,13 @@ async function vantaSyncTrades() {
     const settled = [];
     const now = Date.now();
 
+    /* Take the payout rule from the server rather than trusting a copy of it
+       baked into this file. The row and the wallet are priced by the same
+       number this way, so a change to the rule can never leave the screen
+       quoting a figure the server would refuse to pay. */
+    const firstPriced = openList.find(t => Number(t.payout_multiplier) > 0);
+    if (firstPriced) VANTA_PAYOUT_MULTIPLIER = Number(firstPriced.payout_multiplier);
+
     for (let i = trades.length - 1; i >= 0; i--) {
         if (!openIds.has(trades[i].id)) {
             if (historySeen !== null && !historySeen.has(trades[i].id)) settled.push(trades[i]);
@@ -5816,13 +6042,26 @@ async function vantaSyncTrades() {
         });
     }
 
-    history = hist.slice(0, 5).map(h => ({
+    /* EVERY completed trade the server still holds, newest first. This used to
+       be `hist.slice(0, 5)`, which showed the five most recent closes and hid
+       every older one — so a user who made twenty trades saw five, and the rest
+       of their own history was simply not on the page. The full list is rendered
+       now, with each trade keeping its direction, entry price, exit price, stake,
+       result and timing, and the section scrolls rather than truncating.
+
+       `hist` is already capped server-side, so this cannot grow without bound. */
+    history = hist.map(h => ({
         id: h.id,
         symbol: h.symbol || "GOLF",
         direction: h.direction,
-        amount: h.amount,
-        profit: h.profit || 0,
-        result: h.status === "WON" ? "WIN" : (h.status === "LOST" ? "LOSS" : "CANCEL")
+        amount: Number(h.amount) || 0,
+        entryPrice: Number(h.entry_price) || 0,
+        exitPrice: h.exit_price == null ? null : Number(h.exit_price),
+        profit: Number(h.profit) || 0,
+        result: h.status === "WON" ? "WIN" : (h.status === "LOST" ? "LOSS" : "CANCEL"),
+        status: h.status || "",
+        reason: h.close_reason || "",
+        at: h.settled_at ? Date.parse(h.settled_at) : (h.opened_at ? Date.parse(h.opened_at) : 0)
     }));
 
     if (settled.length) {
@@ -6131,11 +6370,24 @@ function renderHistory() {
                 <div>
 
                     <div class="history-name">
-                        ${item.id} • ${item.direction === "UP" ? "BUY" : "SELL"}
+                        ${String(item.id || "").slice(0, 8)} • ${item.direction === "UP" ? "BUY" : "SELL"}
+                        <span class="history-status">${item.result === "CANCEL" ? "CANCELLED" : (item.result || "")}</span>
                     </div>
 
                     <div class="history-meta">
-                        ${item.symbol || "GOLF"} • ${money(item.amount)}
+                        ${item.symbol || "GOLF"} • ${money(item.amount)} staked
+                    </div>
+
+                    <!-- Every figure the trade actually had. A completed trade has
+                         to be readable on its own: what it was entered at, what it
+                         came out at, when it ran, and how it ended. None of this is
+                         re-derived from a live price — an entry and an exit are
+                         facts about a trade that is already over, and re-reading
+                         them off the feed would rewrite the past on every tick. -->
+                    <div class="history-prices">
+                        <span title="Entry price">In ${price(item.entryPrice)}</span>
+                        <span title="Exit / closing price">Out ${item.exitPrice == null ? "—" : price(item.exitPrice)}</span>
+                        ${item.at ? `<span title="${item.reason === "EXPIRED" ? "Settled when the 1 minute ran out" : "Closed by Close Trade"}">${new Date(item.at).toLocaleString()}</span>` : ""}
                     </div>
 
                 </div>
@@ -6782,6 +7034,11 @@ async function vantaEnterApp() {
 
     candleStart = performance.now();
     requestAnimationFrame(animationLoop);
+
+    /* The clock is armed here as well as in renderOpenTrades(): entry is the
+       normal path, and this makes "the countdown runs" a property of the app
+       being open rather than of the chart being animated. */
+    vantaStartClock();
 
     refreshBalance();
     refreshGolfStats();
@@ -15700,7 +15957,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           +(r.done ? (r.fpnl===null||r.fpnl===undefined ? vtPlCellFreezing() : vtPlCellFrozen(r.fpnl))
                    : vtPlCell(r.pnl, null, r.pk>0 ? r.pkLabel+' '+coinFmt(r.pk)+' ('+vtSigned(r.pkGain)+')' : ''))
           +vtTimeCell(r.start,'TIME','opened '+vtStamp(r.start))
-          +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(r.id))+'">SELL</button></div>'
+          +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(r.id))+'">Close Trade</button></div>'
           +'</div>'
         ).join('');
       }
@@ -15742,7 +15999,7 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
             +'<div class="vta-tc vt-price" data-l="PRICE">'+coinFmt(t.entryPrice)+'</div>'
             +'<div class="vta-tc vt-status" data-l="STATUS">'+(done?'FINISHED':'OPEN')+'</div>'
             +'<div class="vta-tc vt-time" data-l="LEFT" title="'+(done?'Finished — the server recorded the price at 00:00. Press CLOSE to collect it.':'Time left — at 00:00 the server records this position\'s price')+'">'+(done?'00:00':leftTxt(t))+' <span style="opacity:.5">of '+dTxt+'</span></div>'
-            +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(t.id))+'">CLOSE</button></div>'
+            +'<div class="vta-tc vt-act"><button type="button" class="vta-x" data-exit="'+esc(String(t.id))+'">Close Trade</button></div>'
             +'</div>';
         }).join(''));
       }
@@ -16585,6 +16842,123 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   }
   .ic-sub,.ic-total,.ic-msg{display:none}
   .timeframes .tf:nth-child(n+5){display:none}
+}
+
+/* ==========================================================
+   OPEN-TRADE ROW — compact, one line
+   The active-trade card was ~92px tall to show four short
+   numbers, because amount / clock / P/L / button were stacked
+   in a right-hand column. They are all single values, so they
+   sit side by side on one flex line instead and the row drops
+   to roughly a third of the height. Every figure it showed
+   before is still on it: side, trade id, market, entry price,
+   stake, countdown, P/L and the close button.
+   ========================================================== */
+.open-trade{
+  display:flex !important;
+  align-items:center !important;
+  gap:8px !important;
+  padding:5px 8px !important;
+  min-height:0 !important;
+  border-radius:10px !important;
+  overflow:hidden;
+  /* .open-trades is a TWO-COLUMN grid (see its own rule), so a position used to
+     be laid out in half the section: about 254px of a 560px panel. That was fine
+     for the old two-line card, but one line of figures needs about 280px, so the
+     main block was squeezed to zero width and the SYMBOL AND ENTRY PRICE
+     VANISHED — the row showed a clock, an amount and a button with no market on
+     it at all.
+
+     Each position now spans the full width of the section and the list simply
+     stacks. A position is one flat line of figures and reads far better across
+     the panel than halved into a column, several positions still stack in a
+     column, and nothing is ever squeezed out of existence again — whatever the
+     number of open positions, the clock, the P/L and the close button keep their
+     room and the market name is always on the row. */
+  grid-column:1 / -1;
+  width:100%;
+}
+.direction-badge{
+  width:24px !important;height:24px !important;
+  border-radius:7px !important;
+  font-size:13px !important;
+  flex:0 0 auto;
+}
+.open-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
+.open-top{gap:5px;min-width:0}
+.open-direction{font-size:10px;line-height:1.25;white-space:nowrap}
+.open-id{font-size:8px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.open-info{margin-top:0 !important;font-size:8px;line-height:1.25;gap:6px;white-space:nowrap}
+.open-amount{
+  margin:0;flex:0 0 auto;
+  min-width:50px;text-align:right;
+  font-size:10px;font-weight:800;line-height:1.2;
+  font-variant-numeric:tabular-nums;
+}
+/* The clock gets a chip of its own so it is the one figure on the row that
+   cannot be misread as a static label — and a stopped clock drops the gold, so
+   00:00 never looks like a running one. */
+.open-countdown{
+  margin:0 !important;
+  flex:0 0 auto;
+  min-width:46px;
+  text-align:center;
+  padding:2px 6px;
+  border-radius:6px;
+  background:rgba(255,200,87,.10);
+  border:1px solid rgba(255,200,87,.22);
+  font-size:11px;font-weight:900;line-height:1.25;
+  font-variant-numeric:tabular-nums;
+}
+.open-countdown.is-done{background:rgba(246,70,93,.10);border-color:rgba(246,70,93,.28)}
+.open-value{
+  margin:0 !important;
+  flex:0 0 auto;
+  min-width:56px;text-align:right;
+  font-size:10px;font-weight:900;line-height:1.2;
+  font-variant-numeric:tabular-nums;
+}
+.open-sell{
+  margin:0 !important;
+  flex:0 0 auto;
+  align-self:center;
+  padding:4px 11px !important;
+  border-radius:7px !important;
+  font-size:9px;
+}
+
+/* Narrow rows drop the two least load-bearing figures before anything is
+   allowed to overflow or wrap — the id and the entry price — and never the
+   clock, the P/L or the close button. */
+@media (max-width:560px){
+  .open-trade{gap:6px !important;padding:5px 6px !important}
+  .open-id{display:none}
+  .open-amount{min-width:0}
+  .open-value{min-width:0}
+  .open-countdown{min-width:42px;padding:2px 5px}
+}
+@media (max-width:400px){
+  .open-info span:last-child{display:none}
+  .open-sell{padding:4px 9px !important}
+}
+
+/* Narrowest phones still in use (320px). By here the id and the entry price have
+   already gone, and the row is one line of: badge, market, amount, clock, P/L and
+   the close button. Measured at 320px those fixed cells were already using the
+   whole 254px box, which squeezed .open-main to ZERO WIDTH — and a zero-width
+   main block is the original bug this whole compact sheet exists to prevent: the
+   row showed a clock, an amount and a button with no market on it at all.
+
+   So the button gives up its last padding and a point of size here, and the clock
+   gives up 4px. Neither is ever dropped, abbreviated or ellipsised — they are
+   only asked to be smaller, which is the only thing that can buy the market name
+   its space back. */
+@media (max-width:350px){
+  .open-sell{padding:3px 5px !important;font-size:8px;letter-spacing:0}
+  .open-countdown{min-width:38px;padding:2px 3px}
+  /* Reclaiming the four inter-cell gaps (8px total) is what turns .open-main
+     from a sliver into somewhere the market name actually fits. */
+  .open-trade{gap:4px !important}
 }
 </style>
 </body>

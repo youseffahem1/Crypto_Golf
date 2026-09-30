@@ -92,6 +92,10 @@ class TradeOut(BaseModel):
     entry_price: float
     exit_price: Optional[float] = None
     payout_rate: float
+    # The server's payout rule, TRADE_PAYOUT_MULTIPLIER, sent with every trade so
+    # the client prices positions with the SAME arithmetic the server will settle
+    # them with. Without it the row can quote a figure the wallet will not pay.
+    payout_multiplier: float = 1.0
     duration_seconds: int
     status: str
     profit: Optional[float] = None

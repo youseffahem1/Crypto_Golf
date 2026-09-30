@@ -87,6 +87,7 @@ from sqlalchemy.orm import Session
 from . import models, market_service
 from .config import (
     TRADE_PAYOUT_RATE,
+    TRADE_PAYOUT_MULTIPLIER,
     MIN_TRADE_AMOUNT,
     MAX_TRADE_AMOUNT,
     PLATFORM_COINS,
@@ -176,11 +177,21 @@ def _is_sell(direction) -> bool:
 def _exit_value(amount: float, entry: float, exit_price: float, direction) -> float:
     """What the stake is worth right now, from the server's own price.
 
-    A BUY (UP) rises with the price: value = amount * exit / entry. A SELL
-    (DOWN) is the mirror image, because it wins when the price falls:
-    value = amount * (2 - exit / entry), floored at 1% of the stake so a
-    position that has gone completely the wrong way still returns something
-    rather than a negative balance.
+    This is THE payout rule, and the frontend's vantaPayoutFor() is the same
+    arithmetic written once more for the screen. They must agree to the cent, or
+    the row would promise an amount the wallet refuses to pay.
+
+    A position mirrors the market. A BUY (UP) gains what the price gained; a
+    SELL (DOWN) is the mirror image, because it wins when the price falls. The
+    stake is a MULTIPLIER on the move and never a flat fee on top of it, so the
+    P/L on a 100 stake is the same number of percentage points as on a 1,000
+    stake -- only the money changes. That is what "everything follows the
+    amount" means.
+
+    TRADE_PAYOUT_MULTIPLIER scales how much of the market's move reaches the
+    user. It multiplies the MOVE, not the stake, so wins and losses grow
+    together and no position can ever be settled below what it is worth. 1.0 is
+    the raw market move, which is what this has always done.
     """
     amount = float(amount or 0.0)
     entry = float(entry or 0.0)
@@ -189,12 +200,11 @@ def _exit_value(amount: float, entry: float, exit_price: float, direction) -> fl
         return 0.0
     if entry <= 0 or exit_price <= 0:
         return amount
-    ratio = exit_price / entry
-    if _is_sell(direction):
-        value = amount * (2.0 - ratio)
-        floor = amount * 0.01
-        return value if value > floor else floor
-    return amount * ratio
+    multiplier = float(TRADE_PAYOUT_MULTIPLIER or 1.0)
+    move = (exit_price / entry - 1.0) * multiplier
+    value = amount * (1.0 - move if _is_sell(direction) else 1.0 + move)
+    floor = amount * 0.01
+    return value if value > floor else floor
 
 
 def _live_exit_price(db: Session, trade: models.Trade) -> float:
@@ -667,6 +677,20 @@ def freeze_due_trades(db: Session, now: datetime | None = None, limit: int = 500
     return frozen
 
 
+def due_trades_query(db: Session, now: datetime):
+    """The OPEN positions whose duration has already elapsed, oldest deadline
+    first. One place, so the timer and the read paths can never disagree about
+    which positions are due."""
+    return (
+        db.query(models.Trade)
+        .filter(
+            models.Trade.status == models.TradeStatus.OPEN,
+            models.Trade.closes_at <= now,
+        )
+        .order_by(models.Trade.closes_at.asc(), models.Trade.id.asc())
+    )
+
+
 def expire_due_trades(db: Session, now: datetime | None = None, limit: int = 500) -> list[models.Trade]:
     """Settle every OPEN position whose `closes_at` has passed — ONLY IF
     `AUTO_SETTLE_ON_EXPIRE` is on, which it is NOT by default.
@@ -678,15 +702,18 @@ def expire_due_trades(db: Session, now: datetime | None = None, limit: int = 500
     `close_trade()`. The client's own countdown stops at 00:00 for the same
     reason, and does not post a close either.
 
+    This was asked about directly and confirmed in the face of wording that
+    reads the other way ("when the 1-minute timer finishes the trade must be
+    finalized", "the stake must be lost when unsuccessful"). The rule stands: the
+    clock finalizes the COUNTDOWN, not the trade. An unsuccessful close does lose
+    its stake, but that is the payout rule doing it at the user's click, priced
+    by the graded `_exit_value` with its 1% floor — never a forfeit booked by the
+    timer running out.
+
     The gate is here, at the one function every caller shares, rather than in
     the three callers themselves (the background loop in main.py and both read
     endpoints). A gate in the callers is a rule three places can each forget; a
     gate here makes "nothing settles on a timer" a property of the system.
-
-    Retained rather than deleted so reinstate-on-expiry stays a config change.
-    Re-enabling it prices every settlement through the identical
-    `_mark_to_market` a manual close uses, so the clock would decide WHEN, never
-    WHAT, and no position would be forfeited by running out of time.
 
     `now` is injectable so a test can settle a position without sleeping 60
     seconds. Never raises: a failure here is logged and the positions stay OPEN

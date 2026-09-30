@@ -151,7 +151,7 @@ frozen = trading_service.freeze_due_trades(db)
 check("the deadline froze the position", len(frozen), 1)
 f = db.query(models.Trade).filter_by(id=stale).one()
 approx("it froze at the 00:00 price of $0.04", f.frozen_exit_price, 0.04)
-approx("its frozen P/L is +$10", f.frozen_profit, 10.0)
+approx("its frozen P/L is +$100", f.frozen_profit, 100.0)
 check("a frozen_at was stamped", isinstance(f.frozen_at, datetime), True)
 check("but it is STILL OPEN — freezing is not settling", f.status, models.TradeStatus.OPEN)
 check("no realized profit was written", f.profit, None)
@@ -164,11 +164,11 @@ check("it is not in the realized summary yet", trading_service.realized_split(db
 # The whole promise of the feature is the next line: the market can now do
 # whatever it likes, and the figure the user is guaranteed cannot change. So
 # move the market, then collect, and the payout must be the FROZEN one.
-PRICE["now"] = 0.006  # -70%. Collecting now would have been a $7 loss.
+PRICE["now"] = 0.006  # -70%. Collecting now would have been a $9.90 loss.
 closed = trading_service.close_trade(db, user.id, stale)
-approx("the close pays the FROZEN price, not the live one", closed.profit, 10.0)
+approx("the close pays the FROZEN price, not the live one", closed.profit, 100.0)
 check("it closed as a WIN, not a -amount loss", closed.status, models.TradeStatus.WON)
-approx("balance credited the frozen +$10", balance(user.id), 1010.0)
+approx("balance credited the frozen +$100", balance(user.id), 1100.0)
 check("reason recorded as a manual SOLD", closed.close_reason, "SOLD")
 
 # --- 2. freezing is idempotent ---------------------------------------------
@@ -182,8 +182,8 @@ check("still no open positions",
 # And a manual CLOSE on the already-closed position is an idempotent replay,
 # not a second payout.
 replay = trading_service.close_trade(db, user.id, stale)
-approx("replay returns the recorded result", replay.profit, 10.0)
-check("replay did not re-credit", balance(user.id), 1010.0)
+approx("replay returns the recorded result", replay.profit, 100.0)
+check("replay did not re-credit", balance(user.id), 1100.0)
 check("replay did not rewrite the reason", replay.close_reason, "SOLD")
 
 # --- 3. settlement is server-authoritative ---------------------------------
@@ -197,15 +197,15 @@ PRICE["now"] = 0.04  # the market doubles; a BUY is therefore worth 2x
 # A hostile client claims a huge value. It must be ignored entirely: the
 # server pays exactly the mark-to-market figure for its own feed.
 c2 = trading_service.close_trade(db, user.id, t2.id, value=99999.0)
-approx("profit is server-priced, not claimed", c2.profit, 10.0)
-approx("balance credited 20, not 99999", balance(user.id), pre_t2 + 10.0)
+approx("profit is server-priced, not claimed", c2.profit, 100.0)
+approx("balance credited 110, not 99999", balance(user.id), pre_t2 + 100.0)
 
 # A hostile client also tries to UNDER-claim, which is equally ignored.
 PRICE["now"] = 0.02
 t2b = trading_service.open_trade(db, user.id, "UP", 10.0, 60, "GOLF")
 PRICE["now"] = 0.04
 c2b = trading_service.close_trade(db, user.id, t2b.id, value=0.01)
-approx("under-claim ignored too", c2b.profit, 10.0)
+approx("under-claim ignored too", c2b.profit, 100.0)
 
 # --- 4. a close is idempotent ----------------------------------------------
 print("\n[4] closing twice pays once")
@@ -224,7 +224,7 @@ check("balance after two opens", balance(user.id), after_first - 20.0)
 PRICE["now"] = 0.04  # price DOUBLES: good for the BUY, fatal for the SELL
 up_c = trading_service.close_trade(db, user.id, up.id)
 down_c = trading_service.close_trade(db, user.id, down.id)
-approx("BUY wins when the price rises", up_c.profit, 10.0)
+approx("BUY wins when the price rises", up_c.profit, 100.0)
 approx("SELL is floored, never negative", down_c.profit, -9.9)
 check("SELL is a loss", down_c.status, models.TradeStatus.LOST)
 check("BUY is a win", up_c.status, models.TradeStatus.WON)
@@ -253,7 +253,9 @@ PRICE["now"] = 0.006  # -70% by the time the user gets round to pressing the but
 
 allc = trading_service.close_all_trades(db, user.id)
 check("three positions collected", len(allc), 3)
-approx("whole stake plus the frozen +20% returned", balance(user.id), base * 0.0 + (base - 60.0) + 72.0)
+# +20% at the instant of 00:00, amplified 10x, so each stake is worth 3x:
+# 10 + 20 + 30 = $60 of stake returns as $180.
+approx("whole stake plus the frozen +20% returned", balance(user.id), base * 0.0 + (base - 60.0) + 180.0)
 check("all three settled", sorted(str(x.status) for x in allc),
       sorted([str(models.TradeStatus.WON)] * 3))
 check("none left open", db.query(models.Trade).filter_by(

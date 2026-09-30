@@ -138,6 +138,20 @@ if (posCard) {
   ok('Profit is written from totalProfit', /setN\('vtaPProfit',\s*totalProfit\s*>\s*0/.test(posCard));
   ok('Loss is written from totalLoss', /setN\('vtaPLoss',\s*totalLoss\s*<\s*0/.test(posCard));
   ok('the open halves can never net against each other', !/const totalProfit=[^;]*openDrop/.test(posCard) && !/const totalLoss=[^;]*openGain/.test(posCard));
+  /* Per POSITION, not per net. Two trades open at once — one winning, one
+     losing — must be visible as both of them, not as a single net figure that
+     describes neither. The old code summed the book and split the sum by sign,
+     so +$40 against -$60 printed Profit $0.00 / Loss $20.00 and the $40 that
+     was genuinely being won disappeared. */
+  ok('the open halves are read off the per-position split, not a re-split net',
+    /const openGain=openAll\.gain;/.test(posCard) && /const openDrop=openAll\.drop;/.test(posCard)
+    && !/openAll\.net>0\?openAll\.net:0/.test(posCard) && !/openAll\.net<0\?openAll\.net:0/.test(posCard));
+  const openSplit = fnBody('vtOpenNetAll');
+  ok('vtOpenNetAll files each position under its own sign', !!openSplit
+    && /if\(pl>0\)\{ gain\+=pl; wins\+\+; \}\s*else if\(pl<0\)\{ drop\+=pl; loses\+\+\; \}/.test(openSplit));
+  ok('the open book still reports its net for the top cards', !!openSplit && /net\+=pl;/.test(openSplit));
+  ok('the sub-line says how many open trades are winning and how many losing',
+    /openAll\.wins\+' winning, '\+openAll\.loses\+' losing'/.test(posCard));
  ok('a negative totalProfit can never render', /totalProfit\s*>\s*0\s*\?\s*'\+'\s*\+\s*money\(totalProfit\)\s*:\s*money\(0\)/.test(posCard));
   ok('a positive totalLoss can never render', /totalLoss\s*<\s*0\s*\?\s*.+\s*money\(Math\.abs\(totalLoss\)\)\s*:\s*money\(0\)/.test(posCard));
   ok('the two are displayed in separate rows', /id="vtaPProfit"/.test(src) && /id="vtaPLoss"/.test(src));

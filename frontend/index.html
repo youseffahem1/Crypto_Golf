@@ -14425,9 +14425,15 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
   transition:background .15s ease,border-color .15s ease;
 }
 .vta-close-trade:hover{background:rgba(246,70,93,.2);border-color:var(--down)}
-/* With nothing in #vtaPosRows there is nothing to close, so the button keeps
-   its place and its name but stops looking like something to press: greyed,
-   not clickable, and the hover cannot fire a close on an empty book. */
+/* COLLECT ALL: nothing is running, so there is nothing being given up — the
+   button stops being a red close and reads as the green settle it actually is.
+   Same size, same place, so the header never jumps between the two names. */
+.vta-close-trade.is-collect{
+  border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.1);color:var(--up);
+}
+.vta-close-trade.is-collect:hover{background:rgba(34,197,94,.2);border-color:var(--up)}
+/* Nothing open and nothing to settle: the button keeps its place and its name
+   but stops looking like something to press. */
 .vta-close-trade.is-off,
 .vta-close-trade:disabled{
   border-color:rgba(255,255,255,.14);
@@ -14436,6 +14442,8 @@ button.vtp-card:hover{border-color:rgba(114,135,255,.4)}
 }
 .vta-close-trade.is-off:hover,
 .vta-close-trade:disabled:hover{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.14)}
+.vta-close-trade.is-off.is-collect,
+.vta-close-trade.is-off.is-collect:hover{color:var(--muted2)}
 
 /* ---------- Account summary (dotted leaders) ----------
    Placement is done with data-acc grid-areas, never :nth-child: the summary
@@ -15690,7 +15698,7 @@ function vtNoteRealized(row){
           +'" data-pos-tab="'+t[0]+'" role="tab">'+t[1]+'<i class="vta-tcount" id="vtaCnt-'+t[0]+'">0</i></button>').join('')
         +'<div class="vta-tbar-right">'
         +'<span class="vta-tmeta" id="vtaPosMeta"><i class="vta-dot"></i>—</span>'
-        +'<button type="button" class="vta-close-trade" id="vtaCloseTrade" title="Close all open positions on this market">CLOSE ALL</button>'
+        +'<button type="button" class="vta-close-trade" id="vtaCloseTrade" title="Nothing to close and nothing to collect">CLOSE ALL</button>'
         +'</div></div>'
         /* ---- account summary (dotted leaders) ----
            This is the ONE place a result is reported. There is no separate
@@ -15739,6 +15747,14 @@ function vtNoteRealized(row){
         const ct=ev.target.closest('#vtaCloseTrade');
         if(ct){
           ev.stopPropagation();
+          /* The disabled guard is belt-and-braces: a disabled button fires no
+             click, and this keeps a synthetic or programmatic one from
+             settling an account that has nothing in it to settle. */
+          if(ct.disabled) return;
+          /* COLLECT ALL is the same button doing the same job, so it takes this
+             exact path. The mode is read off the button itself rather than
+             recomputed here, so what it was named on screen is what it does. */
+          const collecting=ct.dataset.mode==='collect';
           __vantaSuppressLast = true;
           let p;
           try { p = (typeof sellOpenPositions==='function') ? sellOpenPositions() : undefined; } catch(e) { p = undefined; }
@@ -15758,8 +15774,15 @@ function vtNoteRealized(row){
                while trades are open.
 
                Counted from the returned number, so a CLOSE ALL with an empty book
-               leaves the block alone. */
-            window.__vantaAcctZeroed = (Number(closed)||0) > 0;
+               leaves the block alone.
+
+               COLLECT ALL is the exception, and it has to be: there is no open
+               book for it to close, so that count is zero by definition and
+               gating on it alone would leave the button inert — pressing it
+               would change nothing while claiming to collect. It settles
+               unconditionally, because it is only ever armed when the block
+               above is actually showing a result to settle. */
+            window.__vantaAcctZeroed = collecting ? true : ((Number(closed)||0) > 0);
             updatePosCard();
           });
           return;
@@ -15786,27 +15809,58 @@ function vtNoteRealized(row){
      closeValueFor uses, and a position whose price is not known yet is left out
      of the total rather than guessed at. `skipped` is reported so the caller
      can say so instead of quietly showing a short total as if it were whole. */
+  /* The open book, split BY POSITION rather than by total.
+
+     Every position that has not been closed is measured on its own and filed
+     under its own sign: a position up $40 counts as $40 of Profit, a position
+     down $60 counts as $60 of Loss. So the two rows of the account block
+     answer "how much am I winning" and "how much am I losing" instead of one
+     of them eating the other.
+
+     This used to sum the whole book into a single NET figure and then split
+     that net by sign, so +$40 and -$60 open at the same time printed as
+     Profit $0.00 / Loss $20.00 — the $40 that was genuinely being won had
+     vanished into the offsetting loss. Per position it prints Profit $40.00 /
+     Loss $60.00, which is the truth and is the sum of the P/L column in the
+     table right underneath.
+
+     `net` is still returned, because it is the one number the top cards read.
+
+     A FINISHED position (its duration ran out) is measured from the server's
+     frozen profit, never from the live feed, so the account block agrees with
+     the row and with the amount CLOSE will actually pay. */
   function vtOpenNetAll(all, sym){
     const prices=window.vantaServerPrices||{};
     const active=String(sym||'GOLF').toUpperCase();
-    let net=0, count=0, skipped=0;
+    let net=0, gain=0, drop=0, count=0, skipped=0, wins=0, loses=0;
     (all||[]).forEach(t=>{
       const amt=Number(t.amount||0);
       const entry=Number(t.entryPrice||0);
       if(!amt||!entry) return;
       const s=String(t.symbol||'GOLF').toUpperCase();
-      const now=(s===active)
-        ? Number(currentPrice)||entry
-        : Number(prices[s])||0;
-      if(!(now>0)){ skipped++; return; }
-      const ratio=now/entry;
-      const sell=(t.direction==='DOWN'||t.direction==='SELL');
-      let value=sell ? amt*(2-ratio) : amt*ratio;
-      if(sell && value<amt*0.01) value=amt*0.01;
-      net+=value-amt;
+      const fp=(typeof vantaFrozenProfit==='function')?vantaFrozenProfit(t):null;
+      let pl;
+      if(fp!==null&&fp!==undefined){
+        /* Frozen: the server's own signed P/L, used exactly as it sends it. */
+        pl=Number(fp);
+      } else {
+        const now=(s===active)
+          ? Number(currentPrice)||entry
+          : Number(prices[s])||0;
+        if(!(now>0)){ skipped++; return; }
+        const ratio=now/entry;
+        const sell=(t.direction==='DOWN'||t.direction==='SELL');
+        let value=sell ? amt*(2-ratio) : amt*ratio;
+        if(sell && value<amt*0.01) value=amt*0.01;
+        pl=value-amt;
+      }
+      /* Filed by this position's own sign, never netted against another. */
+      if(pl>0){ gain+=pl; wins++; }
+      else if(pl<0){ drop+=pl; loses++; }
+      net+=pl;
       count++;
     });
-    return {net:net, count:count, skipped:skipped};
+    return {net:net, gain:gain, drop:drop, count:count, skipped:skipped, wins:wins, loses:loses};
   }
 
   function updatePosCard(){
@@ -15885,7 +15939,15 @@ function vtNoteRealized(row){
          open +$40 and closed -$60  ->  Profit +$40   Loss -$60    (not -$20)
          open -$40 and closed +$20  ->  Profit +$20   Loss -$40    (not -$20)
        Each half therefore stays single-signed, which is what the rows above and
-       the top cards assume. */
+       the top cards assume.
+
+       And within the open half the sign is the position's OWN, taken per
+       position rather than from the sum of the book -- two positions open at
+       once, one up $40 and one down $60, give Profit $40.00 and Loss $60.00,
+       the two figures the user is actually standing at, and not a single -$20
+       that describes neither of them. Nothing here waits for a close: these
+       are the trades not yet closed, and they are counted from the moment they
+       are opened until they are. */
     vtDeals().forEach(vtNoteRealized);
     const acct=vtRealizedTotals();
 
@@ -15906,10 +15968,17 @@ function vtNoteRealized(row){
        ALL does not erase either. */
     const zeroed=!!window.__vantaAcctZeroed;
 
-    /* Only the half the sign belongs in, so neither total can go negative on the
-       profit side or positive on the loss side. */
-    const openGain=openAll.net>0?openAll.net:0;
-    const openDrop=openAll.net<0?openAll.net:0;
+    /* Each open position is already filed under its own sign by vtOpenNetAll,
+       so these are the two halves of the OPEN book read straight off, not the
+       net re-split by sign: openGain is the sum of the positions that are up,
+       openDrop is the sum of the positions that are down. They are added to
+       the two realized halves and never to each other, so a winning position
+       can always be seen for what it is even while a losing one is open at
+       the same moment. Nothing here is gated on a close: these are the trades
+       still running, and they are counted for exactly as long as they are
+       open. */
+    const openGain=openAll.gain;
+    const openDrop=openAll.drop;
 
     const totalProfit=zeroed?0:acct.profit+openGain;
     const totalLoss=zeroed?0:acct.loss+openDrop;
@@ -15955,6 +16024,12 @@ function vtNoteRealized(row){
       if(open) parts.push(open);
       if(shut) parts.push(shut);
       if(open) parts.push('P/L unrealized until they close');
+      /* How the open book is standing right now, counted per position: how many
+         of the trades the user has NOT closed are winning and how many are
+         losing. This is what makes it visible that the block is following the
+         live positions one by one instead of describing a single netted
+         figure, and it is read off the same split the two rows above print. */
+      if(open) parts.push(openAll.wins+' winning, '+openAll.loses+' losing');
       if(open||shut) parts.push('won '+money(totalProfit)+' · lost '+money(Math.abs(totalLoss)));
       sub.textContent=parts.length?parts.join(' · '):'No trades yet';
       /* A position whose price has not arrived is left out of the per-position
@@ -16016,28 +16091,46 @@ function vtNoteRealized(row){
       vtSetRows(rowsBox,out);
     }
 
-    /* ---- CLOSE ALL: armed only by an actual open position ----
-       The button's whole meaning is "close every row listed under
-       #vtaPosRows". When that list is empty the click would do nothing but
-       still read as a live action, so it goes grey and stops taking clicks
-       instead of disappearing: the header keeps its shape, and the user can
-       see at a glance there is simply nothing to close.
+    /* ---- One button, two jobs, and it says which one it is doing ----
+       The button's meaning is "settle this account", and there are only two
+       things to settle, so it never changes shape -- only its name:
 
-       `rows` is the same list drawn into #vtaPosRows, counted here rather than
-       measured from the DOM, because that box holds a `.vta-empty` message
-       when there is no position and an empty-looking box would read as
-       "loaded but idle" instead of "nothing to close". The count badge
-       (#vtaCnt-positions) is the same number, so the two can never disagree
-       about whether the button should be live. */
+         rows in #vtaPosRows      -> CLOSE ALL  (there are positions to close)
+         no rows, but Profit or
+         Loss on screen in this
+         block                   -> COLLECT ALL (nothing is running, but a
+                                    result is still sitting here to settle)
+         neither                 -> greyed out, nothing to settle
+
+       CLOSE ALL wins when both are true: an open position is the more urgent
+       of the two, and a name that promises to close something while positions
+       are listed would be the wrong promise to make.
+
+       COLLECT ALL is the same action, not a second one: it runs the identical
+       handler below. The only difference is that it settles the block even
+       though it closed no position -- which is the whole point of the name,
+       since there is no open book for it to empty.
+
+       Armed off the figures actually printed in this block (totalProfit /
+       totalLoss), not off a second tally, so the button can never offer to
+       collect something the rows above it do not show -- including right after
+       a settle, when the clamp has taken them back to zero. */
     const closeAll=$('vtaCloseTrade');
     if(closeAll){
-      const armed=rows.length>0;
+      const settling=(totalProfit>0||totalLoss<0);
+      const mode=rows.length>0?'close':(settling?'collect':'');
+      const armed=mode!=='';
       closeAll.disabled=!armed;
       closeAll.classList.toggle('is-off',!armed);
+      closeAll.classList.toggle('is-collect',mode==='collect');
+      closeAll.dataset.mode=mode;
       closeAll.setAttribute('aria-disabled',armed?'false':'true');
-      closeAll.title=armed
+      closeAll.textContent=mode==='collect'?'COLLECT ALL':'CLOSE ALL';
+      closeAll.title=mode==='close'
         ? 'Close all '+rows.length+' open position'+(rows.length===1?'':'s')+' on this market'
-        : 'No open position to close';
+        : (mode==='collect'
+            ? 'Collect the result shown in this block — nothing is open'
+            : 'Nothing to close and nothing to collect');
     }
 
     /* ---- ORDERS: every working order on the account ---- */

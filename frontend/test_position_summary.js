@@ -46,6 +46,12 @@ function check(label, got, want) {
 const sandbox = { Math, Number, String, Array, Object, Set, isFinite, Date, console };
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
+/* The server's frozen figure, exactly as the page reads it: the signed P/L the
+   server recorded at 00:00, used verbatim, or null while the position is still
+   counting down. */
+sandbox.vantaFrozenProfit = trade => (trade
+  && trade.frozenProfit !== null && trade.frozenProfit !== undefined)
+  ? Number(trade.frozenProfit) : null;
 vm.createContext(sandbox);
 const api = vm.runInContext(
   'var __out={};\n' +
@@ -88,15 +94,28 @@ console.log('[0] the real page binds Profit / Loss to realized + the open book, 
    The open half must be the figure the open book already computes (vtOpenNetAll)
    — not a second calculation — and it must go in by SIGN, so the two halves can
    never net out and hide a result inside one signed number. The single last
-   trade's `sp` must still never be a source. */
- check('Profit row is the realized total plus the open gain',
-   /const totalProfit=zeroed\?0:acct\.profit\+openGain;/.test(rowsSrc), true);
- check('Loss row is the realized total plus the open drop',
-   /const totalLoss=zeroed\?0:acct\.loss\+openDrop;/.test(rowsSrc), true);
- check('only the positive part of the open book counts as gain',
-   /const openGain=openAll\.net>0\?openAll\.net:0;/.test(rowsSrc), true);
- check('only the negative part of the open book counts as drop',
-   /const openDrop=openAll\.net<0\?openAll\.net:0;/.test(rowsSrc), true);
+   trade's `sp` must still never be a source.
+
+   And within the open half the sign is each POSITION's own, so a winning trade
+   open beside a losing one is visible as both. */
+  check('Profit row is the realized total plus the open gain',
+    /const totalProfit=zeroed\?0:acct\.profit\+openGain;/.test(rowsSrc), true);
+  check('Loss row is the realized total plus the open drop',
+    /const totalLoss=zeroed\?0:acct\.loss\+openDrop;/.test(rowsSrc), true);
+  check('the open gain is the sum of the positions that are up',
+    /const openGain=openAll\.gain;/.test(rowsSrc)
+    && /if\(pl>0\)\{ gain\+=pl; wins\+\+; \}/.test(openSrc), true);
+  check('the open drop is the sum of the positions that are down',
+    /const openDrop=openAll\.drop;/.test(rowsSrc)
+    && /else if\(pl<0\)\{ drop\+=pl; loses\+\+; \}/.test(openSrc), true);
+  /* Not the net re-split by sign: that made +$40 beside -$60 print as
+     Profit $0.00 / Loss $20.00, which describes neither trade. */
+  check('the open halves are NOT the net re-split by its sign',
+    !/const openGain=openAll\.net>0\?openAll\.net:0;/.test(rowsSrc)
+    && !/const openDrop=openAll\.net<0\?openAll\.net:0;/.test(rowsSrc), true);
+  check('the open book still keeps its net for the top cards',
+    /net\+=pl;/.test(openSrc) && /return \{net:net, gain:gain, drop:drop,/.test(openSrc), true);
+
  /* The two halves must never cancel: profit never takes the drop, loss never
     takes the gain, and nothing adds them together. */
  check('the halves are never netted against each other',
@@ -346,6 +365,37 @@ check('DOWN never goes below the 1% floor', api.vtOpenNetAll(
 check('a malformed position is ignored',
   api.vtOpenNetAll([P('bad', 'GOLF', 0, 2, 'UP')], 'GOLF').count, 0);
 check('no open positions at all', api.vtOpenNetAll([], 'GOLF').net, 0);
+
+/* ---- the split is PER POSITION, not the net re-split by sign ----
+   Two trades open at once, one winning and one losing, must both be visible.
+   The old code summed the book to a single net and split that, so this case
+   printed Profit $0.00 / Loss $20.00 — a figure describing neither trade, and
+   the $40 genuinely being won had nowhere to be seen. */
+/* Two trades open at once on the same coin: +50 (bought at 1, GOLF now 2) and
+   -25 (bought at 4, so the 50 stake is now worth 25). */
+const mixed = api.vtOpenNetAll(
+  [P('w', 'GOLF', 50, 1, 'UP'), P('l', 'GOLF', 50, 4, 'UP')], 'GOLF');
+check('a winning and a losing position are both counted', mixed.count, 2);
+check('the winning position lands in gain on its own', mixed.gain, 50);
+check('the losing position lands in drop on its own', mixed.drop, -25);
+check('and the net of the two is still reported for the top cards', mixed.net, 25);
+check('one of them is counted as winning', mixed.wins, 1);
+check('one of them is counted as losing', mixed.loses, 1);
+/* Gain can only be a positive figure and drop only a negative one: the split
+   itself cannot produce a loss on the profit row or a gain on the loss row. */
+check('gain is never negative', api.vtOpenNetAll(
+  [P('l', 'GOLF', 50, 4, 'UP')], 'GOLF').gain, 0);
+check('drop is never positive', api.vtOpenNetAll(
+  [P('w', 'GOLF', 50, 1, 'UP')], 'GOLF').drop, 0);
+
+/* A FINISHED position (timer ran out, the server froze its result) is measured
+   from that frozen figure and never from the live feed, so the account block
+   agrees with the row and with what CLOSE will actually pay. */
+const frozen = api.vtOpenNetAll(
+  [{ ...P('f', 'GOLF', 50, 1, 'UP'), frozenProfit: -12 }], 'GOLF');
+check('a frozen position is measured from the frozen figure', frozen.drop, -12);
+check('the live price does not override it', frozen.gain, 0);
+check('and it still counts as an open position', frozen.count, 1);
 
 console.log('\n' + '='.repeat(60));
 if (FAILS.length) {

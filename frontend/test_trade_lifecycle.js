@@ -1033,6 +1033,51 @@ console.log('\n[B] BUY opens, SELL sells the buy, CLOSE ALL closes all');
         /api\/trade\/close-all/.test(code));
 })();
 
+console.log('\n[S0b] one settle button, two names: CLOSE ALL and COLLECT ALL');
+(function () {
+    /* The same button settles the account, and it must never promise something
+       it is not doing. Two situations arm it and it says which one it is:
+
+         open positions in #vtaPosRows     -> CLOSE ALL
+         none, but a Profit or Loss printed -> COLLECT ALL
+         neither                          -> disabled
+
+       and it takes the identical path either way, because it is the same
+       settle, not a second feature bolted onto a button. */
+    const paint = fnBody('updatePosCard');
+    ok('the button chooses its mode from the open book first',
+        !!paint && /const mode=rows\.length>0\?'close':\(settling\?'collect':''\)/.test(paint));
+    ok('an open position always wins over a pending result',
+        !!paint && paint.indexOf("rows.length>0?'close'") < paint.indexOf("settling?'collect'"));
+    ok('the pending result is read off the figures the block actually prints',
+        !!paint && /const settling=\(totalProfit>0\|\|totalLoss<0\);/.test(paint));
+    ok('it is named COLLECT ALL in that mode',
+        !!paint && /closeAll\.textContent=mode==='collect'\?'COLLECT ALL':'CLOSE ALL'/.test(paint));
+    ok('it is named CLOSE ALL whenever there is a position to close',
+        !!paint && /mode==='collect'\?'COLLECT ALL':'CLOSE ALL'/.test(paint));
+    ok('with neither a position nor a result it is disabled, not hidden',
+        !!paint && /closeAll\.disabled=!armed;/.test(paint)
+        && !/closeAll\.hidden|closeAll\.style\.display/.test(paint));
+    ok('it records the mode on the button for its own handler',
+        !!paint && /closeAll\.dataset\.mode=mode;/.test(paint));
+    ok('the disabled button cannot be pressed, even synthetically',
+        /if\(ct\.disabled\) return;/.test(src));
+
+    /* COLLECT ALL runs the same handler, so it must settle even though it closed
+       no position — gating on the closed count alone would leave it inert. */
+    ok('COLLECT ALL settles the block unconditionally',
+        /window\.__vantaAcctZeroed = collecting \? true : \(\(Number\(closed\)\|\|0\) > 0\);/.test(src));
+    ok('CLOSE ALL still leaves the block alone when it closed nothing',
+        /\(\(Number\(closed\)\|\|0\) > 0\)/.test(src));
+    ok('the mode is read off the button, not recomputed in the handler',
+        /const collecting=ct\.dataset\.mode==='collect';/.test(src));
+
+    /* The mode has to be legible, not just a word in the DOM: an armed collect
+       must not keep the red of a close, and a dead button must look dead. */
+    ok('COLLECT ALL is styled apart from a close', /\.vta-close-trade\.is-collect\{/.test(src));
+    ok('the dead state is greyed and unclickable', /\.vta-close-trade:disabled\{[^}]*cursor:not-allowed/.test(src));
+})();
+
 console.log('\n[S1] trade history keeps EVERY completed trade');
 (function () {
     const renderHistory = fnBody('renderHistory');

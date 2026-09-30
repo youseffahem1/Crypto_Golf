@@ -106,8 +106,8 @@ console.log('\n[4] the account Profit/Loss is built from CLOSED records only');
 if (posCard) {
   ok('the totals come from the realized ledger', /const acct=vtRealizedTotals\(\)/.test(posCard));
   ok('the realized ledger is fed from closed deals', /vtDeals\(\)\.forEach\(vtNoteRealized\)/.test(posCard));
-  ok('the headline Profit is exactly the realized profit', /const totalProfit=acct\.profit;/.test(posCard));
-  ok('the headline Loss is exactly the realized loss', /const totalLoss=acct\.loss;/.test(posCard));
+  ok('the headline Profit is exactly the realized profit', /const totalProfit=(zeroed\?0:)?acct\.profit;/.test(posCard));
+  ok('the headline Loss is exactly the realized loss', /const totalLoss=(zeroed\?0:)?acct\.loss;/.test(posCard));
 }
 const split = fnBody('vtRealizedTotals');
 ok('vtRealizedTotals exists', !!split);
@@ -171,36 +171,52 @@ if (noteRealized) {
     /if\s*\(\s*i\s*>=\s*0\s*\)\s*\w+\[\s*i\s*\]\s*=\s*\w+\s*;\s*else\s+\w+\.push/.test(noteRealized));
   ok('it stores the profit it is handed', /profit\s*:/.test(noteRealized));
 }
-const noteCalls = src.match(/vantaNoteRealizedTrade\(/g) || [];
-ok('the ledger is written from close paths only', noteCalls.length > 0);
+/* The close paths now book through vantaOnTradeClosed, which lifts the display
+   resets and then forwards the very same row to vantaNoteRealizedTrade. The
+   invariants below are about WHERE the profit comes from, so they follow the
+   name that is actually called — and the forwarding is asserted separately, so
+   the rename cannot quietly stop banking the close. */
+ const noteCalls = src.match(/vantaOnTradeClosed\(/g) || [];
+ ok('the ledger is written from close paths only', noteCalls.length > 0);
 /* Every write must pass a `profit` read off a server response. */
-const profitSources = src.match(/vantaNoteRealizedTrade\(\s*\{[^}]*profit\s*:\s*[^}]*\}/g) || [];
-ok('each write names a profit explicitly', profitSources.length > 0);
-ok('the expiry close takes profit from the close response',
-  /vantaNoteRealizedTrade\(\{\s*id:\s*t\.id,\s*sym:[^}]*profit\s*\}/.test(src));
-ok('the close-all books each server profit',
-  /vantaNoteRealizedTrade/.test(fnBody('sellOpenPositions') || ''));
-ok('no open position is booked as realized',
-  !/vantaNoteRealizedTrade\([^)]*closeValueFor/.test(src));
-ok('no unrealized figure is added to the ledger',
-  !/vtNoteRealized\([^)]*closeValueFor/.test(src));
+ const profitSources = src.match(/vantaOnTradeClosed\(\s*\{[^}]*profit\s*:\s*[^}]*\}/g) || [];
+ ok('each write names a profit explicitly', profitSources.length > 0);
+ ok('the expiry close takes profit from the close response',
+   /vantaOnTradeClosed\(\{\s*id:\s*t\.id,\s*sym:[^}]*profit\s*\}/.test(src));
+ ok('the close-all books each server profit',
+   /vantaOnTradeClosed/.test(fnBody('sellOpenPositions') || ''));
+ ok('no open position is booked as realized',
+   !/vantaOnTradeClosed\([^)]*closeValueFor/.test(src));
+/* The row must reach the ledger unchanged — no re-priced figure on the way. */
+ ok('the close row is forwarded to the ledger untouched',
+   /function vantaOnTradeClosed\(row\)[\s\S]{0,900}?vantaNoteRealizedTrade\(row\)/.test(src));
+ ok('the reset is lifted before the row is banked',
+   /function vantaOnTradeClosed\(row\)[\s\S]{0,900}?__vantaLossResetFor\s*=\s*""[\s\S]{0,400}?vantaNoteRealizedTrade\(row\)/.test(src));
+ ok('no unrealized figure is added to the ledger',
+   !/vtNoteRealized\([^)]*closeValueFor/.test(src));
 
-console.log('\n[9] closing adds the server profit to the ledger exactly once');
-const closePositions = fnBody('closePositions');
-ok('closePositions exists', !!closePositions);
-if (closePositions) {
-  ok('books the server profit', /vantaNoteRealizedTrade/.test(closePositions));
-  ok('reads the profit off the response', /Number\(sold\.profit/.test(closePositions));
-  ok('sends no client price', !/api\/trade\/close["'][\s\S]{0,300}?value\s*:/.test(src));
-  ok('refreshes the balance after settling', /refreshBalance\(\)/.test(closePositions));
-}
-const sellAll = fnBody('sellOpenPositions');
-ok('close-all exists', !!sellAll);
-if (sellAll) {
-  ok('books each trade the server settled', /vantaNoteRealizedTrade/.test(sellAll));
-  ok('guards positions while in flight', /__vantaClosing/.test(sellAll));
-  ok('refreshes the balance', /refreshBalance\(\)/.test(sellAll));
-}
+ console.log('\n[9] closing adds the server profit to the ledger exactly once');
+ const closePositions = fnBody('closePositions');
+ ok('closePositions exists', !!closePositions);
+ if (closePositions) {
+   ok('books the server profit', /vantaOnTradeClosed/.test(closePositions));
+   ok('reads the profit off the response', /Number\(sold\.profit/.test(closePositions));
+   ok('sends no client price', !/api\/trade\/close["'][\s\S]{0,300}?value\s*:/.test(src));
+   ok('refreshes the balance after settling', /refreshBalance\(\)/.test(closePositions));
+   /* CLOSE ALL decides whether to zero the account block off this return value,
+      so the demo path has to report a count too — it forwards here directly. */
+   ok('reports how many positions it closed', /return list\.length;/.test(closePositions));
+ }
+ const sellAll = fnBody('sellOpenPositions');
+ ok('close-all exists', !!sellAll);
+ if (sellAll) {
+   ok('books each trade the server settled', /vantaOnTradeClosed/.test(sellAll));
+   ok('guards positions while in flight', /__vantaClosing/.test(sellAll));
+   ok('refreshes the balance', /refreshBalance\(\)/.test(sellAll));
+   ok('reports how many positions it closed', /return sold\.length;/.test(sellAll));
+   ok('closes nothing when nothing is open', /return 0;/.test(sellAll));
+ }
+
 
 console.log('\n[10] the wallet ledger is never touched by trading');
 ok('the two ledgers are separate variables', /window\.vantaWalletBalances/.test(src));

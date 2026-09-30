@@ -130,7 +130,7 @@ if (sellAll) {
 
 console.log('\n[4] CLOSE ALL books the server result into the realized ledger');
 if (sellAll) {
-  ok('banks each trade profit', /vantaNoteRealizedTrade/.test(sellAll));
+  ok('banks each trade profit', /vantaOnTradeClosed/.test(sellAll));
   ok('reads profit off the server response', /Number\(s\.profit/.test(sellAll));
   ok('sums the batch for the toast', /reduce\(/.test(sellAll));
   ok('removes the closed positions', /trades\s*=\s*trades\.filter/.test(sellAll));

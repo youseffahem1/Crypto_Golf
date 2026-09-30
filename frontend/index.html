@@ -5045,7 +5045,7 @@ async function sellOpenPositions() {
     } catch (e) {
         list.forEach(t => __vantaClosing.delete(t.id));
         showToast(e.message || "Could not close positions");
-        return;
+        return 0;
     }
     list.forEach(t => __vantaClosing.delete(t.id));
 
@@ -5053,7 +5053,7 @@ async function sellOpenPositions() {
     if (!sold.length) {
         showToast("No open position to sell");
         refreshBalance();
-        return;
+        return 0;
     }
 
     /* The server is the authority on every result, exactly as in the single
@@ -5064,7 +5064,7 @@ async function sellOpenPositions() {
     sold.forEach(s => {
         const profit = Number(s.profit || 0);
         if (profit < 0) anyLoss = true;
-        vantaNoteRealizedTrade({ id: s.id, sym: s.symbol || "GOLF", profit });
+        vantaOnTradeClosed({ id: s.id, sym: s.symbol || "GOLF", profit });
         if (historySeen) historySeen.add(s.id);
         vantaForgetPeak(s.id);
     });
@@ -5104,6 +5104,11 @@ async function sellOpenPositions() {
         ? window.vantaRefreshInfoCards
         : (typeof refreshInfoCards === 'function' ? refreshInfoCards : null);
     if (refreshCards) refreshCards();
+    /* How many positions this actually closed. The CLOSE ALL button zeroes the
+       account block off the back of it, and it must not do that when nothing
+       was open -- pressing the button with an empty book closes nothing and so
+       settles nothing. */
+    return sold.length;
 }
 
 const __vantaClosing = new Set();
@@ -5128,10 +5133,37 @@ function vantaClearLastSettled() {
    the account summary's separate Profit / Loss totals. The ledger itself lives
    in the POSITION card's own script block, so this is the bridge to it; it is
    a no-op until that block has parsed, and the summary is rebuilt from the
-   deal records anyway, so nothing depends on the call landing. */
+   deal records anyway, so nothing depends on the call landing.
+
+   The Move-to-Wallet LOSS reset is lifted by vtNoteRealized on the far side of
+   this bridge, not here — that is the single function every real close reaches,
+   and putting it there also covers the closes the Position card runs itself. */
 function vantaNoteRealizedTrade(row) {
     try {
         if (typeof window.vantaNoteRealizedTrade === "function") window.vantaNoteRealizedTrade(row);
+    } catch (e) { /* summary falls back to the deal records */ }
+}
+
+/* A trade has genuinely just closed. This is the only place that may lift a
+   display reset, because it is the only one the close paths reach.
+
+   Why it cannot live in vantaNoteRealizedTrade: window.vantaNoteRealizedTrade is
+   reassigned to the Position card's own vtNoteRealized (so the bare name below
+   actually calls THAT, not this bridge), and vtNoteRealized is then re-run for
+   every row of the server's trade history on updatePosCard()'s 2-second loop.
+   A reset keyed there is wiped within two seconds without a trade ever closing.
+
+   The per-close call sites pass the symbol that just settled, so a reset belongs
+   to one coin and only that coin's next close revives it. */
+function vantaOnTradeClosed(row) {
+    try {
+        const sym = String((row && row.sym) || "GOLF").toUpperCase();
+        /* A Move-to-Wallet reset of that coin's LOSS card stops applying: this
+           trade is a new fact about the account, so the total counts again. */
+        if (window.__vantaLossResetFor === sym) window.__vantaLossResetFor = "";
+        /* And the CLOSE ALL reset of the whole account block is over for good. */
+        window.__vantaAcctZeroed = false;
+        vantaNoteRealizedTrade(row);
     } catch (e) { /* summary falls back to the deal records */ }
 }
 
@@ -5177,7 +5209,7 @@ async function closePositions(list) {
                happens in the server's own history query, never here. */
             /* Bank this close in the realized ledger immediately — `history`
                above is a 5-row UI preview and is NOT the account total. */
-            vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit });
+            vantaOnTradeClosed({ id: t.id, sym: t.symbol || "GOLF", profit });
 
             removeTradeMarker(t);
             trades = trades.filter(x => x.id !== t.id);
@@ -5189,7 +5221,12 @@ async function closePositions(list) {
         renderOpenTrades();
         positionAllTrades();
         renderHistory();
-        return;
+        /* Report how many positions this closed. sellOpenPositions forwards the
+           demo path straight to here (see its `return closePositions(list)`), and
+           the CLOSE ALL button decides whether to zero the account block off the
+           back of this number -- so returning nothing here silently left that
+           block un-zeroed in demo mode while it worked live. */
+        return list.length;
     }
 
     for (const t of list) {
@@ -5215,7 +5252,7 @@ async function closePositions(list) {
         __vantaClosing.delete(t.id);
 
         const soldProfit = Number(sold.profit || 0);
-        vantaNoteRealizedTrade({ id: t.id, sym: t.symbol || "GOLF", profit: soldProfit });
+        vantaOnTradeClosed({ id: t.id, sym: t.symbol || "GOLF", profit: soldProfit });
         if (!__vantaSuppressLast) {
     vantaSetLastSettled({
         symbol: t.symbol || "GOLF",
@@ -15481,16 +15518,22 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 
   /* One entry per closed trade, keyed by trade id so a re-sync of the same
      deal can never be counted twice. */
-  function vtNoteRealized(row){
+function vtNoteRealized(row){
     if(!row) return;
     const id=String(row.id==null?'':row.id);
     const profit=Number(row.profit||row.pl||0);
     if(!isFinite(profit)) return;
     const rec={id:id||('r'+vtRealized.length+':'+profit), sym:row.sym||row.symbol||'GOLF',
-               profit:profit, at:row.at||0};
+    profit:profit, at:row.at||0};
     const i=vtRealized.findIndex(r=>r.id===rec.id);
     if(i>=0) vtRealized[i]=rec; else vtRealized.push(rec);
-  }
+    /* IMPORTANT: this must never be used to detect "a trade just closed", and in
+       particular must not clear any display reset. updatePosCard() calls it
+       again for every row of the server's history on a 2-second loop (see
+       vtDeals().forEach(vtNoteRealized)), so it fires constantly with no trade
+       having closed at all. Anything keyed to a real close goes in
+       vantaOnTradeClosed, which only the close paths call. */
+    }
   /* Replace the ledger with an authoritative deal list (live: the server's),
      so a reload rebuilds the totals from records rather than from an empty
      in-memory list. Records are keyed by id, so re-seeding is idempotent. */
@@ -15654,9 +15697,24 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           __vantaSuppressLast = true;
           let p;
           try { p = (typeof sellOpenPositions==='function') ? sellOpenPositions() : undefined; } catch(e) { p = undefined; }
-          Promise.resolve(p).then(()=>{
+          Promise.resolve(p).then((closed)=>{
             __vantaSuppressLast = false;
             if(typeof vantaClearLastSettled==='function') vantaClearLastSettled();
+            /* CLOSE ALL is the settle point, so the whole account block under the
+               POSITION card starts again from zero -- Profit, Loss, Deposit, Swap,
+               Commission and Balance alike -- and the top PROFIT / LOSS cards are
+               where those figures are read from instead.
+
+               Set here, AFTER sellOpenPositions has resolved, on purpose. Each
+               trade it closed went through vantaOnTradeClosed, which is what
+               clears this flag on any later close; setting it any earlier would
+               have the batch clear its own reset. Zeroing only after a real close
+               (rather than on every paint) is what keeps the block meaningful
+               while trades are open.
+
+               Counted from the returned number, so a CLOSE ALL with an empty book
+               leaves the block alone. */
+            window.__vantaAcctZeroed = (Number(closed)||0) > 0;
             updatePosCard();
           });
           return;
@@ -15796,8 +15854,19 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
        colour the per-position rows. It must not reach the two totals above. */
     const openAll=vtOpenNetAll(all, sym);
 
-    const totalProfit=acct.profit;
-    const totalLoss=acct.loss;
+    /* CLOSE ALL zeroes this whole block: the settle point for the account, after
+       which the figures are read from the top PROFIT / LOSS cards rather than
+       repeated here. Applied as one clamp over the totals, not per row, so the
+       six rows keep being written from the same totals they always were and a
+       settled block is simply a zeroed account. The next real close
+       (vantaOnTradeClosed) drops the flag and the real numbers return.
+
+       The open book (openAll) and the per-position rows below are deliberately
+       NOT clamped -- CLOSE ALL does not erase the open book or the history. */
+    const zeroed=!!window.__vantaAcctZeroed;
+
+    const totalProfit=zeroed?0:acct.profit;
+    const totalLoss=zeroed?0:acct.loss;
 
     setN('vtaPProfit',totalProfit>0?'+'+money(totalProfit):money(0));
     const profitEl=$('vtaPProfit');
@@ -15819,13 +15888,15 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
        the real payout at close (see createTrade's comment). Adding a stake back
        in, or adding floating P/L on top, would both be a client-side balance
        that the server knows nothing about. */
-    const funds=vtFunds();
+    const funds=zeroed?0:vtFunds();
     setN('vtaPDeposit',money(funds));
-    setN('vtaPSwap',money(swap));
-    setN('vtaPComm',money(comm));
+    setN('vtaPSwap',money(zeroed?0:swap));
+    setN('vtaPComm',money(zeroed?0:comm));
     setN('vtaPBalance',money(funds));
     const balEl=$('vtaPBalance');
-    if(balEl) balEl.className='vta-acct-v';
+    /* Muted while zeroed, so a settled block does not read as a live balance.
+       The header keeps showing the real trading balance throughout. */
+    if(balEl) balEl.className='vta-acct-v'+(zeroed?' zero':'');
     const sub=$('vtaAcctSub');
     if(sub){
       /* Both halves are described separately, so a client with open trades and no
@@ -16590,12 +16661,16 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     btn.title='Choose a coin and confirm with your wallet PIN to move '+usd(available)+' of realized '+sym+' profit';
   }
 
-  /* A move just succeeded and the server has already answered with what is left
+  /*      A move just succeeded and the server has already answered with what is left
      to move (`available_profit`). The card is written from THAT answer rather
      than waiting for the next /api/platform/coins poll, so #icProfit is $0.00
      the moment the money is credited — not for a second while that request is
-     in flight, and not at all if it fails. LOSS is deliberately untouched: a
-     transfer cannot change it.
+     in flight, and not at all if it fails.
+
+     LOSS is cleared here too, at the same moment and by the same call. LOSS
+     accumulates on its own from every Close Trade and CLOSE ALL, and Move to
+     Wallet is where that accounting cycle ends, so it restarts from zero along
+     with PROFIT. Both numbers come down to $0.00 together.
 
      `movedUsd` is what the server says it just credited, so the sub-line can
      name the amount instead of leaving a bare $0.00 to puzzle over. */
@@ -16604,6 +16679,40 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
     var avail=Math.max(0, Number(availableAfter)||0);
     var moved=Math.max(0, Number(movedUsd)||0);
     setText('icProfit', usd(avail));
+
+    /* Move to Wallet clears BOTH totals, so LOSS goes to $0.00 here too.
+
+       LOSS is accumulated by itself: every Close Trade and CLOSE ALL books into
+       it, and the figure climbs on its own from those closes. Move to Wallet is
+       the point where the account's trading P/L is settled and taken out, so
+       both totals restart from zero — PROFIT because the money has physically
+       left for the wallet, LOSS because that cycle is finished.
+
+       Zeroing the element is not enough on its own, and that was measured in the
+       browser: the info-card poll runs a second later, re-reads the server's
+       all-time realized_loss -- which a transfer does not change, because only
+       winning trades can be moved -- and paints the old figure straight back over
+       the reset. So the reset is also recorded here as a flag naming the coin it
+       applies to, and writeResult() honours it until the next real trade is
+       finalized. Nothing about the server's number is altered; the card simply
+       stops re-applying it for the coin that was just settled.
+
+       The `down` class has to go with the number. It is what paints the value
+       red, and a $0.00 left wearing the loss colour still reads as a loss. Written
+       in the same shape writeResult() uses for a zero loss, so a $0.00 here and a
+       $0.00 there are identical. */
+    window.__vantaLossResetFor = s;
+    var lossEl=byId('icLoss');
+    if(lossEl){
+      lossEl.textContent=usd(0);
+      lossEl.className='ic-pl-v';
+    }
+    var lossEl=byId('icLoss');
+    if(lossEl){
+      lossEl.textContent=usd(0);
+      lossEl.className='ic-pl-v';
+    }
+
     var sub=byId('icProfitSub');
     if(sub && avail<=0 && moved>0){
       sub.textContent='All '+usd(moved)+' of '+s+' profit is now in your wallet.';
@@ -16623,6 +16732,21 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr)) !impo
   function writeResult(sp, sym){
     var available=Math.max(0, Number(sp && sp.available)||0);
     var loss=Math.min(0, Number(sp && sp.loss)||0);
+
+    /* A coin whose P/L was just moved to its wallet starts its LOSS total again
+       from zero, and keeps starting again on every poll, until a trade on that
+       coin is actually finalized (which clears the flag in
+       vantaNoteRealizedTrade). The server's realized_loss is all-time and is NOT
+       reduced by a transfer -- only winning trades can be moved, so a move can
+       never have offset a loss -- which is exactly why it would otherwise repaint
+       the old figure over the reset within a second.
+
+       Scoped by symbol on purpose: switching to another coin shows that coin's own
+       loss, which is untouched by a move on this one. */
+    if(window.__vantaLossResetFor
+       && String(window.__vantaLossResetFor)===String(sym||'GOLF').toUpperCase()){
+      loss=0;
+    }
 
     /* THIS card is the one place that follows the money instead of the history.
        It reads `available` — the realized profit that has not left for the

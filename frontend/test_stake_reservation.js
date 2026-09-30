@@ -106,8 +106,8 @@ console.log('\n[4] the account Profit/Loss is built from CLOSED records only');
 if (posCard) {
   ok('the totals come from the realized ledger', /const acct=vtRealizedTotals\(\)/.test(posCard));
   ok('the realized ledger is fed from closed deals', /vtDeals\(\)\.forEach\(vtNoteRealized\)/.test(posCard));
-  ok('the headline Profit is exactly the realized profit', /const totalProfit=(zeroed\?0:)?acct\.profit;/.test(posCard));
-  ok('the headline Loss is exactly the realized loss', /const totalLoss=(zeroed\?0:)?acct\.loss;/.test(posCard));
+  ok('the headline Profit is the realized profit plus the open gain', /const totalProfit=zeroed\?0:acct\.profit\+openGain;/.test(posCard));
+  ok('the headline Loss is the realized loss plus the open drop', /const totalLoss=zeroed\?0:acct\.loss\+openDrop;/.test(posCard));
 }
 const split = fnBody('vtRealizedTotals');
 ok('vtRealizedTotals exists', !!split);
@@ -137,7 +137,8 @@ console.log('\n[6] Profit and Loss stay two separate figures');
 if (posCard) {
   ok('Profit is written from totalProfit', /setN\('vtaPProfit',\s*totalProfit\s*>\s*0/.test(posCard));
   ok('Loss is written from totalLoss', /setN\('vtaPLoss',\s*totalLoss\s*<\s*0/.test(posCard));
-  ok('a negative totalProfit can never render', /totalProfit\s*>\s*0\s*\?\s*'\+'\s*\+\s*money\(totalProfit\)\s*:\s*money\(0\)/.test(posCard));
+  ok('the open halves can never net against each other', !/const totalProfit=[^;]*openDrop/.test(posCard) && !/const totalLoss=[^;]*openGain/.test(posCard));
+ ok('a negative totalProfit can never render', /totalProfit\s*>\s*0\s*\?\s*'\+'\s*\+\s*money\(totalProfit\)\s*:\s*money\(0\)/.test(posCard));
   ok('a positive totalLoss can never render', /totalLoss\s*<\s*0\s*\?\s*.+\s*money\(Math\.abs\(totalLoss\)\)\s*:\s*money\(0\)/.test(posCard));
   ok('the two are displayed in separate rows', /id="vtaPProfit"/.test(src) && /id="vtaPLoss"/.test(src));
   /* The client's explicit instruction: +$20 and -$60 must not become -$40. */

@@ -80,30 +80,36 @@ function summaryFor(ledgerSeed, floatingPl) {
 }
 const D = (id, profit) => ({ id, sym: 'GOLF', profit });
 
-console.log('[0] the real page binds Profit / Loss to the REALIZED total only');
-/* This block USED to read the closed-trade totals PLUS the P/L still riding on
-   open positions. The client has since asked for that to stop: a position's
-   unrealized move is not a result, and folding it in made the headline Profit
-   and Loss tick with every candle while the user was still holding, then jump a
-   second time when the position actually closed. So the two rows now read the
-   closed-trade totals alone. What they must still never do is read the single
-   last trade's `sp`, or let the two halves net out against each other. */
- /* The totals may be clamped by the CLOSE ALL block reset (`zeroed?0:acct.…`),
-    which zeroes the closed-trade total for a settled account and so still never
-    contains an open half. What must stay impossible is reading a different
-    source — the open/unrealized half, or the single last trade's `sp`. */
- check('Profit row is the realized total, with no open half',
-   /const totalProfit=(zeroed\?0:)?acct\.profit;/.test(rowsSrc), true);
- check('Loss row is the realized total, with no open half',
-   /const totalLoss=(zeroed\?0:)?acct\.loss;/.test(rowsSrc), true);
- check('unrealized profit is never folded into the headline',
-   /const totalProfit=[^;]*acct\.profit\s*\+/.test(rowsSrc), false);
- check('unrealized loss is never folded into the headline',
-   /const totalLoss=[^;]*acct\.loss\s*\+/.test(rowsSrc), false);
- /* The CLOSE ALL block reset is allowed, and only that: a closed-trade total
-    gated on `zeroed` is the settle, not a second source of figures. */
- check('the clamp can only ever be the CLOSE ALL reset',
-   /const totalProfit=[^;]*acct\.profit;/.test(rowsSrc) && !/const totalProfit=[^;]*=.*(vtFunds|openAll|unrealized)/.test(rowsSrc), true);
+console.log('[0] the real page binds Profit / Loss to realized + the open book, by sign');
+/* The two rows add the closed-trade totals AND the live P/L of open positions, so
+   the summary follows the chart while a trade runs and settles when it closes.
+   The open half must be the figure the open book already computes (vtOpenNetAll)
+   — not a second calculation — and it must go in by SIGN, so the two halves can
+   never net out and hide a result inside one signed number. The single last
+   trade's `sp` must still never be a source. */
+ check('Profit row is the realized total plus the open gain',
+   /const totalProfit=zeroed\?0:acct\.profit\+openGain;/.test(rowsSrc), true);
+ check('Loss row is the realized total plus the open drop',
+   /const totalLoss=zeroed\?0:acct\.loss\+openDrop;/.test(rowsSrc), true);
+ check('only the positive part of the open book counts as gain',
+   /const openGain=openAll\.net>0\?openAll\.net:0;/.test(rowsSrc), true);
+ check('only the negative part of the open book counts as drop',
+   /const openDrop=openAll\.net<0\?openAll\.net:0;/.test(rowsSrc), true);
+ /* The two halves must never cancel: profit never takes the drop, loss never
+    takes the gain, and nothing adds them together. */
+ check('the halves are never netted against each other',
+   !/const totalProfit=[^;]*openDrop/.test(rowsSrc) && !/const totalLoss=[^;]*openGain/.test(rowsSrc)
+   && !/totalProfit\s*\+\s*Math\.abs\(\s*totalLoss/.test(rowsSrc), true);
+ /* One calculation only: the headline must reuse the open book the sub-line and
+    the per-position rows read, never re-derive its own. */
+ check('the open half is the one open book, not a second calculation',
+   /const openAll=vtOpenNetAll\(all, sym\)/.test(rowsSrc)
+   && (rowsSrc.match(/vtOpenNetAll\(all, sym\)/g) || []).length === 1
+   && !/const totalProfit=[^;]*vtOpenNetAll/.test(rowsSrc), true);
+ check('the open half never reaches the balance row',
+   !/vtaPBalance[^\n]*(openGain|openDrop|openAll)/.test(rowsSrc), true);
+ check('the open half is still clamped away by the CLOSE ALL reset',
+   /const totalProfit=zeroed\?0:/.test(rowsSrc) && /const totalLoss=zeroed\?0:/.test(rowsSrc), true);
 check('Profit row is written from that total', /setN\('vtaPProfit',totalProfit>/.test(rowsSrc), true);
 check('Loss row is written from that total', /setN\('vtaPLoss',totalLoss</.test(rowsSrc), true);
 check('the open half is never the single last trade', /setN\('vtaPProfit',[^)]*sp\./.test(rowsSrc), false);

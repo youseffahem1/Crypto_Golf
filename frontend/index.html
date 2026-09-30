@@ -15828,30 +15828,27 @@ function vtNoteRealized(row){
     const sr=ls0?vtSplit(ls0.profit):null;
 
     /* ---- account summary ----------------------------------------------------
-       Profit and Loss here are REALIZED, and only realized. They are built
-       from the closed trade records alone, merged below and keyed by trade id
-       so re-reading the same deal can never double-count it.
+       Profit and Loss here are built from two things: the closed trade records
+       (merged below and keyed by trade id, so re-reading the same deal can never
+       double-count it) AND the live P/L of every OPEN position, so the summary
+       moves with the chart while a trade is running and settles when it closes.
 
-       This block used to add the floating P/L of every OPEN position on top:
+       The open half is the SAME figure already computed for the open book below
+       (vtOpenNetAll) -- the exact one the sub-line and the per-position rows
+       already show -- so this adds no second, divergent calculation and changes
+       no multiplier: the payout arithmetic is left exactly as it was.
 
-           totalProfit = realized.profit + unrealized.profit
-           totalLoss   = realized.loss   + unrealized.loss
-
-       which is exactly what the client asked to be removed. A position's
-       unrealized move is not a result — it is the market breathing — and
-       folding it in made the headline Profit and Loss tick up and down with
-       every candle while the user was still holding, then jump a second time
-       when the position actually closed. It also let a losing OPEN position
-       sit in the headline Loss before a single dollar had been lost. So the
-       open book is deliberately absent from both halves, and the per-position
-       row in the POSITIONS table below is where a position's live P/L belongs.
-       Neither half is ever netted against the other:
-         closed +$20 and closed -$60  ->  Profit +$20   Loss -$60      */
+       It goes in by SIGN, never netted, so a result can never hide inside a
+       single signed number and the two halves can never cancel:
+         open +$40 and closed -$60  ->  Profit +$40   Loss -$60    (not -$20)
+         open -$40 and closed +$20  ->  Profit +$20   Loss -$40    (not -$20)
+       Each half therefore stays single-signed, which is what the rows above and
+       the top cards assume. */
     vtDeals().forEach(vtNoteRealized);
     const acct=vtRealizedTotals();
 
-    /* Still computed, but ONLY to describe the open book in the sub-line and to
-       colour the per-position rows. It must not reach the two totals above. */
+    /* Computed once, and used for the headline totals AND the sub-line and the
+       per-position rows, so those can never disagree about the open book. */
     const openAll=vtOpenNetAll(all, sym);
 
     /* CLOSE ALL zeroes this whole block: the settle point for the account, after
@@ -15861,12 +15858,19 @@ function vtNoteRealized(row){
        settled block is simply a zeroed account. The next real close
        (vantaOnTradeClosed) drops the flag and the real numbers return.
 
-       The open book (openAll) and the per-position rows below are deliberately
-       NOT clamped -- CLOSE ALL does not erase the open book or the history. */
+       The clamp takes the open half down with it, and has to: CLOSE ALL closes
+       every open position, so its own open book is empty by the time this runs.
+       The per-position rows and the trade history below are NOT clamped -- CLOSE
+       ALL does not erase either. */
     const zeroed=!!window.__vantaAcctZeroed;
 
-    const totalProfit=zeroed?0:acct.profit;
-    const totalLoss=zeroed?0:acct.loss;
+    /* Only the half the sign belongs in, so neither total can go negative on the
+       profit side or positive on the loss side. */
+    const openGain=openAll.net>0?openAll.net:0;
+    const openDrop=openAll.net<0?openAll.net:0;
+
+    const totalProfit=zeroed?0:acct.profit+openGain;
+    const totalLoss=zeroed?0:acct.loss+openDrop;
 
     setN('vtaPProfit',totalProfit>0?'+'+money(totalProfit):money(0));
     const profitEl=$('vtaPProfit');

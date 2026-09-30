@@ -33,6 +33,12 @@ const rowsSrc = slice('vtDeals().forEach(vtNoteRealized);', "const meta=$('vtaPo
 
 /* The helper that adds up the P/L still riding on open positions. */
 const openSrc = slice('/* Floating P/L for EVERY open position', 'function updatePosCard(){');
+/* The page's ONE payout function, verbatim. The account block has to reach the
+   same answer as the Live Value box and the POSITIONS rows, and those all pay
+   out through this — so a hand-written stand-in here would hide exactly the bug
+   it exists to catch. */
+const payoutSrc = slice('function vantaPayoutFor(amount, entry, exitPrice, sell) {',
+                        'function vantaPeakValue(trade)');
 
 const FAILS = [];
 function check(label, got, want) {
@@ -55,7 +61,10 @@ sandbox.vantaFrozenProfit = trade => (trade
 vm.createContext(sandbox);
 const api = vm.runInContext(
   'var __out={};\n' +
-  '(function(){\n' + ledgerSrc + '\n' + splitSrc + '\n' + openSrc + '\n' +
+  'var VANTA_PAYOUT_MULTIPLIER=1;\n' +
+  '(function(){\n' + payoutSrc + '\n' + ledgerSrc + '\n' + splitSrc + '\n' + openSrc + '\n' +
+  '  __out.setMult=function(m){ VANTA_PAYOUT_MULTIPLIER=m; };\n' +
+  '  __out.vtPayoutAt=vtPayoutAt;\n' +
   '  __out.vtSeedRealized=vtSeedRealized;__out.vtNoteRealized=vtNoteRealized;' +
   '  __out.vtRealizedTotals=vtRealizedTotals;__out.vtSplit=vtSplit;' +
   '  __out.vtOpenNetAll=vtOpenNetAll;\n' +
@@ -403,6 +412,41 @@ const frozen = api.vtOpenNetAll(
 check('a frozen position is measured from the frozen figure', frozen.drop, -12);
 check('the live price does not override it', frozen.gain, 0);
 check('and it still counts as an open position', frozen.count, 1);
+
+/* ---- THE BLOCK AND THE LIVE VALUE BOX MUST BE THE SAME NUMBER ----
+   The block used to price with `amt*ratio`, which is the payout at a
+   multiplier of ONE, while the Live Value box, the POSITIONS row and the money
+   SELL actually credits all pay out through vantaPayoutFor with the real
+   VANTA_PAYOUT_MULTIPLIER (10, from the server). One trade therefore appeared
+   three different prices on one screen: +$12 in the box and in its row, and a
+   tenth of that in the block. Whatever the multiplier is, these two must be the
+   same figure for the same position at the same price. */
+api.setMult(10);
+const liveBoxValue = amt => api.vtPayoutAt(amt, 1, 2, false);   /* +100% price */
+const bookAtMult10 = api.vtOpenNetAll([P('m', 'GOLF', 100, 1, 'UP')], 'GOLF');
+check('at a real multiplier the block equals the Live Value box',
+  bookAtMult10.gain, liveBoxValue(100) - 100);
+check('and both honour the multiplier, not a private 1x copy',
+  bookAtMult10.gain, 1000);
+const sellBoxValue = api.vtPayoutAt(100, 1, 1.06, true);
+/* BTC at 1.06, bought at 1: move 0.06 × the multiplier 10 = a 60% loss. Kept
+   gentle on purpose — a 100% price move on a SELL floors at 1% of the stake
+   before the multiplier is even relevant, which is the floor working. Binary
+   arithmetic, hence the tolerance rather than an exact float compare. */
+sandbox.vantaServerPrices = { GOLF: 2, BTC: 1.06, ETH: 100 };
+const sellBook = api.vtOpenNetAll([P('s', 'BTC', 100, 1, 'SELL')], 'GOLF');
+check('a SELL position agrees with the box too, mirrored',
+  Math.abs(sellBook.drop - (sellBoxValue - 100)) < 1e-9, true);
+check('and the SELL side honours the multiplier as well',
+  Math.abs(sellBook.drop - (-60)) < 1e-9, true);
+const bodyOnly = openSrc.slice(openSrc.indexOf('function vtOpenNetAll'));
+check('the block does not carry its own copy of the payout maths',
+  /pl=vtPayoutAt\(amt, entry, now, sell\)-amt;/.test(bodyOnly)
+  && !/amt\*\(2-ratio\)/.test(bodyOnly), true);
+api.setMult(1);
+sandbox.vantaServerPrices = { GOLF: 2, BTC: 100, ETH: 100 };
+check('and it is the multiplier, not a hardcoded 10, that makes the move',
+  api.vtOpenNetAll([P('m', 'GOLF', 100, 1, 'UP')], 'GOLF').gain, 100);
 
 console.log('\n' + '='.repeat(60));
 if (FAILS.length) {

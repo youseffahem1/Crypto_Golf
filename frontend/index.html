@@ -5696,11 +5696,34 @@ function renderOpenTrades() {
    With nothing open there is no price to value, so it falls back to the stake
    currently typed in the amount box: what the next trade would be worth the
    moment it is opened. */
+/* Repaint the account block on the CHART's beat, not on its own slow loop.
+
+   The POSITIONS card repainted every 2s while the Live Value box above it was
+   rewritten every frame, so the two figures describing the same open position
+   were up to two seconds apart — long enough to look like they disagreed even
+   when the arithmetic was identical. This asks for the same repaint, throttled
+   to 2.5Hz: often enough that the two read as one number moving together, rarely
+   enough that the card's DOM work and its rate-limited deal fetch are not run
+   sixty times a second.
+
+   The card's own 2s loop is left running underneath as the floor, so a paused or
+   missing render loop cannot freeze the block. */
+let __vantaAcctTick = 0;
+function vantaTickAcct() {
+    const now = Date.now();
+    if (now - __vantaAcctTick < 400) return;
+    __vantaAcctTick = now;
+    if (typeof window.vantaSyncPosCard === "function") {
+        try { window.vantaSyncPosCard(); } catch (e) { /* the 2s loop will get it */ }
+    }
+}
+
 function updateTrades() {
 
     const now =
         Date.now();
 
+    vantaTickAcct();
     /* Live Value box: total sell-value of open positions on the active
        coin right now (falls back to the stake amount when none are open).
        A position whose `closes_at` has passed is still included: it is still
@@ -15856,6 +15879,25 @@ function vtNoteRealized(row){
      closeValueFor uses, and a position whose price is not known yet is left out
      of the total rather than guessed at. `skipped` is reported so the caller
      can say so instead of quietly showing a short total as if it were whole. */
+  /* closeValueFor() can only see the one `currentPrice`, so it is only right for
+     the coin on screen. This is the SAME payout for an arbitrary position, which
+     is what lets the account block price a BTC position with BTC's price without
+     re-implementing the maths.
+
+     It used to re-implement it — `amt*ratio` and `amt*(2-ratio)` — and that is
+     exactly the bug this exists to end: those two expressions are the payout with
+     a multiplier of ONE, while every other surface on the page pays out through
+     vantaPayoutFor with VANTA_PAYOUT_MULTIPLIER (10, from the server). So a
+     trade sitting at +12 in the Live Value box and in its own row was reported
+     by this block at a fraction of that, and the same position priced three
+     different ways on one screen. There is now exactly one payout function in
+     the page and this is a call into it. */
+  function vtPayoutAt(amt, entry, price, sell){
+    if(typeof vantaPayoutFor==='function') return vantaPayoutFor(amt, entry, price, sell);
+    const ratio=(entry>0&&price>0)?(price/entry):1;
+    return sell ? amt*(2-ratio) : amt*ratio;
+  }
+
   /* The open book, split BY POSITION rather than by total.
 
      Every position that has not been closed is measured on its own and filed
@@ -15895,11 +15937,11 @@ function vtNoteRealized(row){
           ? Number(currentPrice)||entry
           : Number(prices[s])||0;
         if(!(now>0)){ skipped++; return; }
-        const ratio=now/entry;
         const sell=(t.direction==='DOWN'||t.direction==='SELL');
-        let value=sell ? amt*(2-ratio) : amt*ratio;
-        if(sell && value<amt*0.01) value=amt*0.01;
-        pl=value-amt;
+        /* The page's one payout function, so this figure is the same figure the
+           Live Value box shows and the same figure the row's P/L cell shows. The
+           1% floor lives inside it and is not re-applied here. */
+        pl=vtPayoutAt(amt, entry, now, sell)-amt;
       }
       /* Filed by this position's own sign, never netted against another. */
       if(pl>0){ gain+=pl; wins++; }

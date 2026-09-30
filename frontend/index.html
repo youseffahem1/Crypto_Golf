@@ -2984,6 +2984,7 @@ const desktopBalanceEl = document.getElementById("desktopBalance");
 
 const amountInput = document.getElementById("amountInput");
 const durationValue = document.getElementById("durationValue");
+const potentialReturn = document.getElementById("potentialReturn");
 const profitAmount = document.getElementById("profitAmount");
 
 const openTradesEl = document.getElementById("openTrades");
@@ -3471,11 +3472,12 @@ function updateProfit() {
        No fixed payout is promised anymore. */
     if (profitAmount) profitAmount.textContent = money(amount);
 
-    /* Live Value is NOT written here. It is the money actually PAID for the
-       positions that are open, so it is derived from the open book and from
-       nothing the user is merely about to type. Typing a stake into the amount
-       field while a position is open used to overwrite the live figure with a
-       number for a trade that does not exist yet. */
+    /* Only meaningful while nothing is open: with no position there is no market
+       price to value, so the box shows what a trade would be worth the instant
+       it is opened — its own stake. Once a position exists, updateTrades() is
+       the only thing that writes this box, and it writes the live value, so a
+       figure can never be half typed and half live. */
+    potentialReturn.textContent = money(amount);
 
 }
 
@@ -5629,53 +5631,69 @@ function renderOpenTrades() {
    UPDATE OPEN TRADES
    ========================================================= */
 
-/* ---------- Live Value: the money PAID, held still ----------
-   The Live Value box shows what was actually staked on the positions that are
-   open right now on the active coin, summed:
+/* ---------- Live Value: what the open book is worth RIGHT NOW ----------
+   This box is the live value of the positions that are open, not the money
+   that went in. It is the single total of every open position's current
+   close-value, so it tracks the real market price on every tick:
 
-     one position for $100   -> $100.00
-     two positions, $100 + $50 -> $150.00
+     BUY  at $10, price climbs -> the value climbs
+     BUY  at $10, price drops  -> the value drops
+     SELL at $10, price drops  -> the value climbs
+     SELL at $10, price climbs -> the value drops
 
-   It is the STAKE, not the current worth, so it does not rise and fall with
-   the price and it is never coloured green or red: the only thing that could
-   make a figure here move is money actually entering or leaving the account.
+   It is deliberately a moving number. An earlier version printed the stake
+   and held it still, which meant a $10 trade could sit reading $10.00 through
+   a market that had taken it to $10.21 — the one thing the box called "Live"
+   was the one figure that never lived.
 
-   It used to be the live sell-value, which meant the number climbed and fell
-   every second and a stake of $100 could be shown as any other figure on
-   screen. It also used to fall back to the amount still typed in the stake
-   field, so an account with nothing open advertised a balance it did not
-   have. With no open position it now reads $0.00.
+   The arithmetic is the page's own and nothing is re-derived here:
+   closeValueFor() is the same function that prices each row of the POSITIONS
+   table and the same one SELL pays out, so the box, the row and the money
+   received cannot disagree. It runs through vantaPayoutFor(), which knows the
+   direction — a DOWN/SELL position pays out on a falling price — so the sign
+   of the move is the direction's, not a hardcoded rise.
 
-   `trades` holds only positions that have not been closed yet (it is spliced
-   on close), so a sum over it is the real paid total. A position whose timer
-   ran out is still in there on purpose: its money is still staked and still
-   has to be collected with CLOSE. */
-function vantaPaintStakeLive() {
+   Nothing here is simulated and nothing is capped: the only input is
+   `currentPrice`, the server's own feed for the coin on screen.
 
-    const liveValEl = document.getElementById("potentialReturn");
+   A FINISHED position (its clock reached 00:00) is read from the server's
+   frozen figure inside closeValueFor and holds still — that is the promise of
+   the freeze, and it is still included rather than dropped, because the money
+   is still staked and still has to be collected with CLOSE.
 
-    if (!liveValEl) return;
-
-    const lvSym = window.vantaActiveCoin || "GOLF";
-    const lv = (typeof trades !== "undefined" && Array.isArray(trades))
-        ? trades.filter(t => (t.symbol || "GOLF") === lvSym)
-        : [];
-    const paid = lv.reduce((s, t) => s + Number(t.amount || 0), 0);
-
-    liveValEl.textContent = money(paid);
-
-    /* Cleared explicitly: a leftover red/green from an older live-value paint
-       would keep colouring a figure that no longer moves. */
-    liveValEl.style.color = "";
-    liveValEl.classList.toggle("is-zero", paid === 0);
-}
-
+   With nothing open there is no price to value, so it falls back to the stake
+   currently typed in the amount box: what the next trade would be worth the
+   moment it is opened. */
 function updateTrades() {
 
     const now =
         Date.now();
 
-    vantaPaintStakeLive();
+    /* Live Value box: total sell-value of open positions on the active
+       coin right now (falls back to the stake amount when none are open).
+       A position whose `closes_at` has passed is still included: it is still
+       open, it is still the user's, and it is still worth exactly what it is
+       worth. Excluding it would under-report the account by the full amount
+       the user is sitting on, purely because a clock ran out. */
+    const liveValEl = document.getElementById("potentialReturn");
+    if (liveValEl) {
+        const lvSym = window.vantaActiveCoin || "GOLF";
+        const lv = trades.filter(t => (t.symbol || "GOLF") === lvSym);
+        const lvPaid = lv.reduce((s, t) => s + Number(t.amount || 0), 0);
+        const lvTotal = lv.length
+            ? lv.reduce((s, t) => s + closeValueFor(t), 0)
+            : getAmount();
+        liveValEl.textContent = money(lvTotal);
+        /* Green above the stake paid, red below it, so the direction of the
+           move is readable without doing the subtraction. Cleared when there is
+           nothing open, because there is nothing to be above or below. */
+        liveValEl.style.color = lv.length
+            ? (lvTotal >= lvPaid
+                ? "var(--up)"
+                : "var(--down)")
+            : "";
+    }
+
 
 
 
@@ -15268,9 +15286,6 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
 .setting-content input[type="number"]{color:#ffffff !important;font-size:16px !important;font-weight:900 !important}
 .setting-label{font-size:8.5px;letter-spacing:.12em;color:#8a93b1}
 .setting-value{font-size:15px !important;font-weight:900 !important;color:#ffffff !important}
-/* The Paid box holds still, so a zero is dimmed rather than shouted: $0.00
-   means nothing is staked right now, not that the account is empty. */
-.setting-value.is-zero{opacity:.42 !important}
 .small-control{
   width:32px;height:34px;border-radius:10px !important;
   background:var(--panel-3) !important;border:1px solid var(--line) !important;

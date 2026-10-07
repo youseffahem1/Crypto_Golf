@@ -210,6 +210,20 @@ class SwapTx(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class WalletSwapTx(Base):
+    """Swap recorded against wallet holdings, separate from trading swaps."""
+    __tablename__ = "wallet_swap_txs"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    from_symbol = Column(String, nullable=False)
+    to_symbol = Column(String, nullable=False)
+    from_amount = Column(Float, nullable=False)
+    to_amount = Column(Float, nullable=False)
+    rate = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class GolfStat(Base):
     """Single-row table of GOLF token dashboard stats. is_demo=True always
     right now (no real DEX Screener integration wired up yet, per spec:

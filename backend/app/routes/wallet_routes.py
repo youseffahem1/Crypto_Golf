@@ -11,6 +11,36 @@ from ..auth import get_current_user_id
 router = APIRouter(prefix="/api/wallet", tags=["wallet"])
 
 
+@router.post("/swap", response_model=schemas.SwapOut)
+def swap_wallet_coins(
+    payload: schemas.SwapRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Convert wallet holdings so the received coin stays in My Wallets."""
+    try:
+        return swap_service.execute_wallet_swap(
+            db, user_id, payload.from_symbol, payload.to_symbol, payload.amount,
+        )
+    except swap_service.SwapError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/swap-from-trading", response_model=schemas.SwapOut)
+def swap_trading_coins_into_wallet(
+    payload: schemas.SwapRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Convert a trading balance and credit the destination into My Wallets."""
+    try:
+        return swap_service.execute_trading_swap_to_wallet(
+            db, user_id, payload.from_symbol, payload.to_symbol, payload.amount,
+        )
+    except swap_service.SwapError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # --- Per-account Wallet PIN ----------------------------------------------------
 # One stored PIN per account, hashed with the same bcrypt context as
 # password_hash. The user id comes from the bearer token and NEVER from the

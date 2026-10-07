@@ -7917,7 +7917,7 @@ async function vantaHandleEntry() {
       <div class="vwd-field">
         <label for="vwdConvAmt">Amount (<span id="vwdConvFromSym">BTC</span>)</label>
         <input id="vwdConvAmt" type="number" min="0" step="any" placeholder="0.00" inputmode="decimal" autocomplete="off">
-        <div class="vwd-field-foot">Available in trading: <b id="vwdConvAvail">0</b> <span id="vwdConvFromSym2">BTC</span></div>
+        <div class="vwd-field-foot">Available in wallet: <b id="vwdConvAvail">0</b> <span id="vwdConvFromSym2">BTC</span></div>
       </div>
       <div class="vwd-rate" id="vwdRate">Rate loading…</div>
       <button class="vwd-primary" id="vwdConvBtn" type="button">Convert</button>
@@ -8465,7 +8465,7 @@ async function vantaHandleEntry() {
     $('vwdSendSym').textContent=sym; $('vwdSendSym2').textContent=sym;
     $('vwdConvFromSym').textContent=sym; $('vwdConvFromSym2').textContent=sym;
     $('vwdSendAvail').textContent=fmtCoin(walletBalanceFor(sym),sym);
-    $('vwdConvAvail').textContent=fmtCoin(tradingBalanceFor(sym),sym);
+    $('vwdConvAvail').textContent=fmtCoin(walletBalanceFor(sym),sym);
     $('vwdConvFrom').value=sym+' \u2014 '+meta.name;
     $('vwdSendTo').value=''; $('vwdSendAmt').value=''; $('vwdSendNote').value='';
     $('vwdConvAmt').value='';
@@ -8618,9 +8618,8 @@ async function vantaHandleEntry() {
       .finally(function(){ btn.disabled=false; btn.textContent=old; state.busy=false; });
   }
 
-  /* Swaps run on the TRADING account (they are the buy/sell engine for the
-     investment book), so the ceiling here is the trading balance — which is
-     exactly what the Convert pane's "Available in trading" line shows. */
+  /* Wallet swaps debit and credit the wallet ledger, so received coins appear
+     in the matching card in My Wallets. */
   function doConvert(){
     var sym=state.activeSym, to=$('vwdConvTo').value;
     var amt=parseFloat($('vwdConvAmt').value);
@@ -8628,33 +8627,22 @@ async function vantaHandleEntry() {
     if(state.busy)return;
     if(!to||to===sym){ toast('Choose a destination coin.'); return; }
     if(!(amt>0)){ toast('Enter a valid amount.'); return; }
-    var avail=tradingBalanceFor(sym);
-    if(amt>avail+1e-9){ toast('Insufficient '+sym+' trading balance (you have '+fmtCoin(avail,sym)+').'); return; }
+    var avail=walletBalanceFor(sym);
+    if(amt>avail+1e-9){ toast('Insufficient '+sym+' wallet balance (you have '+fmtCoin(avail,sym)+').'); return; }
     if(isDemo()){
       var r=rate(sym,to), received=amt*r;
       var m=practice();
-      if(sym==='USDT'){ demoBalance=(demoBalance||0)-amt; try{ vantaSaveDemoBalance(); }catch(e){} }
-      else { m[sym]=(Number(m[sym])||0)-amt; practiceSave(m); }
-      if(to==='USDT'){ demoBalance=(demoBalance||0)+received; try{ vantaSaveDemoBalance(); }catch(e){} }
-      else { m[to]=(Number(m[to])||0)+received; practiceSave(m); }
-      /* Average-cost book for practice platform coins, mirroring the server's
-         SwapTx ledger, so "Invested"/"You made" stay real after buying and
-         after "Move to Wallet" cashes out. */
-      try{
-        vantaPracticeCost(m,
-          sym==='USDT' ? to : sym,
-          sym==='USDT' ? amt : 0,
-          sym==='USDT' ? received : 0,
-          to==='USDT' ? received : 0,
-          to==='USDT' ? amt : 0);
-      }catch(e){}
+      var wallet=practiceWallet();
+      wallet[sym]=Math.max(0,(Number(wallet[sym])||0)-amt);
+      wallet[to]=(Number(wallet[to])||0)+received;
+      practiceSave(m);
       toast('Converted '+fmtCoin(amt,sym)+' '+sym+' → '+fmtCoin(received,to)+' '+to+' (practice).');
       afterChange(); closeModal();
       return;
     }
     if(!hasToken()){ toast('Log in to convert from your wallet \u2014 or use Practice mode.'); return; }
     btn.disabled=true; var old=btn.textContent; btn.textContent='Converting\u2026';
-    vantaApi('/api/swap',{method:'POST',body:JSON.stringify({from_symbol:sym,to_symbol:to,amount:amt})})
+    vantaApi('/api/wallet/swap',{method:'POST',body:JSON.stringify({from_symbol:sym,to_symbol:to,amount:amt})})
       .then(function(r){ var got=(r&&r.to_amount)!=null?Number(r.to_amount):0; toast('Converted '+fmtCoin(amt,sym)+' '+sym+' \u2192 '+fmtCoin(got,to)+' '+to+'.'); try{ refreshBalance(); }catch(e){} afterChange(); closeModal(); })
       .catch(function(e){ toast(e.message||'Conversion failed.'); })
       .finally(function(){ btn.disabled=false; btn.textContent=old; state.busy=false; });
@@ -9632,7 +9620,7 @@ async function vantaHandleEntry() {
     const a=Number(convAmount.value), from=convFrom.value, to=convTo.value;
     convSubmit.disabled=true;
     try{
-      const tx=await vantaApi('/api/swap',{method:'POST',body:JSON.stringify({from_symbol:from,to_symbol:to,amount:a})});
+      const tx=await vantaApi('/api/wallet/swap-from-trading',{method:'POST',body:JSON.stringify({from_symbol:from,to_symbol:to,amount:a})});
       close('vfxConvertModal'); e.target.reset(); convQuote.textContent='Enter an amount to see the quote.'; if(convRate)convRate.textContent=''; convErr.textContent='';
       toast(`Converted ${coinFmt(tx.from_amount)} ${tx.from_symbol} → ${coinFmt(tx.to_amount)} ${tx.to_symbol}`);
       if(typeof refreshBalance==='function')refreshBalance();
@@ -12008,8 +11996,8 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
       <div class="vd-glow" aria-hidden="true"></div>
       <div class="vd-balance-top">
         <div>
-          <div class="vd-balance-label">Total Balance</div>
-          <div class="vd-balance-value" id="vdUsdtBalance">$0.00 <small>All Coins</small></div>
+          <div class="vd-balance-label">Total Balance (USDT equivalent)</div>
+          <div class="vd-balance-value" id="vdUsdtBalance">$0.00 <small>USDT equivalent</small></div>
           <div class="vd-balance-note" id="vdBalanceNote">Your full balance across every coin — USDT, platform tokens & crypto.</div>
         </div>
         <div class="vd-cap">TESTNET • VIRTUAL</div>
@@ -12271,7 +12259,13 @@ html[data-theme="light"] .vd-balance{background:linear-gradient(150deg,#ffffff,#
         const pr=Number(prices[k])||Number(df[k])||0;
         total+=amt*pr;
       }
-      usdt.innerHTML=money(total)+' <small>All Coins</small>';
+      const wb=window.vantaWalletBalances||{};
+      for(const k in wb){
+        const amt=Number(wb[k])||0;
+        const pr=Number(prices[k])||Number(df[k])||0;
+        total+=amt*pr;
+      }
+      usdt.innerHTML=money(total)+' <small>USDT equivalent</small>';
     }
     refreshGolfCard();
     renderDashboardTransfers();
@@ -15446,8 +15440,8 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
       if(!balCard) return;
       if(!$('vdaStats')){
         const s=document.createElement('div'); s.id='vdaStats'; s.className='vda-stats';
-        s.innerHTML='<div class="vda-stat"><span>Total Balance</span><b id="vdaTotal">$0.00</b></div>'
-          +'<div class="vda-stat"><span>Available</span><b id="vdaAvail">$0.00</b></div>'
+        s.innerHTML='<div class="vda-stat"><span>Total (USDT value)</span><b id="vdaTotal">$0.00</b></div>'
+          +'<div class="vda-stat"><span>Trading balance (USDT)</span><b id="vdaAvail">$0.00</b></div>'
           +'<div class="vda-stat"><span>P/L Today</span><b id="vdaToday">$0.00</b></div>';
         balCard.appendChild(s);
         const ctrl=document.createElement('div'); ctrl.className='vda-balctrl';
@@ -15476,6 +15470,11 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           const amt=Number(cb[k])||0;
           crypto+=amt*(Number(prices[k])||Number(df[k])||0);
         }
+        const wb=window.vantaWalletBalances||{};
+        for(const k in wb){
+          const amt=Number(wb[k])||0;
+          crypto+=amt*(Number(prices[k])||Number(df[k])||0);
+        }
         let today=0;
         const hist=(d.trades_today&&d.trades_today.length)?d.trades_today:[];
         for(let k in hist){ today+=Number(hist[k].profit||0); }
@@ -15488,10 +15487,8 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           return p>0? coinFmt(v/p)+' '+sym : money(v);
         };
         setTxt('vdaTotal',conv(total));
-        // Include every trading holding in the dashboard's available balance.
-        // Admin credits and swaps can land in any supported coin, so showing
-        // only the USDT column here made those funds appear to disappear.
-        setTxt('vdaAvail',conv(total));
+        // This is the USDT trading balance; total above includes all coins.
+        setTxt('vdaAvail',money(usdt));
         const realToday=_todayRealized();
         const todayEl=$('vdaToday');
         if(todayEl){ todayEl.textContent=(realToday>=0?'+':'')+conv(realToday); todayEl.style.color=realToday>=0?'var(--up)':'var(--down)'; }

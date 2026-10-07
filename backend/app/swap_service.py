@@ -436,3 +436,67 @@ def execute_swap(db: Session, user_id: str, from_symbol: str, to_symbol: str, fr
     db.commit()
     db.refresh(tx)
     return tx
+
+
+def execute_wallet_swap(db: Session, user_id: str, from_symbol: str, to_symbol: str, from_amount: float) -> models.WalletSwapTx:
+    """Convert funds inside the wallet ledger without touching trading funds."""
+    from_symbol = (from_symbol or "").strip().upper()
+    to_symbol = (to_symbol or "").strip().upper()
+    _validate_pair(from_symbol, to_symbol)
+    if from_amount <= 0:
+        raise SwapError("Amount must be greater than zero")
+
+    try:
+        user = db.query(models.User).filter_by(id=user_id).with_for_update().first()
+    except Exception:
+        db.rollback()
+        user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise SwapError("User not found")
+    balance = get_wallet_balance(db, user, from_symbol)
+    if balance < from_amount:
+        raise SwapError(f"Insufficient {from_symbol} wallet balance")
+
+    rate = get_rate(db, from_symbol, to_symbol)
+    to_amount = from_amount * rate
+    set_wallet_balance(db, user, from_symbol, balance - from_amount)
+    set_wallet_balance(db, user, to_symbol, get_wallet_balance(db, user, to_symbol) + to_amount)
+    tx = models.WalletSwapTx(
+        user_id=user_id, from_symbol=from_symbol, to_symbol=to_symbol,
+        from_amount=from_amount, to_amount=to_amount, rate=rate,
+    )
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx
+
+
+def execute_trading_swap_to_wallet(db: Session, user_id: str, from_symbol: str, to_symbol: str, from_amount: float) -> models.WalletSwapTx:
+    """Spend trading funds and put the converted coin directly in the wallet."""
+    from_symbol = (from_symbol or "").strip().upper()
+    to_symbol = (to_symbol or "").strip().upper()
+    _validate_pair(from_symbol, to_symbol)
+    if from_amount <= 0:
+        raise SwapError("Amount must be greater than zero")
+    try:
+        user = db.query(models.User).filter_by(id=user_id).with_for_update().first()
+    except Exception:
+        db.rollback()
+        user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise SwapError("User not found")
+    balance = get_balance(db, user, from_symbol)
+    if balance < from_amount:
+        raise SwapError(f"Insufficient {from_symbol} trading balance")
+    rate = get_rate(db, from_symbol, to_symbol)
+    to_amount = from_amount * rate
+    set_balance(db, user, from_symbol, balance - from_amount)
+    set_wallet_balance(db, user, to_symbol, get_wallet_balance(db, user, to_symbol) + to_amount)
+    tx = models.WalletSwapTx(
+        user_id=user_id, from_symbol=from_symbol, to_symbol=to_symbol,
+        from_amount=from_amount, to_amount=to_amount, rate=rate,
+    )
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx

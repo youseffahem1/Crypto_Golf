@@ -7578,6 +7578,7 @@ async function vantaHandleEntry() {
 .vwd-card-chev{color:#5e6470;font-size:20px;margin-left:auto;flex:none;line-height:1;transform:translateY(-1px)}
 .vwd-card-bal{font-size:21px;font-weight:950;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:auto}
 .vwd-card-bal span{font-size:11px;color:#8f93a4;font-weight:900;margin-left:4px}
+.vwd-card-split{display:flex;justify-content:space-between;gap:8px;color:#858b9b;font-size:9px;font-weight:800}
 .vwd-card-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .vwd-card-usd{font-size:11px;color:#aeb3c0;font-weight:800}
 .vwd-card-chg{font-size:10px;font-weight:900}
@@ -8379,14 +8380,16 @@ async function vantaHandleEntry() {
     }
   }
 
-  /* ---------- Render grid (WALLET holdings — never the trading balance) ----
+  /* ---------- Render grid (combined wallet and trading balances) -----------
      This is the Dashboard "My Wallets" grid, so it lists every coin, exactly as
      before. The three-coin limit applies to the Wallet page only (#vwdAssets). */
   function render(){
     var html='', total=0, holdings=0;
     VWD_ORDER.forEach(function(sym){
       var meta=VWD_META[sym]||{name:sym,net:'Network',dec:4};
-      var bal=walletBalanceFor(sym);
+      var walletBal=walletBalanceFor(sym);
+      var tradingBal=tradingBalanceFor(sym);
+      var bal=walletBal+tradingBal;
       var usd=bal*priceOf(sym);
       if(bal>0) holdings++;
       total+=usd;
@@ -8400,6 +8403,7 @@ async function vantaHandleEntry() {
             '<span class="vwd-card-chev">›</span>'+
           '</div>'+
           '<div class="vwd-card-bal">'+fmtCoin(bal,sym)+' <span>'+sym+'</span></div>'+
+          '<div class="vwd-card-split"><span>Trading: '+fmtCoin(tradingBal,sym)+' '+sym+'</span><span>Wallet: '+fmtCoin(walletBal,sym)+' '+sym+'</span></div>'+
           '<div class="vwd-card-row"><span class="vwd-card-usd">'+fmtMoney(usd)+'</span><span class="vwd-card-chg '+chCl+'">'+chStr+'</span></div>'+
           '<div class="vwd-card-acts"><span>Deposit</span><span>Withdraw</span><span>Send</span><span>Swap</span></div>'+
         '</button>';

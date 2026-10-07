@@ -6309,6 +6309,14 @@ async function refreshBalance() {
             if (typeof vantaSyncWalletUI === "function") vantaSyncWalletUI();
         } catch (e) { /* keep last known prices */ }
     } catch (e) { /* keep showing the last known balance */ }
+    // Swaps, admin credits and other balance changes refresh this shared
+    // ledger. Repaint the home summary after the server response arrives so
+    // it cannot keep showing the pre-conversion amount.
+    try {
+        if (typeof window.vantaRefreshDashboard === "function") {
+            window.vantaRefreshDashboard();
+        }
+    } catch (e) { /* dashboard may not be mounted yet */ }
 }
 
 async function refreshGolfStats() {
@@ -15480,11 +15488,18 @@ body.vanta-admin .bottom-nav{grid-template-columns:repeat(5,1fr) !important}
           return p>0? coinFmt(v/p)+' '+sym : money(v);
         };
         setTxt('vdaTotal',conv(total));
-        setTxt('vdaAvail',conv(usdt));
+        // Include every trading holding in the dashboard's available balance.
+        // Admin credits and swaps can land in any supported coin, so showing
+        // only the USDT column here made those funds appear to disappear.
+        setTxt('vdaAvail',conv(total));
         const realToday=_todayRealized();
         const todayEl=$('vdaToday');
         if(todayEl){ todayEl.textContent=(realToday>=0?'+':'')+conv(realToday); todayEl.style.color=realToday>=0?'var(--up)':'var(--down)'; }
       }).catch(()=>{});
+      if(!$('vdaCur').dataset.bound){
+        $('vdaCur').dataset.bound='1';
+        $('vdaCur').addEventListener('change',vantaRenderHomeExtra);
+      }
       // Markets strip
       if(!$('vtaMarkets')){
         const sec=document.createElement('section'); sec.id='vtaMarkets'; sec.className='vta-markets vd-card';

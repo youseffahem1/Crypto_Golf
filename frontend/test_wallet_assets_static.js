@@ -88,8 +88,8 @@ try {
 
 const eps = s => [...new Set((s.match(/vantaApi\('\/api\/[a-z-]+/g) || []))].sort();
 if (headSrc) {
-  ok('the page calls exactly the same endpoints as the committed version',
-    JSON.stringify(eps(src)) === JSON.stringify(eps(headSrc)), { now: eps(src), head: eps(headSrc) });
+ok('the page calls exactly the same endpoints as the committed version',
+  JSON.stringify(eps(src)) === JSON.stringify(eps(headSrc)), { now: eps(src), head: eps(headSrc) });
   ok('no new fetch target was added',
     JSON.stringify([...new Set((src.match(/api\.coingecko\.com|api\.[a-z]+\.[a-z]+/g) || []))].sort()) ===
     JSON.stringify([...new Set((headSrc.match(/api\.coingecko\.com|api\.[a-z]+\.[a-z]+/g) || []))].sort()));
@@ -99,6 +99,9 @@ if (headSrc) {
 } else {
   console.log('  --   skipped the HEAD comparison (no git)');
 }
+ok('home swap falls back to the deployed legacy swap and credits its output to the wallet',
+  /api\/wallet\/swap-from-trading[\s\S]{0,900}api\/swap[\s\S]{0,500}api\/wallet\/transfer/.test(src) &&
+  /direction:'TO_WALLET'/.test(src));
 ok('the balance readers are untouched',
   /function walletBalanceFor\(sym\)\{\s*if\(isDemo\(\)\) return Number\(practiceWallet\(\)\[sym\]\)\|\|0;/.test(src));
 ok('the trading balance reader is untouched', /function tradingBalanceFor\(sym\)\{/.test(src));

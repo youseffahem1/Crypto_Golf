@@ -9624,7 +9624,19 @@ async function vantaHandleEntry() {
     const a=Number(convAmount.value), from=convFrom.value, to=convTo.value;
     convSubmit.disabled=true;
     try{
-      const tx=await vantaApi('/api/wallet/swap-from-trading',{method:'POST',body:JSON.stringify({from_symbol:from,to_symbol:to,amount:a})});
+      const payload=JSON.stringify({from_symbol:from,to_symbol:to,amount:a});
+      let tx;
+      try{
+        tx=await vantaApi('/api/wallet/swap-from-trading',{method:'POST',body:payload});
+      }catch(routeErr){
+        // Render may still be serving the previous backend build, which has
+        // /api/swap and /api/wallet/transfer but not the combined endpoint.
+        if(!/^(not found|request failed \(404\))$/i.test(String(routeErr&&routeErr.message||'').trim())) throw routeErr;
+        tx=await vantaApi('/api/swap',{method:'POST',body:payload});
+        await vantaApi('/api/wallet/transfer',{method:'POST',body:JSON.stringify({
+          symbol:to,amount:tx.to_amount,direction:'TO_WALLET'
+        })});
+      }
       close('vfxConvertModal'); e.target.reset(); convQuote.textContent='Enter an amount to see the quote.'; if(convRate)convRate.textContent=''; convErr.textContent='';
       toast(`Converted ${coinFmt(tx.from_amount)} ${tx.from_symbol} → ${coinFmt(tx.to_amount)} ${tx.to_symbol}`);
       if(typeof refreshBalance==='function')refreshBalance();

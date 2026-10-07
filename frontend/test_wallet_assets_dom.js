@@ -63,7 +63,19 @@ window.VANTACOINS = [
   { sym: 'GOLF', name: 'Golf Coin' }, { sym: 'NOVA', name: 'Nova Coin' }, { sym: 'ABC', name: 'ABC Coin' },
 ];
 window.showToast = m => { window.__toast = m; };
-window.vantaApi = () => Promise.reject(new Error('offline in test'));
+window.vantaToken = () => 'dom-test-token';
+window.vantaApi = (url, options = {}) => {
+  if (url === '/api/wallet/swap') {
+    const tx = JSON.parse(options.body || '{}');
+    const from = tx.from_symbol, to = tx.to_symbol, amount = Number(tx.amount);
+    const rate = Number(window.VWD_DEFAULT[from]) / Number(window.VWD_DEFAULT[to]);
+    const received = amount * rate;
+    window.vantaWalletBalances[from] -= amount;
+    window.vantaWalletBalances[to] = (Number(window.vantaWalletBalances[to]) || 0) + received;
+    return Promise.resolve({ from_symbol: from, to_symbol: to, from_amount: amount, to_amount: received });
+  }
+  return Promise.reject(new Error('offline in test'));
+};
 window.fetch = () => Promise.reject(new Error('no network in test'));
 window.__addrCalls = [];
 window.vantaShowCoinAddress = (sym, mode) => window.__addrCalls.push([sym, mode]);
@@ -187,12 +199,29 @@ ok('the dashboard "My Wallets" grid still lists all 15 coins', (() => {
     .every(s => g.includes(s));
 })(), [...window.document.querySelectorAll('#vwdGrid [data-wallet]')].map(c => c.getAttribute('data-wallet')).join(','));
 ok('BTC is back on the dashboard', !!window.document.querySelector('#vwdGrid [data-wallet="BTC"]'));
+const golfCard = () => window.document.querySelector('#vwdGrid [data-wallet="GOLF"]');
+ok('GOLF card includes trading and wallet balances', /16(?:\.0+)?\s+GOLF/.test(golfCard().textContent) &&
+  /Trading:\s*12(?:\.0+)?\s+GOLF/.test(golfCard().textContent) && /Wallet:\s*4(?:\.0+)?\s+GOLF/.test(golfCard().textContent), golfCard().textContent);
+const usdtCard = window.document.querySelector('#vwdGrid [data-wallet="USDT"]');
+ok('USDT card shows the 1,900 USDT across both ledgers', /(?:1,900|1900)(?:\.0+)?\s+USDT/.test(usdtCard.textContent), usdtCard.textContent);
 
-console.log('\n[10] no other coin\'s address can be shown under this coin');
+console.log('\n[10] converting USDT to GOLF credits and displays the GOLF wallet card');
+window.document.querySelector('#vwdGrid [data-wallet="USDT"]').click();
+$('vwdTabs').querySelector('[data-tab="transfer"]').click();
+$('vwdConvTo').value = 'GOLF';
+$('vwdConvAmt').value = '10';
+$('vwdConvBtn').click();
+await wait(0);
+ok('conversion credited GOLF in the wallet ledger', window.vantaWalletBalances.GOLF > 4, window.vantaWalletBalances.GOLF);
+ok('GOLF card total now includes the received coins', /32\.66\d+(?:\s+GOLF)/.test(golfCard().textContent), golfCard().textContent);
+ok('GOLF card split still identifies trading and wallet amounts', /Trading:\s*12(?:\.0+)?\s+GOLF/.test(golfCard().textContent) &&
+  /Wallet:\s*20\.66\d+\s+GOLF/.test(golfCard().textContent), golfCard().textContent);
+
+console.log('\n[11] no other coin\'s address can be shown under this coin');
 ok('the address view has no cross-coin USDT fallback',
   !/const val=\(map&&map\[sym\]\)\|\|\(map&&map\.USDT\)/.test(html));
 
-console.log('\n[11] the whole thing is presentation only');
+console.log('\n[12] wallet cards stay synced with their respective ledgers');
 /* The strongest available check: the wallet block's own requests, balances and
    endpoints are byte-for-byte the same set as the committed version. Anything
    new would show up as a difference. */

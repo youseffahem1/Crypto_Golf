@@ -1138,7 +1138,7 @@ body {
 
     .app {
         padding-bottom: 0;
-        padding-left: 260px;
+        padding-left: 280px;
     }
 
     .header {
@@ -1148,6 +1148,9 @@ body {
         height: 72px;
     }
 
+    /* =========================================================
+       DESKTOP SIDEBAR — Premium Glassmorphism Design
+       ========================================================= */
     .desktop-sidebar {
         position: fixed;
         display: flex;
@@ -1155,113 +1158,450 @@ body {
         left: 0;
         top: 0;
         bottom: 0;
-        width: 260px;
-        padding: 24px 16px 32px;
-        background: #080a0e;
+        width: 280px;
+        padding: 0;
+        background: 
+            linear-gradient(180deg, rgba(10,12,18,.98) 0%, rgba(8,10,14,.95) 50%, rgba(6,8,12,.98) 100%),
+            radial-gradient(ellipse at 0% 0%, rgba(141,114,255,.06) 0%, transparent 50%),
+            radial-gradient(ellipse at 100% 100%, rgba(37,99,235,.04) 0%, transparent 50%);
         border-right: 1px solid var(--border);
         z-index: 100;
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        overflow-y: auto;
+        overflow-x: hidden;
     }
 
+    .desktop-sidebar::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(141,114,255,.3), rgba(37,99,235,.2), transparent);
+    }
+
+    .desktop-sidebar::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(141,114,255,.15), transparent);
+    }
+
+    /* Sidebar Sections */
+    .sidebar-section {
+        padding: 0 20px;
+    }
+
+    .sidebar-brand {
+        padding-top: 28px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid rgba(255,255,255,.04);
+        margin-bottom: 8px;
+    }
+
+    .sidebar-balance-card {
+        padding-bottom: 24px;
+        border-bottom: 1px solid rgba(255,255,255,.04);
+        margin-bottom: 8px;
+    }
+
+    .sidebar-nav {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        padding-top: 8px;
+        padding-bottom: 24px;
+    }
+
+    .sidebar-user {
+        padding-top: 16px;
+        padding-bottom: 24px;
+        border-top: 1px solid rgba(255,255,255,.04);
+    }
+
+    /* Brand */
     .brand {
-        padding: 0 12px 28px;
-        font-size: 17px;
+        font-size: 20px;
         font-weight: 950;
-        letter-spacing: -.02em;
+        letter-spacing: -.03em;
+        color: var(--text);
+        line-height: 1.1;
     }
 
     .brand span {
-        color: var(--purple);
+        color: var(--gold);
+        background: linear-gradient(135deg, var(--gold), #f4c95d, var(--purple));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
 
-    .side-balance {
-        padding: 16px;
-        border-radius: 17px;
-        background:
-            radial-gradient(circle at top right,rgba(141,114,255,.14),transparent 50%),
-            #0d1016;
-        border: 1px solid var(--border);
-        margin-bottom: 20px;
-    }
-
-    .side-balance-label {
-        font-size: 9px;
+    .brand-tagline {
+        font-size: 11px;
+        font-weight: 500;
         color: var(--muted);
+        margin-top: 6px;
+        letter-spacing: .02em;
+        text-transform: uppercase;
+        opacity: .7;
     }
 
-    .side-balance-value {
-        font-size: 20px;
-        font-weight: 900;
-        margin-top: 4px;
+    /* Balance Card */
+    .balance-card {
+        background: linear-gradient(145deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+        border: 1px solid rgba(255,255,255,.06);
+        border-radius: 20px;
+        padding: 22px 20px;
+        position: relative;
+        overflow: hidden;
+        transition: border-color .3s ease, box-shadow .3s ease, transform .2s ease;
     }
 
-    .side-user {
-        padding: 10px 12px;
-        margin-bottom: 16px;
+    .balance-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, var(--purple), var(--gold), var(--purple));
+        opacity: 0;
+        transition: opacity .3s ease;
+    }
+
+    .balance-card:hover {
+        border-color: rgba(141,114,255,.3);
+        box-shadow: 
+            0 8px 32px rgba(141,114,255,.08),
+            0 2px 8px rgba(0,0,0,.2);
+        transform: translateY(-2px);
+    }
+
+    .balance-card:hover::before {
+        opacity: 1;
+    }
+
+    .balance-card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .balance-card-icon {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         border-radius: 12px;
-        background: rgba(255,255,255,.03);
-        border: 1px solid var(--border);
-        font-size: 12px;
+        background: linear-gradient(135deg, rgba(141,114,255,.15), rgba(37,99,235,.1));
+        color: var(--gold);
+        transition: transform .2s ease, box-shadow .2s ease;
+    }
+
+    .balance-card:hover .balance-card-icon {
+        transform: scale(1.05);
+        box-shadow: 0 4px 16px rgba(141,114,255,.2);
+    }
+
+    .balance-card-label {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
         color: var(--muted);
+    }
+
+    .balance-card-value {
+        font-size: 28px;
+        font-weight: 900;
+        color: var(--text);
+        letter-spacing: -.02em;
+        line-height: 1.1;
+        margin-bottom: 4px;
+        background: linear-gradient(135deg, var(--text), var(--gold));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .balance-card-sub {
+        font-size: 11px;
+        color: var(--muted);
+        opacity: .8;
+    }
+
+    /* Navigation Menu */
+    .side-menu {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .side-item {
+        position: relative;
+        height: 52px;
+        border: 0;
+        background: transparent;
+        border-radius: 14px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 16px;
+        font-weight: 700;
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color .18s ease, color .18s ease, padding-left .18s ease, box-shadow .18s ease;
+        overflow: hidden;
+    }
+
+    .side-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 0;
+        background: linear-gradient(180deg, var(--purple), var(--gold));
+        border-radius: 0 3px 3px 0;
+        transition: height .25s cubic-bezier(.2,.8,.25,1);
+        opacity: 0;
+    }
+
+    .side-item:hover {
+        background: linear-gradient(90deg, rgba(141,114,255,.06), rgba(255,255,255,.01));
+        color: var(--text);
+        padding-left: 20px;
+    }
+
+    .side-item:hover::before {
+        height: 70%;
+        opacity: 1;
+    }
+
+    .side-item:focus-visible {
+        outline: 2px solid var(--gold);
+        outline-offset: 2px;
+    }
+
+    .side-item-icon {
+        width: 22px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: var(--muted);
+        transition: color .18s ease, transform .18s ease;
+    }
+
+    .side-item:hover .side-item-icon {
+        color: var(--gold);
+        transform: translateX(2px);
+    }
+
+    .side-item-label {
+        flex: 1;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .side-user::before {
-        content: "👤 ";
-        opacity: .6;
-    }
-
-    .side-menu {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .side-item {
-        height: 47px;
-        border: 0;
+    .side-item-indicator {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
         background: transparent;
-        border-radius: 12px;
-        color: var(--muted);
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 0 13px;
-        font-weight: 700;
-        font-size: 12px;
-        text-align: left;
-        transition: background-color .15s ease, color .15s ease, padding-left .15s ease;
-        cursor: pointer;
-    }
-
-    .side-item:hover {
-        background: rgba(255,255,255,.04);
-        color: var(--text);
-        padding-left: 16px;
-    }
-
-    .side-item:focus-visible {
-        outline: 2px solid var(--purple);
-        outline-offset: 2px;
-    }
-
-    .side-item svg {
-        width: 18px;
-        transition: transform .15s ease, color .15s ease;
-    }
-
-    .side-item:hover svg {
-        transform: translateX(2px);
+        opacity: 0;
+        transform: scale(0);
+        transition: opacity .18s ease, transform .18s ease;
     }
 
     .side-item.active {
-        color: #fff;
-        background: linear-gradient(135deg,rgba(141,114,255,.18),rgba(141,114,255,.08));
+        color: var(--text);
+        background: linear-gradient(90deg, rgba(141,114,255,.12), rgba(255,255,255,.02));
+        padding-left: 20px;
     }
 
-    .side-item.active svg {
-        color: var(--purple);
+    .side-item.active .side-item-icon {
+        color: var(--gold);
+    }
+
+    .side-item.active::before {
+        height: 80%;
+        opacity: 1;
+    }
+
+    .side-item.active .side-item-indicator {
+        opacity: 1;
+        transform: scale(1);
+        background: var(--gold);
+        box-shadow: 0 0 8px var(--gold);
+    }
+
+    /* User Profile Section */
+    .user-profile {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(255,255,255,.025), rgba(255,255,255,.01));
+        border: 1px solid rgba(255,255,255,.05);
+        transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+        cursor: pointer;
+    }
+
+    .user-profile:hover {
+        border-color: rgba(141,114,255,.25);
+        background: linear-gradient(135deg, rgba(141,114,255,.04), rgba(255,255,255,.02));
+        box-shadow: 0 4px 20px rgba(141,114,255,.06);
+    }
+
+    .user-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, rgba(141,114,255,.18), rgba(37,99,235,.12));
+        color: var(--gold);
+        flex-shrink: 0;
+        transition: transform .2s ease, box-shadow .2s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .user-avatar::after {
+        content: '';
+        position: absolute;
+        inset: -50%;
+        background: conic-gradient(from 0deg, transparent, var(--gold), transparent);
+        opacity: 0;
+        animation: avatarSpin 3s linear infinite;
+        transition: opacity .3s ease;
+    }
+
+    @keyframes avatarSpin {
+        to { transform: rotate(360deg); }
+    }
+
+    .user-profile:hover .user-avatar {
+        transform: scale(1.05);
+        box-shadow: 0 4px 16px rgba(141,114,255,.25);
+    }
+
+    .user-profile:hover .user-avatar::after {
+        opacity: 1;
+    }
+
+    .user-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .user-name {
+        font-size: 13.5px;
+        font-weight: 800;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 2px;
+        letter-spacing: -.01em;
+    }
+
+    .user-email {
+        font-size: 11.5px;
+        font-weight: 500;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        opacity: .85;
+        transition: opacity .2s ease;
+    }
+
+    .user-profile:hover .user-email {
+        opacity: 1;
+    }
+
+    .user-mode-badge {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        flex-shrink: 0;
+        transition: all .2s ease;
+        cursor: pointer;
+        border: 1px solid transparent;
+    }
+
+    .user-mode-badge .mode-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    /* Practice mode (default) */
+    .user-mode-badge {
+        background: linear-gradient(135deg, rgba(37,99,235,.12), rgba(37,99,235,.06));
+        border-color: rgba(37,99,235,.2);
+        color: var(--gold);
+    }
+
+    .user-mode-badge .mode-dot {
+        background: var(--gold);
+        box-shadow: 0 0 8px var(--gold), 0 0 16px rgba(37,99,235,.4);
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: .6; transform: scale(.9); }
+    }
+
+    /* Live mode */
+    .user-mode-badge.live {
+        background: linear-gradient(135deg, rgba(21,163,73,.12), rgba(21,163,73,.06));
+        border-color: rgba(21,163,73,.25);
+        color: var(--up);
+    }
+
+    .user-mode-badge.live .mode-dot {
+        background: var(--up);
+        box-shadow: 0 0 8px var(--up), 0 0 16px rgba(21,163,73,.4);
+    }
+
+    .user-mode-badge:hover {
+        transform: scale(1.02);
+    }
+
+    .main {
+        padding: 16px 20px 30px;
+    }
+
+    .mobile-layout {
+        max-width: 1200px;
+        margin: auto;
     }
 
     .main {
@@ -2226,74 +2566,136 @@ linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-siz
 <div class="app">
 
     <!-- =====================================================
-         DESKTOP SIDEBAR
+         DESKTOP SIDEBAR — Premium Glassmorphism
     ====================================================== -->
-    <aside class="desktop-sidebar">
+    <aside class="desktop-sidebar" role="navigation" aria-label="Main navigation">
 
-        <button class="vanta-sidebar-close" id="vantaSidebarClose" type="button" aria-label="Close menu">✕</button>
+        <button class="vanta-sidebar-close" id="vantaSidebarClose" type="button" aria-label="Close menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
 
-        <div class="brand">
-            VANTA <span>TRADE</span>
+        <!-- Brand Section -->
+        <div class="sidebar-section sidebar-brand">
+            <div class="brand">
+                VANTA <span>TRADE</span>
+            </div>
+            <div class="brand-tagline">Professional Trading Suite</div>
         </div>
 
-        <div class="side-balance">
-            <div class="side-balance-label">Wallet Balance</div>
-            <div class="side-balance-value" id="desktopBalance">$9,992.00</div>
+        <!-- Balance Card -->
+        <div class="sidebar-section sidebar-balance-card">
+            <div class="balance-card">
+                <div class="balance-card-header">
+                    <span class="balance-card-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 7.5A2.5 2.5 0 016.5 5H19a2 2 0 012 2v10a2 2 0 01-2 2H6.5A2.5 2.5 0 014 16.5z"/>
+                            <path d="M4 8h15M16 13h4"/>
+                            <circle cx="16" cy="13" r=".7" fill="currentColor"/>
+                        </svg>
+                    </span>
+                    <span class="balance-card-label">Wallet Balance</span>
+                </div>
+                <div class="balance-card-value" id="desktopBalance">$9,992.00</div>
+                <div class="balance-card-sub" id="desktopBalanceSub">Available for trading</div>
+            </div>
         </div>
 
-        <div class="side-user" id="sideUserEmail"></div>
+        <!-- Navigation Menu -->
+        <div class="sidebar-section sidebar-nav">
+            <nav class="side-menu" aria-label="Main menu">
+                <button class="side-item active" data-page="dashboard" type="button">
+                    <span class="side-item-icon">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <rect x="3" y="3" width="8" height="9" rx="2"/>
+                            <rect x="13" y="3" width="8" height="5" rx="2"/>
+                            <rect x="13" y="10" width="8" height="11" rx="2"/>
+                            <rect x="3" y="14" width="8" height="7" rx="2"/>
+                        </svg>
+                    </span>
+                    <span class="side-item-label">Dashboard</span>
+                    <span class="side-item-indicator" aria-hidden="true"></span>
+                </button>
 
-        <nav class="side-menu">
-    <button class="side-item active" data-page="dashboard">
-        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-            <rect x="3" y="3" width="8" height="9" rx="2"/>
-            <rect x="13" y="3" width="8" height="5" rx="2"/>
-            <rect x="13" y="10" width="8" height="11" rx="2"/>
-            <rect x="3" y="14" width="8" height="7" rx="2"/>
-        </svg>
-        Dashboard
-    </button>
+                <button class="side-item" data-page="trading" type="button">
+                    <span class="side-item-icon">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M4 18V6M10 18V10M16 18V4M22 18V8"/>
+                        </svg>
+                    </span>
+                    <span class="side-item-label">Trading</span>
+                    <span class="side-item-indicator" aria-hidden="true"></span>
+                </button>
 
-    <button class="side-item" data-page="trading">
-        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-            <path d="M4 18V6M10 18V10M16 18V4M22 18V8"/>
-        </svg>
-        Trading
-    </button>
+                <button class="side-item" data-page="wallet" type="button">
+                    <span class="side-item-icon">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M4 7.5A2.5 2.5 0 016.5 5H19a2 2 0 012 2v10a2 2 0 01-2 2H6.5A2.5 2.5 0 014 16.5z"/>
+                            <path d="M4 8h15M16 13h4"/>
+                            <circle cx="16" cy="13" r=".7" fill="currentColor"/>
+                        </svg>
+                    </span>
+                    <span class="side-item-label">Wallet</span>
+                    <span class="side-item-indicator" aria-hidden="true"></span>
+                </button>
 
-    <button class="side-item" data-page="wallet">
-        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-            <path d="M4 7.5A2.5 2.5 0 016.5 5H19a2 2 0 012 2v10a2 2 0 01-2 2H6.5A2.5 2.5 0 014 16.5z"/>
-            <path d="M4 8h15M16 13h4"/>
-            <circle cx="16" cy="13" r=".7" fill="currentColor"/>
-        </svg>
-        Wallet
-    </button>
+                <button class="side-item" data-page="messages" type="button">
+                    <span class="side-item-icon">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M4 5.5A2.5 2.5 0 016.5 3h11A2.5 2.5 0 0120 5.5v9a2.5 2.5 0 01-2.5 2.5h-5.5l-4 4v-4H6.5A2.5 2.5 0 014 14.5z"/>
+                            <path d="M8 8.5h8M8 12h5"/>
+                        </svg>
+                    </span>
+                    <span class="side-item-label">Messages</span>
+                    <span class="side-item-indicator" aria-hidden="true"></span>
+                </button>
 
-    <button class="side-item" data-page="messages">
-        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-            <path d="M4 5.5A2.5 2.5 0 016.5 3h11A2.5 2.5 0 0120 5.5v9a2.5 2.5 0 01-2.5 2.5h-5.5l-4 4v-4H6.5A2.5 2.5 0 014 14.5z"/>
-            <path d="M8 8.5h8M8 12h5"/>
-        </svg>
-        Messages
-    </button>
+                <button class="side-item" data-page="history" type="button">
+                    <span class="side-item-icon">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M4 5h16v14H4z"/>
+                            <path d="M4 9h16M8 13h4M8 17h8"/>
+                        </svg>
+                    </span>
+                    <span class="side-item-label">History</span>
+                    <span class="side-item-indicator" aria-hidden="true"></span>
+                </button>
 
-    <button class="side-item" data-page="history">
-        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-            <path d="M4 5h16v14H4z"/>
-            <path d="M4 9h16M8 13h4M8 17h8"/>
-        </svg>
-        History
-    </button>
+                <button class="side-item" data-page="admin" data-admin type="button">
+                    <span class="side-item-icon">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path d="M12 3l7 3v5c0 4.5-2.9 8.2-7 10-4.1-1.8-7-5.5-7-10V6z"/>
+                            <path d="M9.5 12l1.7 1.7 3.3-3.4"/>
+                        </svg>
+                    </span>
+                    <span class="side-item-label">Admin</span>
+                    <span class="side-item-indicator" aria-hidden="true"></span>
+                </button>
+            </nav>
+        </div>
 
-    <button class="side-item" data-page="admin" data-admin>
-        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-            <path d="M12 3l7 3v5c0 4.5-2.9 8.2-7 10-4.1-1.8-7-5.5-7-10V6z"/>
-            <path d="M9.5 12l1.7 1.7 3.3-3.4"/>
-        </svg>
-        Admin
-    </button>
-</nav>
+        <!-- User Profile Section (Bottom) -->
+        <div class="sidebar-section sidebar-user">
+            <div class="user-profile" id="sidebarUserProfile">
+                <div class="user-avatar" id="sidebarUserAvatar">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="8" r="3.3"/>
+                        <path d="M5.5 20c.8-3.4 3-5 6.5-5s5.7 1.6 6.5 5"/>
+                    </svg>
+                </div>
+                <div class="user-info">
+                    <div class="user-name" id="sidebarUserName">Guest User</div>
+                    <div class="user-email" id="sidebarUserEmail">Not signed in</div>
+                </div>
+                <button class="user-mode-badge" id="sidebarModeBadge" type="button" aria-label="Switch account mode">
+                    <span class="mode-dot" aria-hidden="true"></span>
+                    <span class="mode-text">PRACTICE</span>
+                </button>
+            </div>
+        </div>
+
     </aside>
 
     <!-- =====================================================
@@ -12818,101 +13220,211 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 .desktop-sidebar.vanta-nav-open .side-item:nth-child(6) { animation-delay: 320ms; }
 
 /* =========================================================
-   MOBILE / TABLET LAYOUT
+   MOBILE / TABLET LAYOUT — Premium Drawer
 ========================================================= */
 @media (max-width:899px){
 
   .vanta-nav-toggle{display:grid}
 
-  /* The drawer. flex-direction:column MUST be mirrored here — the base
-     layout rules for .desktop-sidebar live only inside the desktop
-     media query, so on mobile it would default to a horizontal row
-     (extremely crowded) if not forced. */
+  /* Premium Drawer */
   .desktop-sidebar{
     display:flex!important;
     flex-direction:column!important;
     align-items:stretch!important;
     position:fixed!important;
     top:0!important;left:0!important;bottom:0!important;
-    width:min(300px,86vw)!important;
-    padding:max(16px,env(safe-area-inset-top)) 15px max(22px,env(safe-area-inset-bottom))!important;
+    width:min(320px,90vw)!important;
+    padding:0!important;
     z-index:560;
-    transform:translateX(-104%);
-    transition:transform .26s cubic-bezier(.2,.8,.25,1);
-    box-shadow:26px 0 64px rgba(0,0,0,.45);
+    transform:translateX(-105%);
+    transition:transform .32s cubic-bezier(.16,1,.3,1);
+    box-shadow:32px 0 80px rgba(0,0,0,.5);
     overflow-y:auto;
     -webkit-overflow-scrolling:touch;
     overscroll-behavior:contain;
     -webkit-tap-highlight-color:transparent;
+    background: 
+      linear-gradient(180deg, rgba(8,10,14,.98) 0%, rgba(6,8,12,.96) 50%, rgba(5,7,11,.98) 100%),
+      radial-gradient(ellipse at 0% 0%, rgba(141,114,255,.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 100% 100%, rgba(37,99,235,.05) 0%, transparent 50%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-right: 1px solid var(--border);
   }
+
   .desktop-sidebar.vanta-nav-open{transform:translateX(0)}
   .vanta-sidebar-close{display:flex}
 
-  /* Mirror the desktop inner layout (these classes are only styled inside
-     the desktop media query) so the drawer looks exactly like the sidebar. */
+  /* Mobile Sidebar Sections */
+  .desktop-sidebar .sidebar-section{
+    padding: 0 20px;
+  }
+
+  .desktop-sidebar .sidebar-brand{
+    padding-top: max(24px, env(safe-area-inset-top));
+    padding-bottom: 24px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+
+  .desktop-sidebar .sidebar-balance-card{
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+
+  .desktop-sidebar .sidebar-nav{
+    flex: 1;
+    padding-top: 12px;
+    padding-bottom: 16px;
+  }
+
+  .desktop-sidebar .sidebar-user{
+    padding-top: 16px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255,255,255,.04);
+  }
+
+  /* Brand */
   .brand{
     display:block;
-    padding:0 12px 16px;
-    font-size:16px;font-weight:950;letter-spacing:-.02em;
+    font-size:18px;font-weight:950;letter-spacing:-.03em;
     color:var(--text);
+    line-height:1.1;
   }
-  .brand span{color:var(--gold)}
-  .side-balance{
-    padding:14px 15px;
-    border-radius:16px;
-    border:1px solid var(--line);
-    background:var(--panel-2);
-    margin-bottom:14px;
+  .brand span{
+    color: var(--gold);
+    background: linear-gradient(135deg, var(--gold), #f4c95d, var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
-  .side-balance-label{
-    font-size:9px;font-weight:800;
-    letter-spacing:.12em;text-transform:uppercase;
-  }
-  .side-balance-value{
-    font-size:19px;font-weight:900;
-    color:var(--text);
-    margin-top:4px;letter-spacing:-.01em;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  }
-  .side-user{
-    padding:10px 12px;
-    margin-bottom:14px;
-    border-radius:12px;
-    background:rgba(255,255,255,.05);
-    border:1px solid var(--line);
-    font-size:12px;
+  .brand-tagline{
+    display:block;
+    font-size:10.5px;
+    font-weight:500;
     color:var(--muted);
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
+    margin-top:4px;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+    opacity:.7;
   }
-  .side-user::before{
-    content:"👤 ";
-    opacity:.6;
+
+  /* Balance Card Mobile */
+  .balance-card{
+    background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.015));
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 20px 18px;
+    position: relative;
+    overflow: hidden;
   }
-  .side-menu{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+
+  .balance-card::before{
+    content:'';
+    position:absolute;
+    top:0;left:0;right:0;height:2px;
+    background: linear-gradient(90deg, var(--purple), var(--gold), var(--purple));
+    opacity:0;
+    transition:opacity .3s ease;
+  }
+
+  .balance-card:active::before,
+  .balance-card:focus-within::before{opacity:1}
+
+  .balance-card-header{
+    display:flex;align-items:center;gap:10px;margin-bottom:10px;
+  }
+
+  .balance-card-icon{
+    width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+    border-radius:11px;
+    background:linear-gradient(135deg, rgba(141,114,255,.15), rgba(37,99,235,.1));
+    color:var(--gold);
+  }
+
+  .balance-card-label{
+    font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  }
+
+  .balance-card-value{
+    font-size:26px;font-weight:900;color:var(--text);letter-spacing:-.02em;line-height:1.1;margin-bottom:3px;
+    background:linear-gradient(135deg,var(--text),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  }
+
+  .balance-card-sub{font-size:10.5px;color:var(--muted);opacity:.8}
+
+  /* Navigation Menu Mobile */
+  .side-menu{display:flex;flex-direction:column;gap:3px}
+
   .side-item{
-    display:flex;align-items:center;gap:12px;
-    width:100%;height:48px;padding:0 14px;
-    border:0;border-radius:13px;
-    background:transparent;
-    color:var(--muted);
-    font-size:13px;font-weight:700;text-align:left;
-    cursor:pointer;box-sizing:border-box;
-    flex:0 0 auto;
+    position:relative;height:50px;border:0;background:transparent;border-radius:13px;
+    color:var(--muted);display:flex;align-items:center;gap:13px;padding:0 15px;
+    font-weight:700;font-size:13px;text-align:left;cursor:pointer;
+    transition:background-color .15s ease,color .15s ease,padding-left .15s ease,box-shadow .15s ease;
     -webkit-tap-highlight-color:transparent;
-    transition:background-color .12s ease,color .12s ease,padding-left .12s ease;
   }
-  .side-item:active{background:rgba(37,99,235,.12)}
-  .side-item:hover{background:rgba(255,255,255,.04);color:var(--text);padding-left:17px}
+
+  .side-item::before{
+    content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
+    width:3px;height:0;background:linear-gradient(180deg,var(--purple),var(--gold));
+    border-radius:0 3px 3px 0;transition:height .2s ease;opacity:0;
+  }
+
+  .side-item:active{
+    background:rgba(37,99,235,.1);color:var(--text);padding-left:18px;
+  }
+  .side-item:active::before{height:70%;opacity:1}
+
   .side-item:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
-  .side-item svg{width:20px;height:20px;flex:0 0 20px;transition:transform .12s ease}
-  .side-item:hover svg{transform:translateX(2px)}
-  .side-item.active{
-    background:linear-gradient(135deg,rgba(37,99,235,.16),rgba(37,99,235,.07));
-    color:var(--text);
+
+  .side-item-icon{width:21px;height:21px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted);transition:color .15s ease,transform .15s ease}
+
+  .side-item:active .side-item-icon{color:var(--gold);transform:translateX(2px)}
+
+  .side-item-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .side-item-indicator{width:6px;height:6px;border-radius:50%;background:transparent;opacity:0;transform:scale(0);transition:opacity .15s ease,transform .15s ease}
+
+  .side-item.active{color:var(--text);background:linear-gradient(90deg,rgba(141,114,255,.1),rgba(255,255,255,.015));padding-left:18px}
+  .side-item.active .side-item-icon{color:var(--gold)}
+  .side-item.active::before{height:80%;opacity:1}
+  .side-item.active .side-item-indicator{opacity:1;transform:scale(1);background:var(--gold);box-shadow:0 0 8px var(--gold)}
+
+  /* User Profile Mobile */
+  .user-profile{
+    display:flex;align-items:center;gap:13px;padding:13px 15px;border-radius:15px;
+    background:linear-gradient(135deg,rgba(255,255,255,.025),rgba(255,255,255,.01));
+    border:1px solid rgba(255,255,255,.05);cursor:pointer;
+    transition:border-color .2s ease,box-shadow .2s ease,background .2s ease;
   }
-  .side-item.active svg{color:var(--gold)}
+
+  .user-profile:active{
+    border-color:rgba(141,114,255,.25);
+    background:linear-gradient(135deg,rgba(141,114,255,.04),rgba(255,255,255,.02));
+  }
+
+  .user-avatar{
+    width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,rgba(141,114,255,.18),rgba(37,99,235,.12));
+    color:var(--gold);flex-shrink:0;transition:transform .15s ease;
+  }
+
+  .user-profile:active .user-avatar{transform:scale(1.03)}
+
+  .user-info{flex:1;min-width:0}
+
+  .user-name{font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;letter-spacing:-.01em}
+
+  .user-email{font-size:11px;font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8}
+
+  .user-mode-badge{
+    display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;flex-shrink:0;cursor:pointer;
+    background:linear-gradient(135deg,rgba(37,99,235,.12),rgba(37,99,235,.06));border-color:rgba(37,99,235,.2);color:var(--gold);
+  }
+
+  .user-mode-badge .mode-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--gold);box-shadow:0 0 6px var(--gold),0 0 12px rgba(37,99,235,.4);animation:pulse 2s ease-in-out infinite}
+
+  .user-mode-badge.live{background:linear-gradient(135deg,rgba(21,163,73,.12),rgba(21,163,73,.06));border-color:rgba(21,163,73,.25);color:var(--up)}
+  .user-mode-badge.live .mode-dot{background:var(--up);box-shadow:0 0 6px var(--up),0 0 12px rgba(21,163,73,.4)}
 
   /* Bottom nav: one full row of 4, comfy tap targets */
   .bottom-nav{
@@ -12969,49 +13481,63 @@ html.vanta-nav-lock,body.vanta-nav-lock{overflow:hidden;overscroll-behavior:none
 
 /* Very small phones — slim the drawer down so nothing overflows */
 @media (max-width:360px){
-  .desktop-sidebar{width:min(272px,88vw)!important;padding-left:12px!important;padding-right:12px!important}
-  .side-item{height:46px;font-size:12.5px;border-radius:12px}
-  .side-item svg{width:18px;flex-basis:18px}
-  .side-balance{margin-bottom:10px}
-  .side-balance-value{font-size:18px}
-  .brand{font-size:15px}
-  .nav-label{font-size:8.5px}
-  .side-user{padding:8px 10px;font-size:11px;margin-bottom:10px}
+  .desktop-sidebar{width:min(288px,92vw)!important}
+  .side-item{height:48px;font-size:12.5px;padding:0 13px}
+  .side-item-icon{width:19px;height:19px}
+  .balance-card{padding:18px 16px}
+  .balance-card-value{font-size:24px}
+  .brand{font-size:16.5px}
+  .brand-tagline{font-size:10px}
+  .user-profile{padding:11px 13px}
+  .user-avatar{width:36px;height:36px}
+  .user-name{font-size:12.5px}
+  .user-email{font-size:10.5px}
+  .user-mode-badge{padding:4px 10px;font-size:9px}
 }
 
 /* Short screens (landscape phones / small height): let the menu scroll
    instead of clipping the last item on iOS/Android chrome */
 @media (max-height:560px) and (max-width:899px){
-  .desktop-sidebar{padding-top:max(12px,env(safe-area-inset-top))!important}
-  .side-balance{padding:11px 13px;margin-bottom:10px}
-  .side-item{height:44px}
-  .brand{padding-bottom:12px}
-  .side-user{padding:8px 10px;margin-bottom:10px}
+  .desktop-sidebar .sidebar-brand{padding-top:max(16px,env(safe-area-inset-top))!important;padding-bottom:18px}
+  .desktop-sidebar .sidebar-balance-card{padding-bottom:14px}
+  .desktop-sidebar .sidebar-nav{padding-top:8px;padding-bottom:10px}
+  .desktop-sidebar .sidebar-user{padding-top:10px;padding-bottom:max(14px,env(safe-area-inset-bottom))}
+  .balance-card{padding:16px 14px}
+  .balance-card-value{font-size:22px}
+  .side-item{height:46px}
+  .brand{font-size:16px}
+  .brand-tagline{font-size:10px}
+  .user-profile{padding:10px 12px}
+  .user-avatar{width:36px;height:36px}
 }
 
 /* Tablet landscape - slightly wider sidebar */
 @media (min-width:900px) and (max-width:1200px){
-  .app{padding-left:250px}
-  .desktop-sidebar{width:250px;padding:22px 14px 28px}
-  .side-item{height:45px;font-size:11.5px}
-  .side-balance{padding:14px}
-  .side-balance-value{font-size:19px}
+  .app{padding-left:260px}
+  .desktop-sidebar{width:260px}
+  .sidebar-brand{padding-top:26px;padding-bottom:28px}
+  .balance-card{padding:20px 18px}
+  .balance-card-value{font-size:26px}
+  .side-item{height:50px;font-size:12.5px;padding:0 15px}
+  .user-profile{padding:12px 14px}
+  .user-avatar{width:40px;height:40px}
+  .user-name{font-size:13px}
+  .user-email{font-size:11px}
 }
 
 /* Large desktop - wider sidebar with more breathing room */
 @media (min-width:1400px){
-  .app{padding-left:280px}
-  .desktop-sidebar{width:280px;padding:28px 18px 36px}
-  .side-item{height:48px;font-size:12.5px;padding:0 16px}
-  .side-balance{padding:18px}
-  .side-balance-value{font-size:21px}
-  .brand{font-size:18px;padding:0 14px 32px}
-  .side-user{padding:12px 14px;font-size:13px}
-}
-
-/* Overscroll glue: never let the page shift while the drawer is open */
-@media (min-width:900px){
-  html.vanta-nav-lock,body.vanta-nav-lock{overflow:auto}
+  .app{padding-left:300px}
+  .desktop-sidebar{width:300px}
+  .sidebar-brand{padding-top:30px;padding-bottom:36px}
+  .balance-card{padding:24px 22px}
+  .balance-card-value{font-size:30px}
+  .side-item{height:54px;font-size:13.5px;padding:0 18px}
+  .user-profile{padding:16px 18px}
+  .user-avatar{width:48px;height:48px;border-radius:14px}
+  .user-name{font-size:14px}
+  .user-email{font-size:12px}
+  .user-mode-badge{padding:7px 14px;font-size:10.5px}
 }
 </style>
 
